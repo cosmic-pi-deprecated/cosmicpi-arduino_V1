@@ -1,0 +1,875 @@
+// This program collects up to PPS_EVENTS events each second into a double buffer.
+// While the ISR fills one event buffer, the user space loop function reads from the other.
+// Each PPS interrupt the read/write buffers are swapped over by the event ISR
+// If any events are available in the read buffer the loop function puts them onto a queue
+// along with the UTC time string where they get stored. Once there are at
+// least DUMP_THRESHOLD entries on the queue, the loop function outputs them over the serial
+// line for processing. 
+
+// In this version interrupts come from the accelerometer chip, if the acceleration exceeds
+// the threshold (in meters/sec/sec) in any direction the chip interrupts. These events are
+// counted each second, if the count per second is less than the cutoff frequency, typically
+// between 15 to 32 Hertz, then its considdered to be a siesmic event. In this case the siesmic
+// event is put on the output event queue for later corrolation with any cosmic or other
+// high energy events depending on the detector being used.
+
+// Julian Lewis lewis.julian@gmail.com
+
+#define VERS "2016/Feb/24"
+
+// In this sketch I am using an Adafruite ultimate GPS breakout which exposes the PPS output
+// The Addafruite Rx is connected to the DUE TX1 (Pin 18) and its Tx to DUE RX1 (Pin 19)
+// The Adafruite 3.3V power is provided from the DUE 3.3V and ground pins
+// N.B. Go to the Adafruit downloads page and copy Adafruit_GPS.h and Adafruit_GPS.cc to
+// your sketch directory. 
+
+// The output from this program is processed by a Python monitor on the other end of the
+// serial line. There has to be mutual aggreement between this program and the monitor.
+// To make this as simple as possible I use the Python string.split() on the ":" character
+// Thus all fields to be processed have field name, and optional field value seperators as ":"
+// Hence "field:value:field:value:field........:value"
+// Also for date and time values the split is on "/"
+// Hence "yy/mm/dd/hh/mm/ss"
+// Python breaks up these strings to build whatever event message format you want
+// For example "{field,value ....} in whatever order you want, thats not defined here
+// See cosmic_pi.py for more details
+
+#include <time.h>
+
+#include "Adafruit_BMP085_U.h"	// Barrometric pressure
+
+#include "Adafruit_HTU21DF.h"	// Humidity and temperature sensor
+
+// GPS chips typically return NMEA strings over a serial line.
+// They can be programmed to send different NMEA strings according to what you configure.
+// The string RMCGGA has the altitude but misses the yy/mm/dd from the date, it only has hh/mm/ss.
+// This is easilly made up for in the Python monitor which gets this information from it system time.
+
+#include "Adafruit_GPS.h"	// GPS chip
+#define GPSECHO true
+#define RMCGGA			// Altitude on, yy/mm/dd off
+
+#include "Adafruit_L3GD20_U.h"	// Gyroscope
+
+#include "Adafruit_LSM303_U.h"	// Accelerometer and magnentometer/compass
+
+#include "Adafruit_10DOF.h"	// 10DOF breakout driver - scale to SI units
+
+// Configuration constants
+
+// The size of the one second event buffer
+#define PPS_EVENTS 8	// The maximum number of events stored per second
+
+// This is the event queue size
+#define EVENT_QSIZE 32	// The number of events that can be queued for serial output
+
+// Handle text buffer serial output overflow errors
+// When the output buffer overflows due to data comming too fast, we just stop printing due
+// to insufficient bandwidth or slow things down if HANDLE_OVERFLOW is set (not recomended)
+// #define HANDLE_OVERFLOW
+
+// This is the text ring buffer for real time output to serial line with interrupt on
+#define TBLEN 4096	// Serial line output ring buffer size
+
+// Define some output debug pins to monitor whats going on via an oscilloscope
+#define PPS_PIN 13	// PPS (Pulse Per Second) and LED
+#define EVT_PIN 12	// Cosmic ray event detected
+#define FLG_PIN 11	// Debug flag
+
+// Baud rates
+#define SERIAL_BAUD_RATE 9600	// Serial line 
+#define GPS_BAUD_RATE 9600	// GPS and Serial1 line
+
+// Instantiate external hardware breakouts
+
+Adafruit_GPS		gps(&Serial1);			// GPS Serial1 on pins RX1 and TX1
+
+Adafruit_HTU21DF	htu = Adafruit_HTU21DF();	// Humidity and temperature measurment
+boolean			htu_ok = false;			// Chip OK
+
+#define BMPID 18001
+Adafruit_BMP085_Unified	bmp = Adafruit_BMP085_Unified(BMPID);	// Barometric pressure
+boolean			bmp_ok = false;
+
+// The 10DOF isn't a chip, its just a utility to convert say gyro values into headings etc
+
+Adafruit_10DOF		dof = Adafruit_10DOF();		// The 10 Degrees-Of-Freedom DOF breakout
+boolean			dof_ok = false;			// board driver, scales units to SI
+
+#define ACLID 30301
+Adafruit_LSM303_Accel_Unified acl = Adafruit_LSM303_Accel_Unified(ACLID);	// Accelerometer Compass
+			boolean acl_ok = false;
+
+#define MAGID 30302
+Adafruit_LSM303_Mag_Unified gyr = Adafruit_LSM303_Mag_Unified(MAGID);		// Gyroscope
+boolean			gyr_ok = false;
+
+// Control the output data rates by setting defaults, these values can be modified at run time
+// via commands from the serial interface. Some output like position isn't supposed to be changing
+// very fast if at all, so no need to clutter up the serial line with it. The Python monitor keeps
+// the last sent values when it builds event messages to be sent over the internet to the server
+// or logged to a file.
+
+uint32_t latlon_display_rate = 12;	// Display latitude and longitude each X seconds
+uint32_t humtmp_display_rate = 12;	// Display humidity and HTU temperature each X seconds
+uint32_t alttmp_display_rate = 12;	// Display altitude and BMP temperature each X seconds
+uint32_t frqutc_display_rate = 1;	// Display frequency and UTC time each X seconds
+uint32_t status_display_rate = 4;	// Display status (UpTime, QueueSize, MissedEvents, HardwareOK)
+uint32_t events_display_size = 20;	// Display events after recieving X events
+uint32_t accelr_display_rate = 1;	// Display accelarometer x,y,z
+uint32_t gyrosc_display_rate = 12;	// Display gyroscopic data x,y,z
+
+// Siesmic event trigger parameters
+
+uint32_t accelr_event_threshold = 1;	// Trigger level for siesmic events
+uint32_t accelr_event_cutoff_fr = 20;	// Siesmic event cutoff frequency
+
+// Commands can be sent over the serial line to configure the display rates or whatever
+
+typedef enum {
+	NOOP,	// No-operation
+	HELP,	// Help
+	HTUX,	// Reset HTU chip
+	HTUD,	// HUT display rate
+	BMPD,	// BMP display rate
+	LOCD,	// Location display rate
+	TIMD,	// Timing display rate
+	STSD,	// Status display rate
+	EVQT,	// Event queue dump threshold
+
+	ACLD,	// Accelerometer display rate
+	GYRD,	// Gyromagnetometer display rate
+
+	ACLT,	// Accelerometer event threshold
+	ACLF,	// Accelerometer event max frequency
+
+	CMDS };	// Command count
+
+typedef struct {
+	int   Id;		// Command ID number
+	void  (*proc)(int arg);	// Function
+	char *Name;		// Command name
+	char *Help;		// Command help text
+	int   Par;		// Command parameter flag
+} CmdStruct;
+
+void noop(int arg);
+void help(int arg);
+void htux(int arg);
+void htud(int arg);
+void bmpd(int arg);
+void locd(int arg);
+void timd(int arg);
+void stsd(int arg);
+void evqt(int arg);
+void acld(int arg);
+void gyrd(int arg);
+void aclt(int arg);
+void aclf(int arg);
+
+CmdStruct cmd_table[CMDS] = {
+	{ NOOP, noop, "NOOP", "Do nothing", 0 },
+	{ HELP, help, "HELP", "Display commands", 0 },
+	{ HTUX, htux, "HTUX", "Reset the HTH chip", 0 },
+	{ HTUD, htud, "HTUD", "HTU Temperature-Humidity display rate", 1 },
+	{ BMPD, bmpd, "BMPD", "BMP Temperature-Altitude display rate", 1 },
+	{ LOCD, locd, "LOCD", "Location latitude-longitude display rate", 1 },
+	{ TIMD, timd, "TIMD", "Timing uptime-frequency-utc display rate", 1 },
+	{ STSD, stsd, "STSD", "Status info display rate", 1 },
+	{ EVQT, evqt, "EVQT", "Event queue dump threshold", 1 },
+	{ ACLD, acld, "ACLD", "Accelerometer display rate", 1 },
+	{ GYRD, gyrd, "GYRD", "Gyromagnatometer display rate", 1 },
+	{ ACLT, aclt, "ACLT", "Accelerometer event trigger threshold", 1 },
+	{ ACLF, aclf, "ACLF", "Accelerometer event max frequency cutoff", 1 }
+};
+
+#define CMDLEN 32
+static char cmd[CMDLEN];		// Command input buffer
+static int irdp=0, irdy=0, istp=0;	// Read, ready, stop
+
+static char txtb[TBLEN];		// Text ring buffer
+static uint32_t txtw = 0, txtr = 0, 	// Write and Read indexes
+		tsze = 0, terr = 0;	// Buffer size and error code
+
+typedef enum { TXT_NOERR=0, TXT_TOOBIG=1, TXT_OVERFL=2 } TxtErr;
+
+#define TXTLEN 132
+static char txt[TXTLEN];		// For writing to serial	
+	 
+// Initialize the timer chips to measure time between the PPS pulses and the EVENT pulse
+// The PPS enters pin D2, the PPS is forwarded accross an isolating diode to pin D5
+// The event pulse is also connected to pin D5. So D5 sees the LOR of the PPS and the
+// event, while D2 sees only the PPS. In this way we measure the frequency of the
+// clock MCLK/2 each second on the first counter, and the time between EVENTs on the second
+
+void TimersStart() {
+
+        uint32_t config = 0;
+
+	// Set up the power management controller for TC0 and TC2
+
+        pmc_set_writeprotect(false);    // Enable write access to power management chip
+        pmc_enable_periph_clk(ID_TC0);  // Turn on power for timer block 0 channel 0
+        pmc_enable_periph_clk(ID_TC6);  // Turn on power for timer block 2 channel 0
+
+	// Timer block zero channel zero is connected only to the PPS 
+	// We set it up to load regester RA on each PPS and reset
+	// So RA will contain the number of clock ticks between two PPS, this
+	// value should be very stable +/- one tick
+
+        config = TC_CMR_TCCLKS_TIMER_CLOCK1 |        // Select fast clock MCK/2 = 42 MHz
+                 TC_CMR_ETRGEDG_RISING |             // External trigger rising edge on TIOA0
+                 TC_CMR_ABETRG |                     // Use the TIOA external input line
+                 TC_CMR_LDRA_RISING;                 // Latch counter value into RA
+
+        TC_Configure(TC0, 0, config);                // Configure channel 0 of TC0
+        TC_Start(TC0, 0);                            // Start timer running
+
+        TC0->TC_CHANNEL[0].TC_IER =  TC_IER_LDRAS;   // Enable the load AR channel 0 interrupt each PPS
+        TC0->TC_CHANNEL[0].TC_IDR = ~TC_IER_LDRAS;   // and disable the rest of the interrupt sources
+        NVIC_EnableIRQ(TC0_IRQn);                    // Enable interrupt handler for channel 0
+
+	// Timer block 2 channel zero is connected to the OR of the PPS and the RAY event
+ 
+        config = TC_CMR_TCCLKS_TIMER_CLOCK1 |        // Select fast clock MCK/2 = 42 MHz
+                 TC_CMR_ETRGEDG_RISING |             // External trigger rising edge on TIOA1
+                 TC_CMR_ABETRG |                     // Use the TIOA external input line
+                 TC_CMR_LDRA_RISING;                 // Latch counter value into RA
+ 	
+	TC_Configure(TC2, 0, config);                // Configure channel 0 of TC2
+	TC_Start(TC2, 0);			     // Start timer running
+ 
+	TC2->TC_CHANNEL[0].TC_IER =  TC_IER_LDRAS;   // Enable the load AR channel 0 interrupt each PPS
+	TC2->TC_CHANNEL[0].TC_IDR = ~TC_IER_LDRAS;   // and disable the rest of the interrupt sources
+	NVIC_EnableIRQ(TC6_IRQn);                    // Enable interrupt handler for channel 0
+
+	// Set up the PIO controller to route input pins for TC0 and TC2
+
+	PIO_Configure(PIOC,PIO_INPUT,
+		      PIO_PB25B_TIOA0,	// D2 Input	
+		      PIO_DEFAULT);
+
+	PIO_Configure(PIOC,PIO_INPUT,
+		      PIO_PC25B_TIOA6,	// D5 Input
+		      PIO_DEFAULT);
+}
+
+static uint32_t displ = 0;	// Display values in loop
+
+static uint32_t ppsfl = LOW,	// PPS Flag boolean
+		rega0 = 0, 	// RA reg
+		stsr0 = 0,	// Interrupt status register
+		ppcnt = 0;	// PPS count
+
+// Handle the PPS interrupt in counter block 0 ISR
+
+void TC0_Handler() {
+
+	// This ISR is connected only to the PPS (Pulse Per Second) GPS event
+	// Each time this runs, set the flag to tell the TC6 ISR we have seen it
+	// This logic only works if the TC0 handler gets called before the TC6 handler
+	// hence the debug flag which I look at with a scope to be sure.
+	// I may introduce a small delay line to ensure this is true, so far it is.
+
+	ppsfl = HIGH;				// Seen a rising edge on the PPS
+#if FLG_PIN
+	digitalWrite(FLG_PIN,ppsfl);		// Flag set (for debug)
+#endif
+	rega0 = TC0->TC_CHANNEL[0].TC_RA;	// Read the RA reg (PPS period)
+	stsr0 = TC_GetStatus(TC0, 0); 		// Read status and clear load bits
+
+	ppcnt++;				// PPS count
+	displ = 1;				// Display stuff in the loop
+}
+
+// We need a double buffer, one is being written by the ISR while
+// the other is read from user space within one second.
+
+static uint32_t b1[PPS_EVENTS];		// Event ticks buffeer
+static uint32_t b2[PPS_EVENTS];		// Event ticks buffer
+static uint32_t *wbuf = b1, widx;	// Write event buffer pointer and its index
+static uint32_t *rbuf = b2, ridx;	// Read event buffer pointer and its index
+
+#define DATE_TIME_LEN 32
+
+static char t1[DATE_TIME_LEN];		// Date time buffer text string
+static char t2[DATE_TIME_LEN];		
+static char *wdtm = t1;			// Write date/time pointer
+static char *rdtm = t2;			// Read date/time pointer
+
+// Swap read write event buffers and indexes along with their time strings
+
+void SwapBufs() {
+	uint32_t *tbuf;				// Temp event tick count pointer
+	char *tdtm;				// Temp date/time string pointer
+	tbuf = rbuf; rbuf = wbuf; wbuf = tbuf;	// Swap write with read buffer
+	ridx = widx; widx = 0;			// Write count to read, reset the write count
+	tdtm = rdtm; rdtm = wdtm; wdtm = tdtm;	// And swap asociated buffer date/time
+}
+
+static uint32_t	rega1, stsr1 = 0;
+
+// Handle isolated PPS (via diode) LOR with the Event
+// The diode is needed to block Event pulses getting back to TC0
+// LOR means Logical inclusive OR
+
+void TC6_Handler() {
+
+	// This ISR is connected to the OR of the event and the PPS 
+	// If the TC0 has seen the PPS it sets the flag high
+	// and if its high we are seeing the PPS here, but if the
+	// flag is not set then this is a cosmic ray event.
+
+	if (ppsfl == HIGH) {			// Was ther a PPS ? 
+		ppsfl = LOW;			// Yes so we have seen it here
+		SwapBufs();			// Every PPS swap the read/write buffers
+#if EVT_PIN
+		digitalWrite(EVT_PIN,LOW);	// Not an event
+#endif
+	} else {
+#if EVT_PIN
+		digitalWrite(EVT_PIN,HIGH);	// Event detected
+#endif
+		if (widx < PPS_EVENTS)		// Up to PPS_EVENTS stored per PPS
+			wbuf[widx++] = TC2->TC_CHANNEL[0].TC_RA;
+	}
+#if FLG_PIN	
+	digitalWrite(FLG_PIN,ppsfl);		// Flag out
+#endif
+	rega1 = TC2->TC_CHANNEL[0].TC_RA;	// Read thge RA on channel 1 (PPS period)
+	stsr1 = TC_GetStatus(TC2, 0); 		// Read status clear load bits
+}
+
+// This is the nmea data string from the GPS chip
+
+#define GPS_STRING_LEN 256
+static char gps_string[GPS_STRING_LEN + 1];
+	
+float latitude = 0.0, longitude = 0.0, altitude = 0.0;
+
+// This function is dependent on the GPS chip implementation
+// It should return a date time string as described above
+// So you need to re-implements this for whichever chip you are using
+// Here I am using the addafruit GPS chip
+
+char *GetDateTime() {
+
+	// struct tm toe;		// Time od event
+	// time_t utc;			// UTC Unix time since the epoch
+
+	int i = 0;
+	while (Serial1.available()) {
+		if (i < GPS_STRING_LEN) {
+			gps_string[i++] = (char) Serial1.read();
+			gps_string[i] = 0;
+		} else i++;
+	}
+	if (i >= GPS_STRING_LEN) {
+		sprintf(txt,"Warning:GPS string truncated:%d\n",i);
+		PushTxt(txt);
+	}
+	if (gps.parse(gps_string)) {
+
+		// Calculate the UTC Unix time since the epoch
+
+		// toe.tm_sec   = gps.seconds;
+		// toe.tm_min   = gps.minute;
+		// toe.tm_hour  = gps.hour;
+		// toe.tm_year  = gps.year;
+		// toe.tm_mday  = gps.day;
+		// toe.tm_mon   = gps.month;
+		// toe.tm_isdst = 0;		// No Daylight saving
+		// toe.tm_wday  = 0;	
+		// toe.tm_yday  = 0;
+		
+		// utc = mktime(&toe);		// Convert to time_t Unix time
+
+		// I am sticking to the y/m/d format because of Python float 32/64 bit issues in time_t
+		// Its better to convert to Unix time later from Python
+
+#ifdef RMCGGA	
+		sprintf(wdtm,"yy/mm/dd/%02d/%02d/%02d",
+			gps.hour,gps.minute,gps.seconds);
+
+		altitude  = gps.altitude;	
+#else
+		sprintf(wdtm,"%02d/%02d/%02d/%02d/%02d/%02d",
+			gps.year,gps.month,gps.day,
+			gps.hour,gps.minute,gps.seconds);
+
+		altitude = 0;
+#endif			
+		latitude  = gps.latitudeDegrees;	// Easy place to get location
+		longitude = gps.longitudeDegrees;	// Works well in Google maps
+
+		return rdtm;
+	} else
+		return NULL;
+}
+
+// Implement queue access mechanism for events, each second the user space (loop) copies
+// any events it has read onto the queue
+
+struct EventBuf {
+	char		DateTime[DATE_TIME_LEN];	// The date and time string
+	uint32_t	Frequency;			// The current clock frequency
+	uint32_t	Ticks;				// The number of ticks since the last event or PPS if none
+	uint8_t		Count;				// The number of events since the PPS
+};
+
+typedef struct {
+	uint8_t		Size;				// Current size of the queue
+	uint8_t		RdPtr;				// Read pointer
+	uint8_t		WrPtr;				// Write pointer
+	uint8_t		Missed;				// Missed events counter due to overflow
+	uint8_t		Lock;				// The queue spin lock (not needed here)
+	struct EventBuf	Events[EVENT_QSIZE];		// Queued events 
+} EventQueue;
+
+static EventQueue event_queue;
+
+// Put an event in an EventBuf on the queue, if the queue is full then the oldest event
+// is thrown away and the "missed" event count is incremented
+
+uint8_t PutQueue(struct EventBuf *ebuf) {
+
+	EventQueue *q = &event_queue;
+
+	while(q->Lock) {}; q->Lock = 1;		// Spin lock on queue
+	q->Events[q->WrPtr] = *ebuf;		// Write event to the queue
+	q->WrPtr = (q->WrPtr + 1) % EVENT_QSIZE;// Increment the write pointer
+	if (q->Size < EVENT_QSIZE) q->Size++;	// If we are overwriting old enties that havnt been read
+	else {
+		q->Missed++;					// Say we missed some events
+		q->RdPtr = (q->RdPtr + 1) % EVENT_QSIZE;	// and throw the oldest event away	
+	}
+	q->Lock = 0;
+	return q->Missed;
+}
+
+// Pop an event off the queue, if the queue is empty nothing happens
+// the queue size is zero when the queue is empty, and this is the
+// return value
+
+uint8_t PopQueue(struct EventBuf *ebuf) {	// Points to where the caller wants the event stored
+
+	EventQueue *q = &event_queue;
+
+	while(q->Lock) {}; q->Lock = 1;		// Spin lock on queue
+	if (q->Size) {
+		*ebuf = q->Events[q->RdPtr];
+		q->RdPtr = (q->RdPtr + 1) % EVENT_QSIZE;
+		q->Size--;
+	}
+	q->Lock = 0;
+	return q->Size; 
+}
+
+// Get the size of the queue
+
+uint8_t SzeQueue() {
+
+	EventQueue *q = &event_queue;
+
+	return q->Size;
+}
+ 
+// Initialize the queue
+
+void InitQueue() {
+
+	EventQueue *q = &event_queue;
+
+	q->Lock = 1;
+	q->Size = 0;
+	q->RdPtr = 0;
+	q->WrPtr = 0;
+	q->Missed = 0;
+	q->Lock = 0;
+}
+
+// Arduino setup function, initialize hardware and software
+// This is the first function to be called when the sketch is started
+
+void setup() {
+
+#if FLG_PIN
+	pinMode(FLG_PIN, OUTPUT);	// Pin for the ppsfl flag for debug
+#endif
+#if EVT_PIN
+	pinMode(EVT_PIN, OUTPUT);	// Pin for the cosmic ray event 
+#endif
+#if PPS_PIN
+	pinMode(PPS_PIN, OUTPUT);	// Pin for the PPS (LED pin)
+#endif
+
+	Serial.begin(SERIAL_BAUD_RATE);	// Start the serial line
+	Serial1.begin(GPS_BAUD_RATE);	// and the second
+
+	gps.begin(GPS_BAUD_RATE);	// Chip baud rate
+
+#ifdef RMCGGA
+	gps.sendCommand(PMTK_SET_NMEA_OUTPUT_RMCGGA);	// With altitude but no yy/mm/dd
+#else
+	gps.sendCommand(PMTK_SET_NMEA_OUTPUT_RMCONLY);	// With yy/mm/dd but no altitude
+#endif
+	gps.sendCommand(PMTK_SET_NMEA_UPDATE_1HZ);	// each second
+
+
+	InitQueue();			// Reset queue pointers, missed count, and size
+
+	strcpy(rdtm,"");		// Set initial value for date/time
+	strcpy(wdtm,"");
+
+	htu_ok = htu.begin();
+	bmp_ok = bmp.begin();
+	acl_ok = acl.begin();
+	gyr_ok = gyr.begin();
+	dof_ok = dof.begin();
+	
+	TimersStart();			// Start timers
+}
+
+// These two routines are needed because the Serial.print method prints without using interrupts.
+// Calls to Serial.print block interrupts and use a wait in kernel space causing all ISRs to
+// be blocked and hence we could miss some timer interrupts.
+// To avoid this problem call PushTxt to have stuff delivered to the serial line, PushTxt simply
+// stores your text for future print out by PutChar. The PutChar routine removes one character
+// from the stored text each time its called. By placing a call to PutChar in the outermost loop
+// of the Arduino loop function, then for each loop one character is printed, avoiding blocking
+// of interrupts and vastly improving the loops real time behaviour.
+
+// Copy text to the buffer for future printing
+
+void PushTxt(char *txt) {
+	
+	int i, l = strlen(txt);
+
+	// If this happens there is a programming bug
+ 
+	if (l > TBLEN) { 		// Can't handle more than TBLEN at a time
+		terr = TXT_TOOBIG;	// say error and abort
+		return;
+	}
+
+	// If the buffer is filling up to fast throw it away and return an error
+
+	if ((l + tsze) >= TBLEN) {	// If there is no room in the buffer
+		terr = TXT_OVERFL;	// Buffer overflow
+		
+		// Something is wrong, probably noise on the event input line 
+		// Its probably best to do nothing and suppress output
+
+		//for (i=0; i<l; i++)	// empty enough space to hold the txt
+		//	PutChar();	// so this is a blocking call
+
+		return;			// Simply stop printing when txt comming too fast
+	}
+
+	// Copy the new text onto the ring buffer for later output
+	// from the loop idle function
+
+	for (i=0; i<l; i++) {
+		txtb[txtw] = txt[i];		// Put char in the buffer and
+		txtw = (txtw + 1) % TBLEN;	// get the next write pointer modulo TBLEN
+	}
+	tsze = (tsze + l) % TBLEN;		// new buffer size
+}
+
+// Take the next character from the ring buffer and print it, called from the main loop
+
+void PutChar() {
+	
+	char c[2];			// One character zero terminated string
+
+	if (tsze) {			// If the buffer is not empty
+
+		c[0] = txtb[txtr]; 		// Get the next character from the read pointer
+		c[1] = '\0';			// Build a zero terminated string
+		txtr = (txtr + 1) % TBLEN; 	// Get the next read pointer modulo TBLEN
+		tsze = (tsze - 1) % TBLEN;	// Reduce the buffer size
+		Serial.print(c);		// and print the character
+	}
+}
+
+// Push HTU temperature and humidity from HTU chip
+
+void PushHtu(int flg) {	// If flg is true always push
+
+	double temph = 0.0; 
+	double humid = 0.0;
+
+	if ((flg) || ((htu_ok) && ((ppcnt % humtmp_display_rate) == 0))) {
+		temph = htu.readTemperature();
+		humid = htu.readHumidity();
+		sprintf(txt,"HTU:Tmh:%5.3f:Hum:%4.1f\n",temph,humid);
+		PushTxt(txt);
+	}
+}
+
+// Push BMP temperature and altitude from BMP chip
+
+void PushBmp(int flg) {	// If flg is true always push
+
+	double altib = 0.0;
+	float  tempb = 0.0;
+	float  presr = 0.0;
+	sensors_event_t bmp_event;	// Barrometric pressure event		
+
+	if ((flg) || ((bmp_ok) && ((ppcnt % alttmp_display_rate) == 0))) {
+		bmp.getEvent(&bmp_event);
+		if (bmp_event.pressure) {
+			presr = bmp_event.pressure;
+			bmp.getTemperature(&tempb);
+			altib = bmp.pressureToAltitude((float) SENSORS_PRESSURE_SEALEVELHPA, 
+							presr,tempb);
+			sprintf(txt,"BMP:Tmb:%5.3f:Prs:%5.3f:Alb:%4.1f\n",tempb,presr,altib);
+			PushTxt(txt);
+		}
+	}
+}
+
+void PushGyr(int flg) {	// Push the gyro stuff
+	sensors_event_t gyr_event;
+	sensors_vec_t xyz;
+	
+	if ((flg) || ((gyr_ok) && ((ppcnt % gyrosc_display_rate) == 0))) {
+		gyr.getEvent(&gyr_event);
+
+#define MTES	// Micro Tesla
+#ifdef MTES
+		sprintf(txt,"GYR:Gyx:%f:Gyy:%f:Gyz:%f\n",
+			gyr_event.magnetic.x,
+			gyr_event.magnetic.y,
+			gyr_event.magnetic.z);
+		PushTxt(txt);
+
+#else		// Orientation
+
+		if (dof.magGetOrientation(SENSOR_AXIS_Z, &gyr_event, &xyz)) {
+			sprintf(txt,"GYR:Gyx:%f:Gyy:%f:Gyz:%f\n",xyz.x,xyz.y,xyz.z);
+			PushTxt(txt);
+		}
+#endif
+	}
+}
+
+void PushAcl(int flg) { // Push the accelerometer and compass stuff
+	sensors_event_t acl_event;
+	sensors_vec_t xyz; 
+
+	if ((flg) || ((acl_ok) && ((ppcnt % accelr_display_rate) == 0))) {
+		acl.getEvent(&acl_event);
+
+#define MS2	// Meters per second squared
+#ifdef MS2
+		sprintf(txt,"ACL:Acx:%f:Acy:%f:Acz:%f\n",
+			acl_event.acceleration.x,
+			acl_event.acceleration.y,
+			acl_event.acceleration.z);
+		PushTxt(txt);
+
+#else		// Orientation
+		
+		if (dof.accelGetOrientation(&acl_event, &xyz)) {
+			sprintf(txt,"ACL:Acx:%f:Acy:%f:Acz:%f\n",xyz.x,xyz.y,xyz.z);
+			PushTxt(txt);
+		}
+#endif
+	}
+}
+
+// Push location latitude longitude
+
+void PushLoc(int flg) {
+		
+	if ((flg) || ((ppcnt % latlon_display_rate) == 0)) {
+		sprintf(txt,"LOC:Lat:%f:Lon:%f:Alt:%f\n",latitude,longitude,altitude);
+		PushTxt(txt);
+	}
+}
+
+// Push timing
+
+void PushTim(int flg) {
+
+	if ((flg) || ((ppcnt % frqutc_display_rate) == 0)) {
+		sprintf(txt,"TIM:Upt:%04d:Frq:%07d:Sec:%s\n\n",ppcnt,rega0,rdtm);
+		PushTxt(txt);
+	}			
+}
+
+// Push status
+
+void PushSts(int flg, int qsize, int missed) {
+
+	if ((flg) || ((ppcnt % status_display_rate) == 0)) {
+		sprintf(txt,"STS:Qsz:%02d:Mis:%02d:Ter:%d:Htu:%d:Bmp:%d:Acl:%d:Gyr:%d\n",
+			qsize,missed,terr,htu_ok,bmp_ok,acl_ok,gyr_ok);
+		PushTxt(txt);
+		terr = 0;
+	}
+}
+
+// Push event queue
+
+void PushEvq(int flg, int *qsize, int *missed) {
+		
+	struct EventBuf eb;		// Temporary event buffer
+	double evtm = 0.0;		// Time since last event or PPS in seconds (< 1.0)
+	char stx[16];			// Second text
+	int i;
+
+	// If there are any events waiting in the event read buffer, put them on the queue
+
+	for (i=0; i<ridx; i++) {
+		strncpy(eb.DateTime,rdtm,DATE_TIME_LEN);// Last seconds date/time string 
+		eb.Frequency = rega0;			// Ticks between successive PPS pulses
+		eb.Ticks = rbuf[i];			// Ticks since LAST interrupt! (PPS or Event)
+		eb.Count = i+1;				// Event index 1..PPS_EVENTS in the second
+		*missed = PutQueue(&eb);		// Put buffer on Q, and get missed event count
+	}
+	*qsize = SzeQueue();	
+
+	if (*qsize >= events_display_size) {
+
+		PushTxt("\n");
+		while (PopQueue(&eb)) {	// While ther are events on the queue
+
+			// Calculate the time in seconds of this event in the second
+			// N.B. Ticks are since the last event, or from PPS
+
+			if (eb.Count == 1) evtm = 0.0;				// Start a new second
+			evtm += ((double) eb.Ticks / (double) eb.Frequency);	// Add time since last event
+			sprintf(stx,"%9.7f",evtm);				// It will be 0.something
+
+			// Build string and push it out to the print buffer
+			// The Que:! indicates this is an event to the Python monitor	
+
+			sprintf(txt,"Evt:%01d:Frq:%08d:Tks:%08d:Utc:%s%s:Que:!\n",
+				eb.Count, eb.Frequency, eb.Ticks, eb.DateTime, index(stx,'.'));
+			PushTxt(txt);
+		}
+		PushTxt("\n");
+	}
+}
+
+// Read one input character, we have exactly the same problem with
+// the serial line read as with writing, so we need the same work around
+
+void ReadOneChar() {
+	char c;
+
+	// Suck in all the characters available on the input stream
+	// put as many as will fit in the cmd buffer, and say ready
+
+	if ((irdy == 0) && (Serial.available())) {	// If buffer free
+		c = (char) Serial.read();		// Read one char
+		if (c == '\n') istp = 1;		// Stop on '\n'
+		if ((!istp) && (irdp < (CMDLEN -1))) {
+			cmd[irdp] = c;
+			irdp = irdp + 1;
+			cmd[irdp] = 0;
+		}
+	} else	irdy = 1;
+}
+
+// Implement the command callback functions
+
+void noop(int arg) { };	// That was easy
+
+void help(int arg) {	// Display the help
+	int i;
+	CmdStruct *cms;
+
+	for (i=0; i<CMDS; i++) {
+		cms = &cmd_table[i];
+		sprintf(txt,"%s(%d) - %s\n",cms->Name,cms->Par,cms->Help);
+		PushTxt(txt);
+	}
+}
+
+void htux(int arg) { htu_ok = htu.begin(); }
+void htud(int arg) { humtmp_display_rate = arg; }
+void bmpd(int arg) { alttmp_display_rate = arg; }
+void locd(int arg) { latlon_display_rate = arg; }
+void timd(int arg) { frqutc_display_rate = arg; }
+void stsd(int arg) { status_display_rate = arg; }
+
+void evqt(int arg) { 
+	events_display_size = arg % EVENT_QSIZE; 
+	if (events_display_size == 0)
+		events_display_size = 24;
+}
+
+void acld(int arg) { accelr_display_rate = arg; }
+void gyrd(int arg) { gyrosc_display_rate = arg; }
+void aclt(int arg) { accelr_event_threshold = arg; }
+void aclf(int arg) { accelr_event_cutoff_fr = arg; }
+
+// Look up a command in the command table for the given command string
+// and call it with its single integer parameter
+
+void ParseCmd() {
+	int i, p=0, cl=0;
+	char *cp, *ep;
+	CmdStruct *cms;
+
+	for (i=0; i<CMDS; i++) {
+		cms = &cmd_table[i];
+		cl = strlen(cms->Name);
+		if (strncmp(cms->Name,cmd,cl) == 0) {
+			if ((cms->Par) && (strlen(cmd) > cl)) {
+				cp = &cmd[cl];
+				p = (int) strtoul(cp,&ep,0);
+			}
+			cms->proc(p);
+			break;
+		}
+	}
+}
+
+// This waits for a ready buffer from ReadOneChar. Once ready the buffer is
+// locked until its been seen here
+
+void DoCmd() {
+	if (irdy) {
+		if (irdp) {
+			sprintf(txt,"CMD:%s\n",cmd);
+			PushTxt(txt);
+			ParseCmd();
+		}
+		bzero((void *) cmd, CMDLEN);
+		irdp = 0; irdy = 0; istp = 0;
+	}
+}
+
+// Arduino main loop does all the user space work
+
+void loop() {
+
+	int missed, qsize;	// Queue vars
+
+	if (displ) {				// Displ is set in the PPS ISR, we will reset it here
+#if PPS_PIN		
+		digitalWrite(PPS_PIN,HIGH);	// PPS arrived
+#endif	
+		DoCmd();			// Execute any incomming commands
+	
+		PushEvq(0,&qsize,&missed);	// Push any events
+		PushHtu(0);			// Push HTU temperature and humidity
+		PushBmp(0);			// Push BMP temperature and barrometric altitude
+		PushLoc(0);			// Push location latitude and longitude
+		PushTim(0);			// Push timing data
+		PushGyr(0);			// Push gyro data
+		PushAcl(0);			// Push accelarometer data
+		PushSts(0,qsize,missed);	// Push status
+		GetDateTime();			// Read the next date/time from the GPS chip
+#if PPS_PIN
+		digitalWrite(PPS_PIN,LOW);	// Reset PPS
+#endif
+		displ = 0;			// Clear flag for next PPS				
+	}
+	PutChar();	// Print one character per loop !!!
+	ReadOneChar();	// Get next input command char
+}

@@ -85,7 +85,7 @@
       LSM303_REGISTER_MAG_OUT_Z_L_M             = 0x06,
       LSM303_REGISTER_MAG_OUT_Y_H_M             = 0x07,
       LSM303_REGISTER_MAG_OUT_Y_L_M             = 0x08,
-      LSM303_REGISTER_MAG_SR_REG_Mg             = 0x09,
+      LSM303_REGISTER_MAG_SR_REG_M             = 0x09,
       LSM303_REGISTER_MAG_IRA_REG_M             = 0x0A,
       LSM303_REGISTER_MAG_IRB_REG_M             = 0x0B,
       LSM303_REGISTER_MAG_IRC_REG_M             = 0x0C,
@@ -162,14 +162,14 @@ class Adafruit_LSM303_Accel_Unified : public Adafruit_Sensor
     bool begin(void);
     bool getEvent(sensors_event_t*);
     void getSensor(sensor_t*);
-
-  private:
-    lsm303AccelData _accelData;   // Last read accelerometer data will be available here
-    int32_t         _sensorID;
     
     void write8(byte address, byte reg, byte value);
     byte read8(byte address, byte reg);
     void read(void);
+
+  private:
+    lsm303AccelData _accelData;   // Last read accelerometer data will be available here
+    int32_t         _sensorID;
 };
 
 /* Unified sensor driver for the magnetometer */
@@ -185,15 +185,16 @@ class Adafruit_LSM303_Mag_Unified : public Adafruit_Sensor
     bool getEvent(sensors_event_t*);
     void getSensor(sensor_t*);
 
+    void write8(byte address, byte reg, byte value);
+    byte read8(byte address, byte reg);
+    void read(void);
+
   private:
     lsm303MagGain   _magGain;
     lsm303MagData   _magData;     // Last read magnetometer data will be available here
     int32_t         _sensorID;
     bool            _autoRangeEnabled;
     
-    void write8(byte address, byte reg, byte value);
-    byte read8(byte address, byte reg);
-    void read(void);
 };
 
 #endif

@@ -439,7 +439,7 @@ bool Adafruit_LSM303_Mag_Unified::getEvent(sensors_event_t *event) {
   while(!readingValid)
   {
 
-    uint8_t reg_mg = read8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_SR_REG_Mg);
+    uint8_t reg_mg = read8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_SR_REG_M);
     if (!(reg_mg & 0x1)) {
 			return false;
     }

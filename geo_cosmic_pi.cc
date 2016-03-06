@@ -15,7 +15,7 @@
 
 // Julian Lewis lewis.julian@gmail.com
 
-#define VERS "2016/Feb/24"
+#define VERS "2016/Mar/06"
 
 // In this sketch I am using an Adafruite ultimate GPS breakout which exposes the PPS output
 // The Addafruite Rx is connected to the DUE TX1 (Pin 18) and its Tx to DUE RX1 (Pin 19)
@@ -35,6 +35,7 @@
 // See cosmic_pi.py for more details
 
 #include <time.h>
+#include <Wire.h>
 
 #include "Adafruit_BMP085_U.h"	// Barrometric pressure
 
@@ -51,6 +52,7 @@
 
 #include "Adafruit_L3GD20_U.h"	// Gyroscope
 
+// WARNING: I modified this library 
 #include "Adafruit_LSM303_U.h"	// Accelerometer and magnentometer/compass
 
 #include "Adafruit_10DOF.h"	// 10DOF breakout driver - scale to SI units
@@ -340,6 +342,116 @@ void TC6_Handler() {
 	stsr1 = TC_GetStatus(TC2, 0); 		// Read status clear load bits
 }
 
+// Accelerometer setup
+
+void AclSetup() {
+	uint8_t tmp, val;
+
+	if (!acl_ok) return;
+
+#define LIR1 0x06	// Gyr Latch Int1 bit Data ready
+#define LIR2 0x30	// Acl Latch Int2 bit Data ready
+
+	val = LIR1 | LIR2;
+	acl.write8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_CTRL_REG3_A, val);
+
+#define BDU_FS 0x80	// Block data and scale +-2g
+
+	val = BDU_FS;
+	acl.write8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_CTRL_REG4_A, val);
+
+#define XYZ_HI 0x2A	// Hi values ZHIE YHIE XHIE
+#define AOI_6D 0x00	// 0xC0 would enable 6 directions
+	
+	val = XYZ_HI | AOI_6D;
+	acl.write8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_INT1_CFG_A, val);
+
+	val = accelr_event_threshold & 0x3F;
+	acl.write8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_INT1_THS_A, val);
+
+	attachInterrupt(1,Acl_ISR,RISING);
+}
+
+void GyrSetup() {
+	uint8_t val;
+
+	val = 0;
+	gyr.write8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_CRA_REG_M, val);
+
+#define GAIN 0x80	// +- 4.0 Gauss
+
+	val = GAIN;
+	gyr.write8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_CRB_REG_M, val);
+
+#define MODE 0x01	// Single conversion mode
+
+	val = MODE;
+	gyr.write8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_MR_REG_M, val);
+
+
+	attachInterrupt(0,Gyr_ISR,RISING);
+}
+
+// Accelerometer ISR
+
+static uint32_t accl_icount = 0, accl_flag = 0;
+uint8_t acl_sts = 0;
+uint8_t acl_src = 0;
+int16_t ax=0, ay=0, az=0;
+
+void Acl_ISR() {
+	accl_icount++;
+	accl_flag = 1;
+
+	acl_src = acl.read8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_INT1_SOURCE_A);
+
+#define IA 0x40
+#define ZH 0x20	// Z High
+#define YH 0x08 // Y High
+#define XH 0x02 // X High
+
+	if (acl_src & IA) {
+		if (acl_src & ZH) {
+			az = (acl.read8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_OUT_Z_H_A) << 8)
+			   | (acl.read8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_OUT_Z_L_A) & 0xF);
+		}
+		if (acl_src & YH) {
+			az = (acl.read8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_OUT_Y_H_A) << 8)
+			   | (acl.read8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_OUT_Y_L_A) & 0xF);
+		}
+		if (acl_src & XH) {
+			az = (acl.read8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_OUT_X_H_A) << 8)
+			   | (acl.read8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_OUT_X_L_A) & 0xF);
+		}
+	}	
+	acl_sts = acl.read8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_STATUS_REG_A);
+}
+
+// Gyromag ISR
+
+static uint32_t gyro_icount = 0, gyro_flag = 0;
+uint8_t gyr_sts = 0;
+int16_t gz = 0, gy = 0, gx = 0;
+
+void Gyr_ISR() {
+	gyro_icount++;
+	gyro_flag = 1;
+
+	gyr_sts = gyr.read8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_SR_REG_M);
+
+#define GRDY 0x01	// Data ready
+#define GLCK 0x02	// Locked
+
+	if ((gyr_sts & GLCK) && (gyr_sts & GRDY)) {
+		gz = (gyr.read8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_OUT_Z_H_M) << 8)
+		   | (gyr.read8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_OUT_Z_L_M) & 0xF);
+		gy = (gyr.read8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_OUT_Y_H_M) << 8)
+		   | (gyr.read8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_OUT_Y_L_M) & 0xF);
+		gx = (gyr.read8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_OUT_X_H_M) << 8)
+		   | (gyr.read8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_OUT_X_L_M) & 0xF);
+	} 
+}
+
 // This is the nmea data string from the GPS chip
 
 #define GPS_STRING_LEN 256
@@ -526,6 +638,9 @@ void setup() {
 	acl_ok = acl.begin();
 	gyr_ok = gyr.begin();
 	dof_ok = dof.begin();
+
+	AclSetup();
+	GyrSetup();
 	
 	TimersStart();			// Start timers
 }
@@ -804,8 +919,8 @@ void evqt(int arg) {
 
 void acld(int arg) { accelr_display_rate = arg; }
 void gyrd(int arg) { gyrosc_display_rate = arg; }
-void aclt(int arg) { accelr_event_threshold = arg; }
-void aclf(int arg) { accelr_event_cutoff_fr = arg; }
+void aclt(int arg) { accelr_event_threshold = arg & 0x3F; }
+void aclf(int arg) { accelr_event_cutoff_fr = arg & 0x3F; }
 
 // Look up a command in the command table for the given command string
 // and call it with its single integer parameter

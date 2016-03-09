@@ -15,7 +15,7 @@
 
 // Julian Lewis lewis.julian@gmail.com
 
-#define VERS "2016/Mar/06"
+#define VERS "2016/Mar/09"
 
 // In this sketch I am using an Adafruite ultimate GPS breakout which exposes the PPS output
 // The Addafruite Rx is connected to the DUE TX1 (Pin 18) and its Tx to DUE RX1 (Pin 19)
@@ -50,7 +50,7 @@
 #define GPSECHO true
 #define RMCGGA			// Altitude on, yy/mm/dd off
 
-#include "Adafruit_L3GD20_U.h"	// Gyroscope
+#include "Adafruit_L3GD20_U.h"	// Magoscope
 
 // WARNING: I modified this library 
 #include "Adafruit_LSM303_U.h"	// Accelerometer and magnentometer/compass
@@ -78,6 +78,7 @@
 #define EVT_PIN 12	// Cosmic ray event detected
 #define FLG_PIN 11	// Debug flag
 
+#define ACL_PIN 10	// Accelarometer INT1 interrupt pin
 // Baud rates
 #define SERIAL_BAUD_RATE 9600	// Serial line 
 #define GPS_BAUD_RATE 9600	// GPS and Serial1 line
@@ -93,7 +94,7 @@ boolean			htu_ok = false;			// Chip OK
 Adafruit_BMP085_Unified	bmp = Adafruit_BMP085_Unified(BMPID);	// Barometric pressure
 boolean			bmp_ok = false;
 
-// The 10DOF isn't a chip, its just a utility to convert say gyro values into headings etc
+// The 10DOF isn't a chip, its just a utility to convert say mago values into headings etc
 
 Adafruit_10DOF		dof = Adafruit_10DOF();		// The 10 Degrees-Of-Freedom DOF breakout
 boolean			dof_ok = false;			// board driver, scales units to SI
@@ -103,8 +104,8 @@ Adafruit_LSM303_Accel_Unified acl = Adafruit_LSM303_Accel_Unified(ACLID);	// Acc
 			boolean acl_ok = false;
 
 #define MAGID 30302
-Adafruit_LSM303_Mag_Unified gyr = Adafruit_LSM303_Mag_Unified(MAGID);		// Gyroscope
-boolean			gyr_ok = false;
+Adafruit_LSM303_Mag_Unified mag = Adafruit_LSM303_Mag_Unified(MAGID);		// Magoscope
+boolean			mag_ok = false;
 
 // Control the output data rates by setting defaults, these values can be modified at run time
 // via commands from the serial interface. Some output like position isn't supposed to be changing
@@ -119,12 +120,12 @@ uint32_t frqutc_display_rate = 1;	// Display frequency and UTC time each X secon
 uint32_t status_display_rate = 4;	// Display status (UpTime, QueueSize, MissedEvents, HardwareOK)
 uint32_t events_display_size = 20;	// Display events after recieving X events
 uint32_t accelr_display_rate = 1;	// Display accelarometer x,y,z
-uint32_t gyrosc_display_rate = 12;	// Display gyroscopic data x,y,z
+uint32_t magnot_display_rate = 12;	// Display magnotometer data x,y,z
 
 // Siesmic event trigger parameters
 
-uint32_t accelr_event_threshold = 1;	// Trigger level for siesmic events
-uint32_t accelr_event_cutoff_fr = 20;	// Siesmic event cutoff frequency
+uint32_t accelr_event_threshold = 2;	// Trigger level for siesmic events in milli-g
+uint32_t accelr_event_cutoff_fr = 30;	// Siesmic event cutoff frequency
 
 // Commands can be sent over the serial line to configure the display rates or whatever
 
@@ -140,7 +141,7 @@ typedef enum {
 	EVQT,	// Event queue dump threshold
 
 	ACLD,	// Accelerometer display rate
-	GYRD,	// Gyromagnetometer display rate
+	MAGD,	// Magnetometer display rate
 
 	ACLT,	// Accelerometer event threshold
 	ACLF,	// Accelerometer event max frequency
@@ -165,7 +166,7 @@ void timd(int arg);
 void stsd(int arg);
 void evqt(int arg);
 void acld(int arg);
-void gyrd(int arg);
+void magd(int arg);
 void aclt(int arg);
 void aclf(int arg);
 
@@ -180,7 +181,7 @@ CmdStruct cmd_table[CMDS] = {
 	{ STSD, stsd, "STSD", "Status info display rate", 1 },
 	{ EVQT, evqt, "EVQT", "Event queue dump threshold", 1 },
 	{ ACLD, acld, "ACLD", "Accelerometer display rate", 1 },
-	{ GYRD, gyrd, "GYRD", "Gyromagnatometer display rate", 1 },
+	{ MAGD, magd, "MAGD", "Magnatometer display rate", 1 },
 	{ ACLT, aclt, "ACLT", "Accelerometer event trigger threshold", 1 },
 	{ ACLF, aclf, "ACLF", "Accelerometer event max frequency cutoff", 1 }
 };
@@ -343,14 +344,36 @@ void TC6_Handler() {
 }
 
 // Accelerometer setup
+// These settings come from reading the LSM303DLH doccumentation, which is more than the
+// author of the Adda_fruit library did. It is a badly written load of rubbish, I have
+// been forced to correct some bugs and export some private methods. It was a touch and go
+// descision wether to just not use the library at all and do it all here. For now I will
+// use it with the bug corrections.
 
+// The following setup makes the accelarometer compare G-forces against a threshold value, and
+// latch the output registers until they are read. To avoid excessive interrupt rates the high
+// pass filter has been configured to keep the frequency low. 
+ 
 void AclSetup() {
 	uint8_t tmp, val;
 
 	if (!acl_ok) return;
 
-#define LIR1 0x06	// Gyr Latch Int1 bit Data ready
-#define LIR2 0x30	// Acl Latch Int2 bit Data ready
+#define PMD 0x20	// Normal power mode (PM0=1,PM1=0:Normal)
+#define DRT 0x00	// Data rate 50 Hz (0x08 = 100Hz)
+#define AEN 0x07	// XYZ Enabled
+
+	val = PMD | DRT | AEN;
+	acl.write8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_CTRL_REG1_A, val);
+
+#define HPE1 0x04	// High pass filter Int 1 on
+#define HPCF 0x03       // High pass cut off frequency
+
+	val = HPE1 | HPCF;
+	acl.write8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_CTRL_REG2_A, val);
+
+#define LIR1 0x06	// Latch Int1 bit Data ready
+#define LIR2 0x00	// Latch Int2 bit Data ready (0x20 Latch On)
 
 	val = LIR1 | LIR2;
 	acl.write8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_CTRL_REG3_A, val);
@@ -366,90 +389,76 @@ void AclSetup() {
 	val = XYZ_HI | AOI_6D;
 	acl.write8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_INT1_CFG_A, val);
 
-	val = accelr_event_threshold & 0x3F;
+	val = accelr_event_threshold & 0x7F;
 	acl.write8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_INT1_THS_A, val);
 
-	attachInterrupt(1,Acl_ISR,RISING);
+	attachInterrupt(digitalPinToInterrupt(ACL_PIN),Acl_ISR,CHANGE);
 }
 
-void GyrSetup() {
+// Magnatometer setup, again the Adda_fruit library was inadequate. 
+
+void MagSetup() {
 	uint8_t val;
 
+	if (!mag_ok) return;
+
 	val = 0;
-	gyr.write8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_CRA_REG_M, val);
+	mag.write8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_CRA_REG_M, val);
 
 #define GAIN 0x80	// +- 4.0 Gauss
 
 	val = GAIN;
-	gyr.write8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_CRB_REG_M, val);
+	mag.write8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_CRB_REG_M, val);
 
 #define MODE 0x01	// Single conversion mode
 
 	val = MODE;
-	gyr.write8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_MR_REG_M, val);
-
-
-	attachInterrupt(0,Gyr_ISR,RISING);
+	mag.write8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_MR_REG_M, val);
 }
 
-// Accelerometer ISR
+// This Accelerometer ISR (Never gets called ???)
+// I see no signal with my scope, the interrupt is configured correctly
+// But there is no INT1 output, however the SOURCE contains the correct
+// value and the IA bit is active, so there should be an interrupt.
+// I can partially overcome the problem by reading the INT1 source in
+// the main loop. See AclReadStatus below.  
 
 static uint32_t accl_icount = 0, accl_flag = 0;
-uint8_t acl_sts = 0;
-uint8_t acl_src = 0;
-int16_t ax=0, ay=0, az=0;
 
 void Acl_ISR() {
+
+#define IA 0x40
+
 	accl_icount++;
-	accl_flag = 1;
+	accl_flag = AclReadStatus();
+}
+
+// Read accelerometer status
+// This just reads the interrupt source INT1 and the overrun status.
+// It returns 1 bit for X, Y, or Z (0..7) if the threshold value is exceeded.
+// This determins if the board is being shaken - Earth quake - or other reason
+
+static uint8_t acl_sts = 0;
+static uint8_t acl_src = 0;
+
+uint8_t AclReadStatus() {
+	uint8_t rval;
 
 	acl_src = acl.read8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_INT1_SOURCE_A);
 
-#define IA 0x40
 #define ZH 0x20	// Z High
 #define YH 0x08 // Y High
 #define XH 0x02 // X High
 
+	rval = 0;
 	if (acl_src & IA) {
-		if (acl_src & ZH) {
-			az = (acl.read8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_OUT_Z_H_A) << 8)
-			   | (acl.read8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_OUT_Z_L_A) & 0xF);
-		}
-		if (acl_src & YH) {
-			az = (acl.read8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_OUT_Y_H_A) << 8)
-			   | (acl.read8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_OUT_Y_L_A) & 0xF);
-		}
-		if (acl_src & XH) {
-			az = (acl.read8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_OUT_X_H_A) << 8)
-			   | (acl.read8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_OUT_X_L_A) & 0xF);
-		}
-	}	
-	acl_sts = acl.read8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_STATUS_REG_A);
-}
-
-// Gyromag ISR
-
-static uint32_t gyro_icount = 0, gyro_flag = 0;
-uint8_t gyr_sts = 0;
-int16_t gz = 0, gy = 0, gx = 0;
-
-void Gyr_ISR() {
-	gyro_icount++;
-	gyro_flag = 1;
-
-	gyr_sts = gyr.read8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_SR_REG_M);
-
-#define GRDY 0x01	// Data ready
-#define GLCK 0x02	// Locked
-
-	if ((gyr_sts & GLCK) && (gyr_sts & GRDY)) {
-		gz = (gyr.read8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_OUT_Z_H_M) << 8)
-		   | (gyr.read8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_OUT_Z_L_M) & 0xF);
-		gy = (gyr.read8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_OUT_Y_H_M) << 8)
-		   | (gyr.read8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_OUT_Y_L_M) & 0xF);
-		gx = (gyr.read8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_OUT_X_H_M) << 8)
-		   | (gyr.read8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_OUT_X_L_M) & 0xF);
-	} 
+		if (acl_src & ZH) rval |= 4;
+		if (acl_src & YH) rval |= 2;
+		if (acl_src & XH) rval |= 1;
+	}
+	if (rval)	
+		acl_sts = acl.read8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_STATUS_REG_A);
+	return rval;
 }
 
 // This is the nmea data string from the GPS chip
@@ -636,11 +645,11 @@ void setup() {
 	htu_ok = htu.begin();
 	bmp_ok = bmp.begin();
 	acl_ok = acl.begin();
-	gyr_ok = gyr.begin();
+	mag_ok = mag.begin();
 	dof_ok = dof.begin();
 
 	AclSetup();
-	GyrSetup();
+	MagSetup();
 	
 	TimersStart();			// Start timers
 }
@@ -744,25 +753,25 @@ void PushBmp(int flg) {	// If flg is true always push
 	}
 }
 
-void PushGyr(int flg) {	// Push the gyro stuff
-	sensors_event_t gyr_event;
+void PushMag(int flg) {	// Push the mago stuff
+	sensors_event_t mag_event;
 	sensors_vec_t xyz;
 	
-	if ((flg) || ((gyr_ok) && ((ppcnt % gyrosc_display_rate) == 0))) {
-		gyr.getEvent(&gyr_event);
+	if ((flg) || ((mag_ok) && ((ppcnt % magnot_display_rate) == 0))) {
+		mag.getEvent(&mag_event);
 
-#define MTES	// Micro Tesla
-#ifdef MTES
-		sprintf(txt,"GYR:Gyx:%f:Gyy:%f:Gyz:%f\n",
-			gyr_event.magnetic.x,
-			gyr_event.magnetic.y,
-			gyr_event.magnetic.z);
+		// Micro Tesla
+
+		sprintf(txt,"MAG:Mgx:%f:Mgy:%f:Mgz:%f\n",
+			mag_event.magnetic.x,
+			mag_event.magnetic.y,
+			mag_event.magnetic.z);
 		PushTxt(txt);
 
-#else		// Orientation
-
-		if (dof.magGetOrientation(SENSOR_AXIS_Z, &gyr_event, &xyz)) {
-			sprintf(txt,"GYR:Gyx:%f:Gyy:%f:Gyz:%f\n",xyz.x,xyz.y,xyz.z);
+		// Orientation
+#ifdef ORIENTATION
+		if (dof.magGetOrientation(SENSOR_AXIS_Z, &mag_event, &xyz)) {
+			sprintf(txt,"MAG:Mox:%f:Moy:%f:Moz:%f\n",xyz.x,xyz.y,xyz.z);
 			PushTxt(txt);
 		}
 #endif
@@ -776,18 +785,19 @@ void PushAcl(int flg) { // Push the accelerometer and compass stuff
 	if ((flg) || ((acl_ok) && ((ppcnt % accelr_display_rate) == 0))) {
 		acl.getEvent(&acl_event);
 
-#define MS2	// Meters per second squared
-#ifdef MS2
-		sprintf(txt,"ACL:Acx:%f:Acy:%f:Acz:%f\n",
+		// Meters per second squared
+
+		sprintf(txt,"ACL:Acx:%f:Acy:%f:Acz:%f:Acs:%d\n",
 			acl_event.acceleration.x,
 			acl_event.acceleration.y,
-			acl_event.acceleration.z);
+			acl_event.acceleration.z,
+			AclReadStatus());	// If non zero we have an event
 		PushTxt(txt);
 
-#else		// Orientation
-		
+		// Orientation
+#ifdef ORIENTATION		
 		if (dof.accelGetOrientation(&acl_event, &xyz)) {
-			sprintf(txt,"ACL:Acx:%f:Acy:%f:Acz:%f\n",xyz.x,xyz.y,xyz.z);
+			sprintf(txt,"ACL:Aox:%f:Aoy:%f:Aoz:%f\n",xyz.x,xyz.y,xyz.z);
 			PushTxt(txt);
 		}
 #endif
@@ -817,10 +827,11 @@ void PushTim(int flg) {
 // Push status
 
 void PushSts(int flg, int qsize, int missed) {
+uint8_t res;
 
 	if ((flg) || ((ppcnt % status_display_rate) == 0)) {
-		sprintf(txt,"STS:Qsz:%02d:Mis:%02d:Ter:%d:Htu:%d:Bmp:%d:Acl:%d:Gyr:%d\n",
-			qsize,missed,terr,htu_ok,bmp_ok,acl_ok,gyr_ok);
+		sprintf(txt,"STS:Qsz:%02d:Mis:%02d:Ter:%d:Htu:%d:Bmp:%d:Acl:%d:Mag:%d\n",
+			qsize,missed,terr,htu_ok,bmp_ok,acl_ok,mag_ok);
 		PushTxt(txt);
 		terr = 0;
 	}
@@ -918,8 +929,15 @@ void evqt(int arg) {
 }
 
 void acld(int arg) { accelr_display_rate = arg; }
-void gyrd(int arg) { gyrosc_display_rate = arg; }
-void aclt(int arg) { accelr_event_threshold = arg & 0x3F; }
+void magd(int arg) { magnot_display_rate = arg; }
+
+void aclt(int arg) { 
+	uint8_t val = 0;
+	accelr_event_threshold = arg & 0x7F; 
+	val = accelr_event_threshold;
+	acl.write8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_INT1_THS_A, val);
+}
+
 void aclf(int arg) { accelr_event_cutoff_fr = arg & 0x3F; }
 
 // Look up a command in the command table for the given command string
@@ -976,7 +994,7 @@ void loop() {
 		PushBmp(0);			// Push BMP temperature and barrometric altitude
 		PushLoc(0);			// Push location latitude and longitude
 		PushTim(0);			// Push timing data
-		PushGyr(0);			// Push gyro data
+		PushMag(0);			// Push mago data
 		PushAcl(0);			// Push accelarometer data
 		PushSts(0,qsize,missed);	// Push status
 		GetDateTime();			// Read the next date/time from the GPS chip

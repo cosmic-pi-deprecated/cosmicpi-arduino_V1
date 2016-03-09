@@ -345,6 +345,8 @@ bool Adafruit_LSM303_Mag_Unified::begin()
   // Enable the magnetometer
   write8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_MR_REG_M, 0x00);
 
+#ifdef RUBBISH
+
   // LSM303DLHC has no WHOAMI register so read CRA_REG_M to check
   // the default value (0b00010000/0x10)
   uint8_t reg1_a = read8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_CRA_REG_M);
@@ -357,6 +359,18 @@ bool Adafruit_LSM303_Mag_Unified::begin()
   setMagGain(LSM303_MAGGAIN_1_3);
 
   return true;
+
+#else
+	uint8_t ira=0, irb=0, irc=0;
+	ira = read8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_IRA_REG_M);
+	irb = read8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_IRB_REG_M);
+	irc = read8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_IRC_REG_M);
+	if ((ira = 0x48) && (irb == 0x34) && (irc == 0x33)) {
+		setMagGain(LSM303_MAGGAIN_1_3);
+		return true;
+	}
+	return false;
+#endif
 }
 
 /**************************************************************************/

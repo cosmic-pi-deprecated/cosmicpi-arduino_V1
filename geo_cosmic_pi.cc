@@ -7,11 +7,8 @@
 // line for processing. 
 
 // In this version interrupts come from the accelerometer chip, if the acceleration exceeds
-// the threshold (in meters/sec/sec) in any direction the chip interrupts. These events are
-// counted each second, if the count per second is less than the cutoff frequency, typically
-// between 15 to 32 Hertz, then its considdered to be a siesmic event. In this case the siesmic
-// event is put on the output event queue for later corrolation with any cosmic or other
-// high energy events depending on the detector being used.
+// the threshold (in meters/sec/sec) in any direction the chip interrupts and its logged to
+// the serial output stream.
 
 // Julian Lewis lewis.julian@gmail.com
 
@@ -78,7 +75,9 @@
 #define EVT_PIN 12	// Cosmic ray event detected
 #define FLG_PIN 11	// Debug flag
 
+// For siesmic event input
 #define ACL_PIN 10	// Accelarometer INT1 interrupt pin
+
 // Baud rates
 #define SERIAL_BAUD_RATE 9600	// Serial line 
 #define GPS_BAUD_RATE 9600	// GPS and Serial1 line
@@ -168,7 +167,6 @@ void evqt(int arg);
 void acld(int arg);
 void magd(int arg);
 void aclt(int arg);
-void aclf(int arg);
 
 CmdStruct cmd_table[CMDS] = {
 	{ NOOP, noop, "NOOP", "Do nothing", 0 },
@@ -182,8 +180,7 @@ CmdStruct cmd_table[CMDS] = {
 	{ EVQT, evqt, "EVQT", "Event queue dump threshold", 1 },
 	{ ACLD, acld, "ACLD", "Accelerometer display rate", 1 },
 	{ MAGD, magd, "MAGD", "Magnatometer display rate", 1 },
-	{ ACLT, aclt, "ACLT", "Accelerometer event trigger threshold", 1 },
-	{ ACLF, aclf, "ACLF", "Accelerometer event max frequency cutoff", 1 }
+	{ ACLT, aclt, "ACLT", "Accelerometer event trigger threshold", 1 }
 };
 
 #define CMDLEN 32
@@ -353,6 +350,9 @@ void TC6_Handler() {
 // The following setup makes the accelarometer compare G-forces against a threshold value, and
 // latch the output registers until they are read. To avoid excessive interrupt rates the high
 // pass filter has been configured to keep the frequency low. 
+
+// N.B. It took me a day to find out that I needed to use Active low and Open drain on the INT1
+// signal, otherwise the Adda_fruit module wont pass it on. Beware !!!
  
 void AclSetup() {
 	uint8_t tmp, val;
@@ -374,8 +374,9 @@ void AclSetup() {
 
 #define LIR1 0x06	// Latch Int1 bit Data ready
 #define LIR2 0x00	// Latch Int2 bit Data ready (0x20 Latch On)
+#define IHL_OD 0xC0	// Interrupt active low, open drain (Argh !!!)
 
-	val = LIR1 | LIR2;
+	val = LIR1 | LIR2 | IHL_OD;
 	acl.write8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_CTRL_REG3_A, val);
 
 #define BDU_FS 0x80	// Block data and scale +-2g
@@ -416,12 +417,7 @@ void MagSetup() {
 	mag.write8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_MR_REG_M, val);
 }
 
-// This Accelerometer ISR (Never gets called ???)
-// I see no signal with my scope, the interrupt is configured correctly
-// But there is no INT1 output, however the SOURCE contains the correct
-// value and the IA bit is active, so there should be an interrupt.
-// I can partially overcome the problem by reading the INT1 source in
-// the main loop. See AclReadStatus below.  
+// This Accelerometer ISR
 
 static uint32_t accl_icount = 0, accl_flag = 0;
 
@@ -753,6 +749,32 @@ void PushBmp(int flg) {	// If flg is true always push
 	}
 }
 
+// When the detector is shaken this outputs the (vcn) vibration count the (vax) axis bits
+// the latched acceleration values for all 3 axis, the time it happened and the field
+// strengths in all three axis. From all this information the Python monitor will be able
+// to work out whats going on, sustained vibration or whatever. 
+
+void PushShaken(int flg) { // Push an event when shake detected => Earth Quake 
+
+uint32_t old_icount = 0;
+
+	if ((flg) || (accl_flag)) {
+		if (accl_icount != old_icount) {
+			old_icount = accl_icount;
+			sprintf(txt,"VIB:vax:%d:vcn:%d\n",accl_flag,accl_icount);
+			PushTxt(txt);
+			PushTxt("VIB:");
+			PushTim(1);
+			PushTxt("VIB:");
+			PushAcl(1);		// This is the real latched value
+			PushTxt("VIB:");
+			PushMag(1);
+		}
+	}
+}
+
+// Push the magnetic field strengths in all three axis in micro tesla (gauss)
+
 void PushMag(int flg) {	// Push the mago stuff
 	sensors_event_t mag_event;
 	sensors_vec_t xyz;
@@ -778,6 +800,8 @@ void PushMag(int flg) {	// Push the mago stuff
 	}
 }
 
+// Push the acceleration values in xyz in meters per sec squared
+
 void PushAcl(int flg) { // Push the accelerometer and compass stuff
 	sensors_event_t acl_event;
 	sensors_vec_t xyz; 
@@ -787,11 +811,10 @@ void PushAcl(int flg) { // Push the accelerometer and compass stuff
 
 		// Meters per second squared
 
-		sprintf(txt,"ACL:Acx:%f:Acy:%f:Acz:%f:Acs:%d\n",
+		sprintf(txt,"ACL:Acx:%f:Acy:%f:Acz:%f\n",
 			acl_event.acceleration.x,
 			acl_event.acceleration.y,
-			acl_event.acceleration.z,
-			AclReadStatus());	// If non zero we have an event
+			acl_event.acceleration.z);
 		PushTxt(txt);
 
 		// Orientation
@@ -804,7 +827,7 @@ void PushAcl(int flg) { // Push the accelerometer and compass stuff
 	}
 }
 
-// Push location latitude longitude
+// Push location latitude longitude in degrees so that google maps gets it correct
 
 void PushLoc(int flg) {
 		
@@ -938,8 +961,6 @@ void aclt(int arg) {
 	acl.write8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_INT1_THS_A, val);
 }
 
-void aclf(int arg) { accelr_event_cutoff_fr = arg & 0x3F; }
-
 // Look up a command in the command table for the given command string
 // and call it with its single integer parameter
 
@@ -988,7 +1009,7 @@ void loop() {
 		digitalWrite(PPS_PIN,HIGH);	// PPS arrived
 #endif	
 		DoCmd();			// Execute any incomming commands
-	
+		PushShaken(0);			// Check for an Earth Quake
 		PushEvq(0,&qsize,&missed);	// Push any events
 		PushHtu(0);			// Push HTU temperature and humidity
 		PushBmp(0);			// Push BMP temperature and barrometric altitude

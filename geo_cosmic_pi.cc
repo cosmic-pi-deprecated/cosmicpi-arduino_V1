@@ -22,14 +22,67 @@
 
 // The output from this program is processed by a Python monitor on the other end of the
 // serial line. There has to be mutual aggreement between this program and the monitor.
-// To make this as simple as possible I use the Python string.split() on the ":" character
-// Thus all fields to be processed have field name, and optional field value seperators as ":"
-// Hence "field:value:field:value:field........:value"
-// Also for date and time values the split is on "/"
-// Hence "yy/mm/dd/hh/mm/ss"
-// Python breaks up these strings to build whatever event message format you want
-// For example "{field,value ....} in whatever order you want, thats not defined here
-// See cosmic_pi.py for more details
+
+// Output strings
+// All fields in all output strings are seperated by the ':' character except date time string
+// fields which are seperated by the '/' character. This makes breaking up the output strings
+// very simple.
+// Each string begins with a 3 upper case character record name followed by field name/value pairs.
+// Each name value contains one upper case character followed by two lower case characters.
+// Record names and field names are unique.
+// The values are either integers following the standard radix syntax or floats. So 0x10 is
+// hexadecimal 10 and 10 is decimal 10. No other radix is used.
+
+// For example
+//      RNM:Rnm:123:Xyx:0x44:Zyx:13.88:Val:-68
+//      Denotes record named RNM has fields [Rnm, Xyz, Zyx, Val] with values [123,0x44,13.88,-68] respectivley
+
+// Here is the list of all records where 'f' denotes float and 'i' denotes integer ...
+// HTU:Tmh:f:Hum:f
+// HTU21DF record containing Tmh:temperature in C Hum:humidity percent
+//
+// BMP:Tmb:f:Prs:f:Alb:f
+// BMP085 record containing Tmb:temperature Prs:pressure Alb:Barrometric altitude
+//
+// VIB:Vax:i:Vcn:i
+// Vibration record containing Vax:3 bit xyz direction mask Vcn:vibration count
+// This record is always immediatly followed by 3 more records, TIM, ACL, and MAG
+//
+// MAG:Mgx:f:Mgy:f:Mgz:f
+// LSM303DLH magnatometer record containing Mgx:the x field strength Mgy:the y field Mgz:ther z field
+//
+// MAG:Mox:f:Moy:f:Moz:f
+// LSM303DLH magnatometer record containing Mox:x orientation Moy:y orientation Moz:z orientation
+// This record is optional, by default its turned off (it can always be calculated later - Python)
+//
+// ACL:Acx:f:Acy:f:Acz:f
+// LSM303DLH acclerometer record containing Acx:the x acceleration Acy:the y acceleration Acz:the z acceleration
+// If this record immediatly follows a VIB record the fields were hardware latched when the g threshold was exceeded
+//
+// ACL:Aox:f:Aoy:f:Aoz:f
+// LSM303DLH accelerometer record containing Aox:x orientation Aoy:y orientation Aoz:z orientation
+// This record is optional, by default its turned off (it can always be calculated later - Python)
+//
+// LOC:Lat:f:Lon:f:Alt:f
+// GPS location record containing Lat:latitude in degrees Lon:longitude in degrees Alt:altitude in meters
+//
+// TIM:Upt:i:Frq:i:Sec:yy/mm/dd/hr/mn/sc
+// Time record containing Upt:up time seconds Frq:counter frequency Sec:time string
+//
+// STS:Qsz:i:Mis:%i:Ter:i:Htu:i:Bmp:i:Acl:i:Mag:i
+// Status record containing Qsz:events on queue Mis:missed events Ter:buffer error Htu:status Bmp:status Acl:status Mag:status
+//
+// EVT:Evt:i:Frq:i:Tks:i:Etm:hh/mn/sc.sssss
+// Event record containing Evt:event number in second Frq:timer frequency Tks:ticks since last event in second Etm:event time stamp to 100ns
+
+// N.B. These records pass the data to a python monitor over the serial line. Python has awsome string handling and looks them up in
+// associative arrays to build records of any arbitary format you want. So this is only the start of the story of record processing.
+// N.B. Also some of these records are sent out at regular intervals and or when an event occurs.
+
+// This program also accepts commands sent to it on the serial line.
+// When a command arrives it is immediatly executed. Each command has name and value.
+// Each command name contains 4 upper case characters and an optional integer value.
+// See below for the complete list of possible commands.
 
 #include <time.h>
 #include <Wire.h>
@@ -49,7 +102,7 @@
 
 #include "Adafruit_L3GD20_U.h"	// Magoscope
 
-// WARNING: I modified this library 
+// WARNING: I had to modify this library, its no longer standard 
 #include "Adafruit_LSM303_U.h"	// Accelerometer and magnentometer/compass
 
 #include "Adafruit_10DOF.h"	// 10DOF breakout driver - scale to SI units
@@ -117,9 +170,10 @@ uint32_t humtmp_display_rate = 12;	// Display humidity and HTU temperature each 
 uint32_t alttmp_display_rate = 12;	// Display altitude and BMP temperature each X seconds
 uint32_t frqutc_display_rate = 1;	// Display frequency and UTC time each X seconds
 uint32_t status_display_rate = 4;	// Display status (UpTime, QueueSize, MissedEvents, HardwareOK)
-uint32_t events_display_size = 20;	// Display events after recieving X events
 uint32_t accelr_display_rate = 1;	// Display accelarometer x,y,z
 uint32_t magnot_display_rate = 12;	// Display magnotometer data x,y,z
+
+uint32_t events_display_size = 20;	// Display events after recieving X events
 
 // Siesmic event trigger parameters
 
@@ -143,7 +197,6 @@ typedef enum {
 	MAGD,	// Magnetometer display rate
 
 	ACLT,	// Accelerometer event threshold
-	ACLF,	// Accelerometer event max frequency
 
 	CMDS };	// Command count
 
@@ -193,7 +246,7 @@ static uint32_t txtw = 0, txtr = 0, 	// Write and Read indexes
 
 typedef enum { TXT_NOERR=0, TXT_TOOBIG=1, TXT_OVERFL=2 } TxtErr;
 
-#define TXTLEN 132
+#define TXTLEN 256
 static char txt[TXTLEN];		// For writing to serial	
 	 
 // Initialize the timer chips to measure time between the PPS pulses and the EVENT pulse
@@ -253,6 +306,8 @@ void TimersStart() {
 		      PIO_PC25B_TIOA6,	// D5 Input
 		      PIO_DEFAULT);
 }
+
+// Timer chip interrupt handlers try to get time stamps to within 4 system clock ticks
 
 static uint32_t displ = 0;	// Display values in loop
 
@@ -374,6 +429,7 @@ void AclSetup() {
 
 #define LIR1 0x06	// Latch Int1 bit Data ready
 #define LIR2 0x00	// Latch Int2 bit Data ready (0x20 Latch On)
+
 #define IHL_OD 0xC0	// Interrupt active low, open drain (Argh !!!)
 
 	val = LIR1 | LIR2 | IHL_OD;
@@ -392,6 +448,9 @@ void AclSetup() {
 
 	val = accelr_event_threshold & 0x7F;
 	acl.write8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_INT1_THS_A, val);
+
+	// The chip make very wide pulses (100ms), the values on the rising and
+	// falling edges are different !
 
 	attachInterrupt(digitalPinToInterrupt(ACL_PIN),Acl_ISR,CHANGE);
 }
@@ -471,9 +530,6 @@ float latitude = 0.0, longitude = 0.0, altitude = 0.0;
 
 char *GetDateTime() {
 
-	// struct tm toe;		// Time od event
-	// time_t utc;			// UTC Unix time since the epoch
-
 	int i = 0;
 	while (Serial1.available()) {
 		if (i < GPS_STRING_LEN) {
@@ -487,24 +543,12 @@ char *GetDateTime() {
 	}
 	if (gps.parse(gps_string)) {
 
-		// Calculate the UTC Unix time since the epoch
-
-		// toe.tm_sec   = gps.seconds;
-		// toe.tm_min   = gps.minute;
-		// toe.tm_hour  = gps.hour;
-		// toe.tm_year  = gps.year;
-		// toe.tm_mday  = gps.day;
-		// toe.tm_mon   = gps.month;
-		// toe.tm_isdst = 0;		// No Daylight saving
-		// toe.tm_wday  = 0;	
-		// toe.tm_yday  = 0;
-		
-		// utc = mktime(&toe);		// Convert to time_t Unix time
-
-		// I am sticking to the y/m/d format because of Python float 32/64 bit issues in time_t
-		// Its better to convert to Unix time later from Python
-
 #ifdef RMCGGA	
+		// I choose RMCGGA by default, and get the altitude but no date.
+		// Its easy to get the date once the records arrive at the Python end.
+		// The GPS altitude is far more accurate than the barrometric altitude.
+		// Warning: The syntax can not be changed, Python splits on '/'
+
 		sprintf(wdtm,"yy/mm/dd/%02d/%02d/%02d",
 			gps.hour,gps.minute,gps.seconds);
 
@@ -676,13 +720,6 @@ void PushTxt(char *txt) {
 
 	if ((l + tsze) >= TBLEN) {	// If there is no room in the buffer
 		terr = TXT_OVERFL;	// Buffer overflow
-		
-		// Something is wrong, probably noise on the event input line 
-		// Its probably best to do nothing and suppress output
-
-		//for (i=0; i<l; i++)	// empty enough space to hold the txt
-		//	PutChar();	// so this is a blocking call
-
 		return;			// Simply stop printing when txt comming too fast
 	}
 
@@ -761,13 +798,10 @@ uint32_t old_icount = 0;
 	if ((flg) || (accl_flag)) {
 		if (accl_icount != old_icount) {
 			old_icount = accl_icount;
-			sprintf(txt,"VIB:vax:%d:vcn:%d\n",accl_flag,accl_icount);
+			sprintf(txt,"VIB:Vax:%d:Vcn:%d\n",accl_flag,accl_icount);
 			PushTxt(txt);
-			PushTxt("VIB:");
 			PushTim(1);
-			PushTxt("VIB:");
 			PushAcl(1);		// This is the real latched value
-			PushTxt("VIB:");
 			PushMag(1);
 		}
 	}
@@ -790,7 +824,7 @@ void PushMag(int flg) {	// Push the mago stuff
 			mag_event.magnetic.z);
 		PushTxt(txt);
 
-		// Orientation
+		// Orientation (Easy to calculate later in Python - dont waste resources)
 #ifdef ORIENTATION
 		if (dof.magGetOrientation(SENSOR_AXIS_Z, &mag_event, &xyz)) {
 			sprintf(txt,"MAG:Mox:%f:Moy:%f:Moz:%f\n",xyz.x,xyz.y,xyz.z);
@@ -817,7 +851,7 @@ void PushAcl(int flg) { // Push the accelerometer and compass stuff
 			acl_event.acceleration.z);
 		PushTxt(txt);
 
-		// Orientation
+		// Orientation (Easy to calculate later in Python - dont waste resources)
 #ifdef ORIENTATION		
 		if (dof.accelGetOrientation(&acl_event, &xyz)) {
 			sprintf(txt,"ACL:Aox:%f:Aoy:%f:Aoz:%f\n",xyz.x,xyz.y,xyz.z);
@@ -842,7 +876,7 @@ void PushLoc(int flg) {
 void PushTim(int flg) {
 
 	if ((flg) || ((ppcnt % frqutc_display_rate) == 0)) {
-		sprintf(txt,"TIM:Upt:%04d:Frq:%07d:Sec:%s\n\n",ppcnt,rega0,rdtm);
+		sprintf(txt,"TIM:Upt:%04d:Frq:%07d:Sec:%s\n",ppcnt,rega0,rdtm);
 		PushTxt(txt);
 	}			
 }
@@ -895,7 +929,7 @@ void PushEvq(int flg, int *qsize, int *missed) {
 			// Build string and push it out to the print buffer
 			// The Que:! indicates this is an event to the Python monitor	
 
-			sprintf(txt,"Evt:%01d:Frq:%08d:Tks:%08d:Utc:%s%s:Que:!\n",
+			sprintf(txt,"EVT:Evt:%01d:Frq:%08d:Tks:%08d:Etm:%s%s\n",
 				eb.Count, eb.Frequency, eb.Ticks, eb.DateTime, index(stx,'.'));
 			PushTxt(txt);
 		}

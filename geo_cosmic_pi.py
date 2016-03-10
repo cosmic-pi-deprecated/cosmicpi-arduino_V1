@@ -2,7 +2,7 @@
 #	coding: utf8
 
 """
-Talk to the CosmicPi Arduino DUE accross USB
+Talk to the CosmicPi Arduino DUE accross the serial USB link
 This program has four main functions
 1) Build event messages and send them to a server
 2) Perform diagnostics and monitoring
@@ -13,7 +13,7 @@ Typing the '>' character turns on command input
 
 julian.lewis lewis.julian@gmail.com 23/Feb/2016
 
-Added support for gyro and accelerometer chips
+Added support for magnatometer and accelerometer chips
 
 """
 
@@ -69,11 +69,11 @@ class Event(object):
 	# Next version sorry
 
 	def __init__(self):
-		self.evt = ""
+		self.evt = "0"
 		self.upt = "0"
 		self.frq = "0"
 		self.tks = "0"
-		self.utc = ""
+		self.etm = "0"
 		self.lat = "0"
 		self.lon = "0"
 		self.tmb = "0"
@@ -86,13 +86,15 @@ class Event(object):
 		self.bmp = "0"
 		self.htu = "0"
 		self.acl = "0"
-		self.gyr = "0"
+		self.mag = "0"
 		self.acx = "0"
 		self.acy = "0"
 		self.acz = "0"
-		self.gyx = "0"
-		self.gyy = "0"
-		self.gyz = "0"
+		self.mgx = "0"
+		self.mgy = "0"
+		self.mgz = "0"
+		self.vax = "0"
+		self.vcn = "0"
 
 	def parse(self, line):
 		nstr = line.split(':')
@@ -111,15 +113,16 @@ class Event(object):
 			elif nstr[i].find("Tks") != -1:
 				self.tks = "%s:%s " % (nstr[i],nstr[j])
         
-			elif nstr[i].find("Utc") != -1:
+			elif nstr[i].find("Etm") != -1:
 				datm = nstr[j].split('/')
 				if len(datm) > 5:
 					if datm[0].find("yy") != -1:
-						self.utc = "[%s] %s:%s:%s" \
+						self.etm = "[%s] %s:%s:%s" \
 						% (time.ctime(),datm[3],datm[4],datm[5])
 					else:
-						self.utc = "%s/%s/%s %s:%s:%s" \
+						self.etm = "%s/%s/%s %s:%s:%s" \
 						% (datm[0],datm[1],datm[2],datm[3],datm[4],datm[5])
+				return self.get()
         
 			elif nstr[i].find("Lat") != -1:
 				self.lat = "%s:%s " % (nstr[i], nstr[j])
@@ -146,9 +149,6 @@ class Event(object):
 						self.sec = "%s/%s/%s %s:%s:%s" \
 						% (datm[0],datm[1],datm[2],datm[3],datm[4],datm[5])
 
-			elif nstr[i].find("Que") != -1:
-				return self.get()
-
 			elif nstr[i].find("Qsz") != -1:
 				self.qsz = nstr[j]
 
@@ -167,8 +167,8 @@ class Event(object):
 			elif nstr[i].find("Acl") != -1:
 				self.acl = "%s:%s " % (nstr[i],nstr[j])
 
-			elif nstr[i].find("Gyr") != -1:
-				self.gyr = "%s:%s " % (nstr[i],nstr[j])
+			elif nstr[i].find("Mag") != -1:
+				self.mag = "%s:%s " % (nstr[i],nstr[j])
 			
 			elif nstr[i].find("Acx") != -1:
 				self.acx = "%s:%s " % (nstr[i],nstr[j])
@@ -179,14 +179,20 @@ class Event(object):
 			elif nstr[i].find("Acz") != -1:
 				self.acz = "%s:%s " % (nstr[i],nstr[j])
 
-			elif nstr[i].find("Gyx") != -1:
-				self.gyx = "%s:%s " % (nstr[i],nstr[j])
+			elif nstr[i].find("Mgx") != -1:
+				self.mgx = "%s:%s " % (nstr[i],nstr[j])
 
-			elif nstr[i].find("Gyy") != -1:
-				self.gyy = "%s:%s " % (nstr[i],nstr[j])
+			elif nstr[i].find("Mgy") != -1:
+				self.mgy = "%s:%s " % (nstr[i],nstr[j])
 
-			elif nstr[i].find("Gyz") != -1:
-				self.gyz = "%s:%s " % (nstr[i],nstr[j])
+			elif nstr[i].find("Mgz") != -1:
+				self.mgz = "%s:%s " % (nstr[i],nstr[j])
+
+			elif nstr[i].find("Vax") != -1:
+				self.vax = "%s:%s " % (nstr[i],nstr[j])
+
+			elif nstr[i].find("Vcn") != -1:
+				self.vcn = "%s:%s " % (nstr[i],nstr[j])
 
 
 		return ""
@@ -198,11 +204,11 @@ class Event(object):
 				"," + self.get_loc() + \
 				"," + self.prs + \
 				"," + self.get_acl() + \
-				"," + self.get_gyr() + \
+				"," + self.get_mag() + \
 				"," + self.tmb + \
 				"," + self.hum + \
 				"," + self.get_hws() + \
-				"," + self.utc + \
+				"," + self.etm + \
 				"}\n"
 		return self.evt
 
@@ -225,7 +231,7 @@ class Event(object):
 		return "%s %s %s" % (self.lat,self.lon,self.alt)
 
 	def get_hws(self):
-		return "%s %s %s %s" % (self.bmp,self.htu,self.acl,self.gyr)
+		return "%s %s %s %s" % (self.bmp,self.htu,self.acl,self.mag)
 
 	def get_prs(self):
 		return self.prs
@@ -233,8 +239,11 @@ class Event(object):
 	def get_acl(self):
 		return "%s %s %s" % (self.acx,self.acy,self.acz)
 
-	def get_gyr(self):
-		return "%s %s %s" % (self.gyx,self.gyy,self.gyz)
+	def get_mag(self):
+		return "%s %s %s" % (self.mgx,self.mgy,self.mgz)
+
+	def get_vib(self):
+		return "%s %s" % (self.vax,self.vcn)
 
 class Socket_io(object):
 
@@ -370,11 +379,12 @@ def main():
 					% (evt.get_upt(),evt.get_frq(),evt.get_qsz(),evt.get_mis())
 					print "Location: %s %s" % (evt.get_loc(),evt.get_prs())
 					print "Accelarometer: %s" % (evt.get_acl())
-					print "Gyromagnatometer: %s" % (evt.get_gyr())
+					print "Magomagnatometer: %s" % (evt.get_mag())
 					print "Events:%d Log:%s Logging:%s" % (events,lgf,logflg)
 					print "USB device:%s" % usbdev
 					print "Hardware status:%s" % evt.get_hws()
-					print "Ipaddr:%s Port:%s Sending:%s\n" % (ipaddr,ipport,udpflg)
+					print "Ipaddr:%s Port:%s Sending:%s" % (ipaddr,ipport,udpflg)
+					print "Vibration:%s\n" % evt.get_vib()
 
 				elif cmd.find("h") != -1:
 					print "Monitor commands:"
@@ -386,13 +396,13 @@ def main():
 					print "   HTUD, HTU Temperature-Humidity display rate, <rate>"
 					print "   BMPD, BMP Temperature-Altitude display rate, <rate>"
 					print "   LOCD, Location latitude-longitude display rate, <rate>"
-					print "   TIMD, Timing uptime-frequency-utc display rate, <rate>"
+					print "   TIMD, Timing uptime-frequency-etm display rate, <rate>"
 					print "   STSD, Status info display rate, <rate>"
 					print "   EVQT, Event queue dump threshold, <threshold 1..32>"
 					print "   ACLD, Accelerometer display rate, <rate>"
-					print "   GYRD, Gyromagnatometer display rate, <rate>"
+					print "   MAGD, Magomagnatometer display rate, <rate>"
 					print "   ACLT, Accelerometer event trigger threshold, <threshold 0..127>"
-					print "   ACLF, Accelerometer event max frequency cutoff, <frequency 1..32 Hz>\n"
+					print ""
 
 					if debug:
 						ser.write("HELP")

@@ -114,14 +114,8 @@ class Event(object):
 				self.tks = "%s:%s " % (nstr[i],nstr[j])
         
 			elif nstr[i].find("Etm") != -1:
-				datm = nstr[j].split('/')
-				if len(datm) > 5:
-					if datm[0].find("yy") != -1:
-						self.etm = "[%s] %s:%s:%s" \
-						% (time.ctime(),datm[3],datm[4],datm[5])
-					else:
-						self.etm = "%s/%s/%s %s:%s:%s" \
-						% (datm[0],datm[1],datm[2],datm[3],datm[4],datm[5])
+				ts = time.asctime(time.gmtime(time.time()))
+				self.etm = "%s:[%s]%s " % (nstr[i],ts,nstr[j])
 				return self.get()
         
 			elif nstr[i].find("Lat") != -1:
@@ -140,14 +134,8 @@ class Event(object):
 				self.hum = "%s:%s " % (nstr[i],nstr[j])
 
 			elif nstr[i].find("Sec") != -1:
-				datm = nstr[j].split('/')
-				if len(datm) > 5:
-					if datm[0].find("yy") != -1:
-						self.sec = "[%s] %s:%s:%s" \
-						% (time.ctime(),datm[3],datm[4],datm[5])
-					else:
-						self.sec = "%s/%s/%s %s:%s:%s" \
-						% (datm[0],datm[1],datm[2],datm[3],datm[4],datm[5])
+				ts = time.asctime(time.gmtime(time.time()))
+				self.sec = "%s:[%s]%s " % (nstr[i],ts,nstr[j])
 
 			elif nstr[i].find("Qsz") != -1:
 				self.qsz = nstr[j]
@@ -446,6 +434,8 @@ def main():
 					if logflg:
 						log.write(ebuf)
 					events = events + 1
+					if debug:
+						sys.stdout.write(rc)
 				else:
 					if debug:
 						sys.stdout.write(rc)

@@ -24,8 +24,7 @@
 // serial line. There has to be mutual aggreement between this program and the monitor.
 
 // Output strings
-// All fields in all output strings are seperated by the ':' character except date time string
-// fields which are seperated by the '/' character. This makes breaking up the output strings
+// All fields in all output strings are seperated by the ':' this makes breaking up the output strings
 // very simple.
 // Each string begins with a 3 upper case character record name followed by field name/value pairs.
 // Each name value contains one upper case character followed by two lower case characters.
@@ -51,7 +50,7 @@
 // MAG:Mgx:f:Mgy:f:Mgz:f
 // LSM303DLH magnatometer record containing Mgx:the x field strength Mgy:the y field Mgz:ther z field
 //
-// MAG:Mox:f:Moy:f:Moz:f
+// MOG:Mox:f:Moy:f:Moz:f
 // LSM303DLH magnatometer record containing Mox:x orientation Moy:y orientation Moz:z orientation
 // This record is optional, by default its turned off (it can always be calculated later - Python)
 //
@@ -59,20 +58,20 @@
 // LSM303DLH acclerometer record containing Acx:the x acceleration Acy:the y acceleration Acz:the z acceleration
 // If this record immediatly follows a VIB record the fields were hardware latched when the g threshold was exceeded
 //
-// ACL:Aox:f:Aoy:f:Aoz:f
+// AOL:Aox:f:Aoy:f:Aoz:f
 // LSM303DLH accelerometer record containing Aox:x orientation Aoy:y orientation Aoz:z orientation
 // This record is optional, by default its turned off (it can always be calculated later - Python)
 //
 // LOC:Lat:f:Lon:f:Alt:f
 // GPS location record containing Lat:latitude in degrees Lon:longitude in degrees Alt:altitude in meters
 //
-// TIM:Upt:i:Frq:i:Sec:yy/mm/dd/hr/mn/sc
+// TIM:Upt:i:Frq:i:Sec:i
 // Time record containing Upt:up time seconds Frq:counter frequency Sec:time string
 //
 // STS:Qsz:i:Mis:%i:Ter:i:Htu:i:Bmp:i:Acl:i:Mag:i
 // Status record containing Qsz:events on queue Mis:missed events Ter:buffer error Htu:status Bmp:status Acl:status Mag:status
 //
-// EVT:Evt:i:Frq:i:Tks:i:Etm:hh/mn/sc.sssss
+// EVT:Evt:i:Frq:i:Tks:i:Etm:f
 // Event record containing Evt:event number in second Frq:timer frequency Tks:ticks since last event in second Etm:event time stamp to 100ns
 
 // N.B. These records pass the data to a python monitor over the serial line. Python has awsome string handling and looks them up in
@@ -547,14 +546,14 @@ char *GetDateTime() {
 		// I choose RMCGGA by default, and get the altitude but no date.
 		// Its easy to get the date once the records arrive at the Python end.
 		// The GPS altitude is far more accurate than the barrometric altitude.
-		// Warning: The syntax can not be changed, Python splits on '/'
+		// Warning: The syntax can not be changed, we need an integer hhmmss
 
-		sprintf(wdtm,"yy/mm/dd/%02d/%02d/%02d",
+		sprintf(wdtm,"%02d%02d%02d",
 			gps.hour,gps.minute,gps.seconds);
 
 		altitude  = gps.altitude;	
 #else
-		sprintf(wdtm,"%02d/%02d/%02d/%02d/%02d/%02d",
+		sprintf(wdtm,"%02d%02d%02d%02d%02d%02d",
 			gps.year,gps.month,gps.day,
 			gps.hour,gps.minute,gps.seconds);
 
@@ -827,7 +826,7 @@ void PushMag(int flg) {	// Push the mago stuff
 		// Orientation (Easy to calculate later in Python - dont waste resources)
 #ifdef ORIENTATION
 		if (dof.magGetOrientation(SENSOR_AXIS_Z, &mag_event, &xyz)) {
-			sprintf(txt,"MAG:Mox:%f:Moy:%f:Moz:%f\n",xyz.x,xyz.y,xyz.z);
+			sprintf(txt,"MOG:Mox:%f:Moy:%f:Moz:%f\n",xyz.x,xyz.y,xyz.z);
 			PushTxt(txt);
 		}
 #endif
@@ -854,7 +853,7 @@ void PushAcl(int flg) { // Push the accelerometer and compass stuff
 		// Orientation (Easy to calculate later in Python - dont waste resources)
 #ifdef ORIENTATION		
 		if (dof.accelGetOrientation(&acl_event, &xyz)) {
-			sprintf(txt,"ACL:Aox:%f:Aoy:%f:Aoz:%f\n",xyz.x,xyz.y,xyz.z);
+			sprintf(txt,"AOL:Aox:%f:Aoy:%f:Aoz:%f\n",xyz.x,xyz.y,xyz.z);
 			PushTxt(txt);
 		}
 #endif
@@ -927,7 +926,6 @@ void PushEvq(int flg, int *qsize, int *missed) {
 			sprintf(stx,"%9.7f",evtm);				// It will be 0.something
 
 			// Build string and push it out to the print buffer
-			// The Que:! indicates this is an event to the Python monitor	
 
 			sprintf(txt,"EVT:Evt:%01d:Frq:%08d:Tks:%08d:Etm:%s%s\n",
 				eb.Count, eb.Frequency, eb.Ticks, eb.DateTime, index(stx,'.'));

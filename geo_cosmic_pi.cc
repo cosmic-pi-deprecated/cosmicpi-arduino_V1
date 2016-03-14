@@ -451,7 +451,7 @@ void AclSetup() {
 	// The chip make very wide pulses (100ms), the values on the rising and
 	// falling edges are different !
 
-	attachInterrupt(digitalPinToInterrupt(ACL_PIN),Acl_ISR,CHANGE);
+	attachInterrupt(digitalPinToInterrupt(ACL_PIN),Acl_ISR,RISING);
 }
 
 // Magnatometer setup, again the Adda_fruit library was inadequate. 
@@ -485,6 +485,7 @@ void Acl_ISR() {
 
 	accl_icount++;
 	accl_flag = AclReadStatus();
+	PushVib();
 }
 
 // Read accelerometer status
@@ -790,18 +791,18 @@ void PushBmp(int flg) {	// If flg is true always push
 // strengths in all three axis. From all this information the Python monitor will be able
 // to work out whats going on, sustained vibration or whatever. 
 
-void PushShaken(int flg) { // Push an event when shake detected => Earth Quake 
+void PushVib() { // Push an event when shake detected => Earth Quake 
 
 uint32_t old_icount = 0;
 
-	if ((flg) || (accl_flag)) {
+	if (accl_flag) {
 		if (accl_icount != old_icount) {
 			old_icount = accl_icount;
-			sprintf(txt,"VIB:Vax:%d:Vcn:%d\n",accl_flag,accl_icount);
-			PushTxt(txt);
-			PushTim(1);
+			PushTim(1);		// Push these first, and then vib
 			PushAcl(1);		// This is the real latched value
 			PushMag(1);
+			sprintf(txt,"VIB:Vax:%d:Vcn:%d\n",accl_flag,accl_icount);
+			PushTxt(txt);
 		}
 	}
 }
@@ -1041,7 +1042,6 @@ void loop() {
 		digitalWrite(PPS_PIN,HIGH);	// PPS arrived
 #endif	
 		DoCmd();			// Execute any incomming commands
-		PushShaken(0);			// Check for an Earth Quake
 		PushEvq(0,&qsize,&missed);	// Push any events
 		PushHtu(0);			// Push HTU temperature and humidity
 		PushBmp(0);			// Push BMP temperature and barrometric altitude

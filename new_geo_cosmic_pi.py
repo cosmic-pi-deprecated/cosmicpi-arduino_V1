@@ -88,6 +88,7 @@ class Event(object):
 				"EVT":self.EVT }
 
 		self.oetm = "f"
+		self.ovib = "i"
 
 	def parse(self, line):
 		nstr = line.split(':')
@@ -101,6 +102,16 @@ class Event(object):
 
 			except Exception, e:
 				pass		# Didnt understand, throw it away
+
+	# For weather stations
+
+	def get_weather(self):
+		self.weather =	"{" + str(self.HTU) + \
+				"," + str(self.BMP) + \
+				"," + str(self.LOC) + \
+				"," + str(self.TIM) + \
+				"}"
+		return self.weather
 
 	def get_evt(self):
 		if self.oetm == self.EVT["Etm"]:
@@ -143,7 +154,13 @@ class Event(object):
 	def get_mag(self):
 		return self.MAG
 
-	def get_vib(self):
+	def get_vib(self,flg):
+		if flg:
+			if self.ovib == self.VIB["Vcn"]:
+				return False
+
+			self.ovib = self.VIB["Vcn"]
+
 		return self.VIB
 
 	def get_htu(self):
@@ -200,6 +217,8 @@ def main():
 	parser.add_option("-o", "--odir",  help="Path to log directory", dest="logdir", default="/tmp")
 	parser.add_option("-n", "--noip",  help="IP Sending", dest="udpflg", default=True, action="store_false")
 	parser.add_option("-l", "--log",   help="Event Logging", dest="logflg", default=False, action="store_true")
+	parser.add_option("-v", "--vib",   help="Vibration monitor", dest="vibflg", default=False, action="store_true")
+	parser.add_option("-w", "--ws",    help="Weather station", dest="wstflg", default=False, action="store_true")
 
 	options, args = parser.parse_args()
 
@@ -210,6 +229,8 @@ def main():
 	debug  = options.debug
 	udpflg = options.udpflg
 	logflg = options.logflg
+	vibflg = options.vibflg
+	wstflg = options.wstflg
 
 	print "\n\ncosmic_pi monitor running, hit '>' for commands\n\n"
 
@@ -221,6 +242,8 @@ def main():
 		print "options (Logging directory)	odir:%s" % logdir
 		print "options (Event logging)          log: %s" % logflg
 		print "options (UDP sending)            udp: %s" % udpflg
+		print "options (Vibration monitor)      vib: %s" % vibflg
+		print "options (Weather Station)        wst: %s" % wstflg
 	
 
 	now = time.asctime(time.localtime(time.time()))
@@ -279,28 +302,53 @@ def main():
 						debug = True
 					print "Debug:%s\n" % debug
 
+				elif cmd.find("v") != -1:
+         				if vibflg:
+						vibflg = False
+					else:
+						vibflg = True
+					print "Vibration:%s\n" % vibflg
+
+				elif cmd.find("w") != -1:
+         				if wstflg:
+						wstflg = False
+					else:
+						wstflg = True
+					print "WeatherStation:%s\n" % wstflg
+
 				elif cmd.find("s") != -1:
 					tim = evt.get_tim()
 					sts = evt.get_sts()
 					loc = evt.get_loc()
 					acl = evt.get_acl()
 					mag = evt.get_mag()
-					vib = evt.get_vib()
+					bmp = evt.get_bmp()
+					htu = evt.get_htu()
+					vib = evt.get_vib(0)
 
+					print "ARDUINO STATUS"
 					print "Status........: Upt:%s Frq:%s Qsz:%s Mis:%s" % (tim["Upt"],tim["Frq"],sts["Qsz"],sts["Mis"])
 					print "HardwareStatus: Htu:%s Bmp:%s Acl:%s Mag:%s" % (sts["Htu"],sts["Bmp"],sts["Acl"],sts["Mag"])
 					print "Location......: Lat:%s Lon:%s Alt:%s" % (loc["Lat"],loc["Lon"],loc["Alt"])
 					print "Accelarometer.: Acx:%s Acy:%s Acz:%s" % (acl["Acx"],acl["Acy"],acl["Acz"])
 					print "Magnatometer..: Mgx:%s Mgy:%s Mgz:%s" % (mag["Mgx"],mag["Mgy"],mag["Mgz"])
+					print "Barometer.....: Tmb:%s Prs:%s Alb:%s" % (bmp["Tmb"],bmp["Prs"],bmp["Alb"])
+					print "Humidity......: Tmh:%s Hum:%s" % (htu["Tmh"],htu["Hum"])
 					print "Vibration.....: Vax:%s Vcn:%s\n" % (vib["Vax"],vib["Vcn"])
+
+					print "MONITOR STATUS"
 					print "USB device....: %s" % (usbdev)
 					print "Remote........: Ip:%s Port:%s UdpFlag:%s" % (ipaddr,ipport,udpflg)
-					print "Events........: Sent:%d LogFlag:%s LogFile:%s\n" % (events,logflg,lgf)
+					print "Vibration.....: Flag:%s" % (vibflg)
+					print "WeatherStation: Flag:%s" % (wstflg)
+					print "Events........: Sent:%d LogFlag:%s" % (events,logflg)
+					print "LogFile.......: %s\n" % (lgf)
 
 				elif cmd.find("h") != -1:
-					print "Monitor commands:"
-					print "   q=quit, s=status, d=toggle_debug, n=toggle_send, l=toggle_log, h=help\n"
-					print "Arduino DUE detector commands:"
+					print "MONITOR COMMANDS"
+					print "   q=quit, s=status, d=toggle_debug, n=toggle_send, l=toggle_log"
+					print "   v=vibration, w=weather, h=help\n"
+					print "ARDUINO COMMANDS"
 					print "   NOOP, Do nothing"
 					print "   HELP, Display commands"
 					print "   HTUX, Reset the HTH chip"
@@ -341,10 +389,29 @@ def main():
 			rc = ser.readline()
 
 			if len(rc) == 0:
-				print 'Serial input buffer empty\n'
-				break
+				print "Serial input buffer empty"
+				ser.close()
+				time.sleep(1)
+				ser = serial.Serial(port=usbdev, baudrate=9600, timeout=60)
+				rc = ser.readline()
+				if len(rc) == 0:
+					break
+				print "Serial Reopened OK"
+				continue
 			else:
 				evt.parse(rc)
+
+				if vibflg:
+					vib = evt.get_vib(1)
+					if (vib):
+						tim = evt.get_tim()
+						acl = evt.get_acl()
+						mag = evt.get_mag()
+						print "Vibration.....: Vax:%s Vcn:%s" % (vib["Vax"],vib["Vcn"])
+						print "Accelarometer.: Acx:%s Acy:%s Acz:%s" % (acl["Acx"],acl["Acy"],acl["Acz"])
+						print "Magnatometer..: Mgx:%s Mgy:%s Mgz:%s" % (mag["Mgx"],mag["Mgy"],mag["Mgz"])
+						print "Time..........: Sec:%s\n" % (tim["Sec"])
+
 				ebuf = evt.get_evt()
 				if len(ebuf) > 1:
 					if udpflg:
@@ -378,7 +445,8 @@ def main():
 
 	finally:
 		kbrd.echo_on()
-		print "Quitting ..."
+		tim = evt.get_tim()
+		print "\nUp time:%s Quitting ..." % tim["Upt"]
 		ser.close()
 		log.close()
 		sio.close()

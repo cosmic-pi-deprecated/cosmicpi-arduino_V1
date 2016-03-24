@@ -283,6 +283,8 @@ def main():
 	evt = Event()
 	events = 0
 
+	dweather = 0
+
 	sio = Socket_io(ipaddr,ipport)
 
 	try:
@@ -407,9 +409,20 @@ def main():
 						tim = evt.get_tim()
 						acl = evt.get_acl()
 						mag = evt.get_mag()
-						print "Vibration.....: Vax:%s Vcn:%s" % (vib["Vax"],vib["Vcn"])
+						print "Vibration.....: Vax:%s Vcn:%s " % (vib["Vax"],vib["Vcn"])
 						print "Accelarometer.: Acx:%s Acy:%s Acz:%s" % (acl["Acx"],acl["Acy"],acl["Acz"])
 						print "Magnatometer..: Mgx:%s Mgy:%s Mgz:%s" % (mag["Mgx"],mag["Mgy"],mag["Mgz"])
+						print "Time..........: Sec:%s\n" % (tim["Sec"])
+
+				if wstflg:
+					dweather = dweather + 1
+					if (dweather % 60) == 0:
+						tim = evt.get_tim()
+						bmp = evt.get_bmp()
+						htu = evt.get_htu()
+						loc = evt.get_loc()
+						print "Barometer.....: Tmb:%s Prs:%s Alb:%s" % (bmp["Tmb"],bmp["Prs"],bmp["Alb"])
+						print "Humidity......: Tmh:%s Hum:%s Alt:%s" % (htu["Tmh"],htu["Hum"],loc["Alt"])
 						print "Time..........: Sec:%s\n" % (tim["Sec"])
 
 				ebuf = evt.get_evt()

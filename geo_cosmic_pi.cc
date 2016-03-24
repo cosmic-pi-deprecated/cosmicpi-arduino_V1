@@ -469,7 +469,7 @@ void MagSetup() {
 	val = GAIN;
 	mag.write8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_CRB_REG_M, val);
 
-#define MODE 0x01	// Single conversion mode
+#define MODE 0x0	// 01=Single conversion mode
 
 	val = MODE;
 	mag.write8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_MR_REG_M, val);

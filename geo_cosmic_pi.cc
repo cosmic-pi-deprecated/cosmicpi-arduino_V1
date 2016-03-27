@@ -12,7 +12,7 @@
 
 // Julian Lewis lewis.julian@gmail.com
 
-#define VERS "2016/Mar/09"
+#define VERS "2016/Mar/26"
 
 // In this sketch I am using an Adafruite ultimate GPS breakout which exposes the PPS output
 // The Addafruite Rx is connected to the DUE TX1 (Pin 18) and its Tx to DUE RX1 (Pin 19)
@@ -71,8 +71,9 @@
 // STS:Qsz:i:Mis:%i:Ter:i:Htu:i:Bmp:i:Acl:i:Mag:i
 // Status record containing Qsz:events on queue Mis:missed events Ter:buffer error Htu:status Bmp:status Acl:status Mag:status
 //
-// EVT:Evt:i:Frq:i:Tks:i:Etm:f
-// Event record containing Evt:event number in second Frq:timer frequency Tks:ticks since last event in second Etm:event time stamp to 100ns
+// EVT:Evt:i:Frq:i:Tks:i:Etm:f:Adc0:[i]:Adc1[i]
+// Event record containing Evt:event number in second Frq:timer frequency Tks:ticks since last event in second 
+// Etm:event time stamp to 100ns Adc0:[list 10 integer values], Adc1:[list 10 integer values]
 
 // N.B. These records pass the data to a python monitor over the serial line. Python has awsome string handling and looks them up in
 // associative arrays to build records of any arbitary format you want. So this is only the start of the story of record processing.
@@ -110,6 +111,7 @@
 
 // The size of the one second event buffer
 #define PPS_EVENTS 8	// The maximum number of events stored per second
+#define ADC_BUF_LEN 8  // Number of ADC values per event
 
 // This is the event queue size
 #define EVENT_QSIZE 32	// The number of events that can be queued for serial output
@@ -339,12 +341,25 @@ void TC0_Handler() {
 // We need a double buffer, one is being written by the ISR while
 // the other is read from user space within one second.
 
-static uint32_t b1[PPS_EVENTS];		// Event ticks buffeer
-static uint32_t b2[PPS_EVENTS];		// Event ticks buffer
-static uint32_t *wbuf = b1, widx;	// Write event buffer pointer and its index
-static uint32_t *rbuf = b2, ridx;	// Read event buffer pointer and its index
+struct Event {
+	uint16_t Ch0[ADC_BUF_LEN];	// ADC channel 0 values
+	uint16_t Ch1[ADC_BUF_LEN];	// ADC channel 1 values
+	uint32_t Tks;			// Time since last event in ticks
+};
 
-#define DATE_TIME_LEN 32
+static struct Event b1[PPS_EVENTS];	// Event ticks buffeer
+static struct Event b2[PPS_EVENTS];	// Event ticks buffer
+static struct Event *wbuf = b1;	// Write event buffer pointer and its index
+static struct Event *rbuf = b2;	// Read event buffer pointer and its index
+static int ridx, widx;
+
+// We also need a time value for the current and previous second
+
+#ifdef RMCGGA	
+#define DATE_TIME_LEN 9
+#else
+#define DATE_TIME_LEN 17
+#endif
 
 static char t1[DATE_TIME_LEN];		// Date time buffer text string
 static char t2[DATE_TIME_LEN];		
@@ -354,7 +369,7 @@ static char *rdtm = t2;			// Read date/time pointer
 // Swap read write event buffers and indexes along with their time strings
 
 void SwapBufs() {
-	uint32_t *tbuf;				// Temp event tick count pointer
+	struct Event *tbuf;			// Temp event buf pointer
 	char *tdtm;				// Temp date/time string pointer
 	tbuf = rbuf; rbuf = wbuf; wbuf = tbuf;	// Swap write with read buffer
 	ridx = widx; widx = 0;			// Write count to read, reset the write count
@@ -384,8 +399,11 @@ void TC6_Handler() {
 #if EVT_PIN
 		digitalWrite(EVT_PIN,HIGH);	// Event detected
 #endif
-		if (widx < PPS_EVENTS)		// Up to PPS_EVENTS stored per PPS
-			wbuf[widx++] = TC2->TC_CHANNEL[0].TC_RA;
+		if (widx < PPS_EVENTS) {	// Up to PPS_EVENTS stored per PPS
+			wbuf[widx].Tks = TC2->TC_CHANNEL[0].TC_RA;
+			AdcPullData(&wbuf[widx]);
+			widx++;
+		}
 	}
 #if FLG_PIN	
 	digitalWrite(FLG_PIN,ppsfl);		// Flag out
@@ -516,6 +534,26 @@ uint8_t AclReadStatus() {
 	return rval;
 }
 
+// Set up the ADC channels
+
+void AdcSetup() {
+	REG_ADC_MR = 0x10380180;	// Free run as fast as you can
+	REG_ADC_CHER = 3;		// Channels 0 and 1
+}
+
+// Pull all data (16 values) from the ADC into a buffer
+
+uint8_t AdcPullData(struct Event *b) {
+	
+	int i;
+
+	for (i=0; i<ADC_BUF_LEN; i++) {			// For all in ADC pipeline
+		while((ADC->ADC_ISR & 0x03)==0);	// Wait for both channels (2.5us)
+		b->Ch0[i] = (uint16_t) ADC->ADC_CDR[0];	// Read ch 0
+		b->Ch1[i] = (uint16_t) ADC->ADC_CDR[1];	// Read ch 1
+	}
+}
+
 // This is the nmea data string from the GPS chip
 
 #define GPS_STRING_LEN 256
@@ -554,7 +592,7 @@ char *GetDateTime() {
 
 		altitude  = gps.altitude;	
 #else
-		sprintf(wdtm,"%02d%02d%02d%02d%02d%02d",
+		sprintf(wdtm,"%02d%02d%02d%02d%02d%02d%02d%02d",
 			gps.year,gps.month,gps.day,
 			gps.hour,gps.minute,gps.seconds);
 
@@ -575,6 +613,8 @@ struct EventBuf {
 	char		DateTime[DATE_TIME_LEN];	// The date and time string
 	uint32_t	Frequency;			// The current clock frequency
 	uint32_t	Ticks;				// The number of ticks since the last event or PPS if none
+	uint16_t	Ch0[ADC_BUF_LEN];		// ADC channel 0 values
+	uint16_t	Ch1[ADC_BUF_LEN];		// ADC channel 1 values
 	uint8_t		Count;				// The number of events since the PPS
 };
 
@@ -690,6 +730,7 @@ void setup() {
 
 	AclSetup();
 	MagSetup();
+	AdcSetup();
 	
 	TimersStart();			// Start timers
 }
@@ -901,15 +942,19 @@ void PushEvq(int flg, int *qsize, int *missed) {
 	struct EventBuf eb;		// Temporary event buffer
 	double evtm = 0.0;		// Time since last event or PPS in seconds (< 1.0)
 	char stx[16];			// Second text
-	int i;
+	int i,j;
 
 	// If there are any events waiting in the event read buffer, put them on the queue
 
 	for (i=0; i<ridx; i++) {
 		strncpy(eb.DateTime,rdtm,DATE_TIME_LEN);// Last seconds date/time string 
 		eb.Frequency = rega0;			// Ticks between successive PPS pulses
-		eb.Ticks = rbuf[i];			// Ticks since LAST interrupt! (PPS or Event)
+		eb.Ticks = rbuf[i].Tks;			// Ticks since LAST interrupt! (PPS or Event)
 		eb.Count = i+1;				// Event index 1..PPS_EVENTS in the second
+		for (j=0; j<ADC_BUF_LEN; j++) {		// Copy accross ADC values
+			eb.Ch0[j] = rbuf[i].Ch0[j];
+			eb.Ch1[j] = rbuf[i].Ch1[j];
+		}
 		*missed = PutQueue(&eb);		// Put buffer on Q, and get missed event count
 	}
 	*qsize = SzeQueue();	
@@ -928,8 +973,10 @@ void PushEvq(int flg, int *qsize, int *missed) {
 
 			// Build string and push it out to the print buffer
 
-			sprintf(txt,"EVT:Evt:%01d:Frq:%08d:Tks:%08d:Etm:%s%s\n",
-				eb.Count, eb.Frequency, eb.Ticks, eb.DateTime, index(stx,'.'));
+			sprintf(txt,"EVT:Evt:%01d:Frq:%08d:Tks:%08d:Etm:%s%s:Adc0:%d,%d,%d,%d,%d,%d,%d,%d:Adc1:%d,%d,%d,%d,%d,%d,%d,%d\n",
+				eb.Count, eb.Frequency, eb.Ticks, eb.DateTime, index(stx,'.'),
+				eb.Ch0[0],eb.Ch0[1],eb.Ch0[2],eb.Ch0[3],eb.Ch0[4],eb.Ch0[5],eb.Ch0[6],eb.Ch0[7],
+				eb.Ch1[0],eb.Ch1[1],eb.Ch1[2],eb.Ch1[3],eb.Ch1[4],eb.Ch1[5],eb.Ch1[6],eb.Ch1[7]);
 			PushTxt(txt);
 		}
 		PushTxt("\n");

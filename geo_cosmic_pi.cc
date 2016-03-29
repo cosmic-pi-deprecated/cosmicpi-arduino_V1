@@ -575,10 +575,6 @@ char *GetDateTime() {
 			gps_string[i] = 0;
 		} else i++;
 	}
-	if (i >= GPS_STRING_LEN) {
-		sprintf(txt,"Warning:GPS string truncated:%d\n",i);
-		PushTxt(txt);
-	}
 	if (gps.parse(gps_string)) {
 
 #ifdef RMCGGA	
@@ -800,7 +796,7 @@ void PushHtu(int flg) {	// If flg is true always push
 	if ((flg) || ((htu_ok) && ((ppcnt % humtmp_display_rate) == 0))) {
 		temph = htu.readTemperature();
 		humid = htu.readHumidity();
-		sprintf(txt,"HTU:Tmh:%5.3f:Hum:%4.1f\n",temph,humid);
+		sprintf(txt,"{'HTU':{'Tmh':%5.3f,'Hum':%4.1f}}\n",temph,humid);
 		PushTxt(txt);
 	}
 }
@@ -821,7 +817,7 @@ void PushBmp(int flg) {	// If flg is true always push
 			bmp.getTemperature(&tempb);
 			altib = bmp.pressureToAltitude((float) SENSORS_PRESSURE_SEALEVELHPA, 
 							presr,tempb);
-			sprintf(txt,"BMP:Tmb:%5.3f:Prs:%5.3f:Alb:%4.1f\n",tempb,presr,altib);
+			sprintf(txt,"{'BMP':{'Tmb':%5.3f,'Prs':%5.3f,'Alb':%4.1f}}\n",tempb,presr,altib);
 			PushTxt(txt);
 		}
 	}
@@ -842,7 +838,7 @@ uint32_t old_icount = 0;
 			PushTim(1);		// Push these first, and then vib
 			PushAcl(1);		// This is the real latched value
 			PushMag(1);
-			sprintf(txt,"VIB:Vax:%d:Vcn:%d\n",accl_flag,accl_icount);
+			sprintf(txt,"{'VIB':{'Vax':%d,'Vcn':%d}}\n",accl_flag,accl_icount);
 			PushTxt(txt);
 		}
 	}
@@ -859,7 +855,7 @@ void PushMag(int flg) {	// Push the mago stuff
 
 		// Micro Tesla
 
-		sprintf(txt,"MAG:Mgx:%f:Mgy:%f:Mgz:%f\n",
+		sprintf(txt,"{'MAG':{'Mgx':%f,'Mgy':%f,'Mgz':%f}}\n",
 			mag_event.magnetic.x,
 			mag_event.magnetic.y,
 			mag_event.magnetic.z);
@@ -868,7 +864,7 @@ void PushMag(int flg) {	// Push the mago stuff
 		// Orientation (Easy to calculate later in Python - dont waste resources)
 #ifdef ORIENTATION
 		if (dof.magGetOrientation(SENSOR_AXIS_Z, &mag_event, &xyz)) {
-			sprintf(txt,"MOG:Mox:%f:Moy:%f:Moz:%f\n",xyz.x,xyz.y,xyz.z);
+			sprintf(txt,"{'MOG':{'Mox':%f,'Moy':%f,'Moz':%f}}\n",xyz.x,xyz.y,xyz.z);
 			PushTxt(txt);
 		}
 #endif
@@ -886,7 +882,7 @@ void PushAcl(int flg) { // Push the accelerometer and compass stuff
 
 		// Meters per second squared
 
-		sprintf(txt,"ACL:Acx:%f:Acy:%f:Acz:%f\n",
+		sprintf(txt,"{'ACL':{'Acx':%f,'Acy':%f,'Acz':%f}}\n",
 			acl_event.acceleration.x,
 			acl_event.acceleration.y,
 			acl_event.acceleration.z);
@@ -895,7 +891,7 @@ void PushAcl(int flg) { // Push the accelerometer and compass stuff
 		// Orientation (Easy to calculate later in Python - dont waste resources)
 #ifdef ORIENTATION		
 		if (dof.accelGetOrientation(&acl_event, &xyz)) {
-			sprintf(txt,"AOL:Aox:%f:Aoy:%f:Aoz:%f\n",xyz.x,xyz.y,xyz.z);
+			sprintf(txt,"{'AOL':{'Aox':%f,'Aoy':%f,'Aoz':%f}}\n",xyz.x,xyz.y,xyz.z);
 			PushTxt(txt);
 		}
 #endif
@@ -907,7 +903,7 @@ void PushAcl(int flg) { // Push the accelerometer and compass stuff
 void PushLoc(int flg) {
 		
 	if ((flg) || ((ppcnt % latlon_display_rate) == 0)) {
-		sprintf(txt,"LOC:Lat:%f:Lon:%f:Alt:%f\n",latitude,longitude,altitude);
+		sprintf(txt,"{'LOC':{'Lat':%f,'Lon':%f,'Alt':%f}}\n",latitude,longitude,altitude);
 		PushTxt(txt);
 	}
 }
@@ -917,7 +913,7 @@ void PushLoc(int flg) {
 void PushTim(int flg) {
 
 	if ((flg) || ((ppcnt % frqutc_display_rate) == 0)) {
-		sprintf(txt,"TIM:Upt:%04d:Frq:%07d:Sec:%s\n",ppcnt,rega0,rdtm);
+		sprintf(txt,"{'TIM':{'Upt':%4d,'Frq':%7d,'Sec':%s}}\n",ppcnt,rega0,rdtm);
 		PushTxt(txt);
 	}			
 }
@@ -928,7 +924,7 @@ void PushSts(int flg, int qsize, int missed) {
 uint8_t res;
 
 	if ((flg) || ((ppcnt % status_display_rate) == 0)) {
-		sprintf(txt,"STS:Qsz:%02d:Mis:%02d:Ter:%d:Htu:%d:Bmp:%d:Acl:%d:Mag:%d\n",
+		sprintf(txt,"{'STS':{'Qsz':%2d,'Mis':%2d,'Ter':%d,'Htu':%d,'Bmp':%d,'Acl':%d,'Mag':%d}}\n",
 			qsize,missed,terr,htu_ok,bmp_ok,acl_ok,mag_ok);
 		PushTxt(txt);
 		terr = 0;
@@ -974,8 +970,8 @@ void PushEvq(int flg, int *qsize, int *missed) {
 			// Build string and push it out to the print buffer (sprintf - crap code will fix !)
 
 			sprintf(txt,
-				"EVT:Evt:%01d:Frq:%08d:Tks:%08d:Etm:%s%s:"
-				"Adc0:[%d,%d,%d,%d,%d,%d,%d,%d]:Adc1:[%d,%d,%d,%d,%d,%d,%d,%d]\n",
+				"{'EVT':{'Evt':%01d,'Frq':%08d,'Tks':%08d,'Etm':%s%s,"
+				"'Adc':[[%d,%d,%d,%d,%d,%d,%d,%d],[%d,%d,%d,%d,%d,%d,%d,%d]]}}\n",
 				eb.Count, eb.Frequency, eb.Ticks, eb.DateTime, index(stx,'.'),
 				eb.Ch0[0],eb.Ch0[1],eb.Ch0[2],eb.Ch0[3],eb.Ch0[4],eb.Ch0[5],eb.Ch0[6],eb.Ch0[7],
 				eb.Ch1[0],eb.Ch1[1],eb.Ch1[2],eb.Ch1[3],eb.Ch1[4],eb.Ch1[5],eb.Ch1[6],eb.Ch1[7]);

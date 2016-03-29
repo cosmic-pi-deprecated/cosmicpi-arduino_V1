@@ -21,7 +21,7 @@ Typing the '>' character turns on command input
 It is important to keep the Python dictionary objects synchronised with the Arduino firmware
 otherwise this monitor will not understand the data being sent to it
 
-julian.lewis lewis.julian@gmail.com 13/Mar/2016
+julian.lewis lewis.julian@gmail.com 29/Mar/2016
 
 """
 
@@ -35,9 +35,10 @@ import os
 import termios
 import fcntl
 import re
+import ast
 from optparse import OptionParser
 
-# Handle keyboard input
+# Handle keyboard input, this tests to see if a '>' was typed
 
 class KeyBoard(object):
 
@@ -65,11 +66,14 @@ class KeyBoard(object):
 		except IOError: pass
 		return res
 
+# This is the event object, it builds a dictionary from incomming jsom strings 
+# and provides access to the dictionary entries containing the data for each field.
+
 class Event(object):
 
 	def __init__(self):
 
-		# Keep this dictionary in sync with the Arduino firmware
+		# These are the json strings we are expecting from the arduino
 
 		self.HTU = { "Tmh":"f","Hum":"f" }
 		self.BMP = { "Tmb":"f","Prs":"f","Alb":"f" }
@@ -81,7 +85,9 @@ class Event(object):
 		self.LOC = { "Lat":"f","Lon":"f","Alt":"f" }
 		self.TIM = { "Upt":"i","Frq":"i","Sec":"i" }
 		self.STS = { "Qsz":"i","Mis":"i","Ter":"i","Htu":"i","Bmp":"i","Acl":"i","Mag":"i" }
-		self.EVT = { "Evt":"i","Frq":"i","Tks":"i","Etm":"f","Adc0":"[i,i,i,i,i,i,i,i]","Adc1":"[i,i,i,i,i,i,i,i]"  }
+		self.EVT = { "Evt":"i","Frq":"i","Tks":"i","Etm":"f","Adc":"[[i,i,i,i,i,i,i,i],[i,i,i,i,i,i,i,i]]"  }
+
+		# Now build the main dictionary with one entry for each json string we will process
 
 		self.recd = {	"HTU":self.HTU, "BMP":self.BMP, "VIB":self.VIB, "MAG":self.MAG, "MOG":self.MOG,
 				"ACL":self.ACL, "AOL":self.AOL, "LOC":self.LOC, "TIM":self.TIM, "STS":self.STS,
@@ -90,39 +96,40 @@ class Event(object):
 		self.oetm = "f"
 		self.ovib = "i"
 
-	def parse(self, line):
-		nstr = line.split(':')
-		for i in range(0,len(nstr)):
-			nstr[i] = nstr[i].replace('\n','')
+	# Convert the incomming json strings into entries in the dictionary 
 
-		for i in range(1,len(nstr)-1,2):
-			j = i + 1
-			try:
-				self.recd[nstr[0]][nstr[i]]=nstr[j]
-
-			except Exception, e:
-				pass		# Didnt understand, throw it away
+	def parse(self, line):					# parse the incomming json strings from arduino
+		nstr = line.replace('\n','')			# Throw away <crtn>, we dont want them
+		try:
+			dic = ast.literal_eval(nstr)		# Build a dictionary entry
+			kys = dic.keys()			# Get key names, the first is the address
+			if self.recd.has_key(kys[0]):		# Check we know about records with this key
+				self.recd[kys[0]] = dic[kys[0]]	# and put it in the dictionary at that address
+			
+		except Exception, e:
+			pass					# Didnt understand, throw it away
 
 	# For weather stations
 
 	def get_weather(self):
-		self.weather =	"{" + str(self.HTU) + \
-				"," + str(self.BMP) + \
-				"," + str(self.LOC) + \
-				"," + str(self.TIM) + \
+		self.weather =	"{" + str(self.recd["HTU"]) + \
+				"," + str(self.recd["BMP"]) + \
+				"," + str(self.recd["LOC"]) + \
+				"," + str(self.recd["TIM"]) + \
 				"}"
 		return self.weather
 
 	def get_evt(self):
-		if self.oetm == self.EVT["Etm"]:
+		if self.oetm == self.recd["EVT"]["Etm"]:
 			return ""
 
-		self.oetm = self.EVT["Etm"]
+		self.oetm = self.recd["EVT"]["Etm"]
 
 		# Here is where you can play around with the format of the message strings
 		# that will be sent to the server.
-		# I am just sending everything in dictionary format, so if there is python
+		# I am just sending everything in json format, so if there is python
 		# program at the recieving end, it trivial to convert back to dictionary form
+		# as demonstrated in the pars method.
 
 		self.evt =	"{" + str(self.recd["EVT"]) + \
 				"," + str(self.recd["TIM"]) + \
@@ -137,34 +144,36 @@ class Event(object):
 		return self.evt
 
 	def get_tim(self):
-		return self.TIM
+		return self.recd["TIM"]
 
 	def get_loc(self):
-		return self.LOC
+		return self.recd["LOC"]
 
 	def get_sts(self):
-		return self.STS
+		return self.recd["STS"]
 
 	def get_bmp(self):
-		return self.BMP
+		return self.recd["BMP"]
 
 	def get_acl(self):
-		return self.ACL
+		return self.recd["ACL"]
 
 	def get_mag(self):
-		return self.MAG
+		return self.recd["MAG"]
 
 	def get_vib(self,flg):
 		if flg:
-			if self.ovib == self.VIB["Vcn"]:
+			if self.ovib == self.recd["VIB"]["Vcn"]:
 				return False
 
-			self.ovib = self.VIB["Vcn"]
+			self.ovib = self.recd["VIB"]["Vcn"]
 
-		return self.VIB
+		return self.recd["VIB"]
 
 	def get_htu(self):
-		return self.HTU
+		return self.recd["HTU"]
+
+# Send/recieve UDP packets to the remote server
 
 class Socket_io(object):
 
@@ -282,7 +291,7 @@ def main():
 
 	evt = Event()
 	events = 0
-
+	vbrts = 0
 	dweather = 0
 
 	sio = Socket_io(ipaddr,ipport)
@@ -341,7 +350,7 @@ def main():
 					print "MONITOR STATUS"
 					print "USB device....: %s" % (usbdev)
 					print "Remote........: Ip:%s Port:%s UdpFlag:%s" % (ipaddr,ipport,udpflg)
-					print "Vibration.....: Flag:%s" % (vibflg)
+					print "Vibration.....: Sent:%d Flag:%s" % (vbrts,vibflg)
 					print "WeatherStation: Flag:%s" % (wstflg)
 					print "Events........: Sent:%d LogFlag:%s" % (events,logflg)
 					print "LogFile.......: %s\n" % (lgf)
@@ -406,13 +415,20 @@ def main():
 				if vibflg:
 					vib = evt.get_vib(1)
 					if (vib):
+						vbrts = vbrts + 1
 						tim = evt.get_tim()
 						acl = evt.get_acl()
 						mag = evt.get_mag()
-						print "Vibration.....: Vax:%s Vcn:%s " % (vib["Vax"],vib["Vcn"])
+						print "Vibration.....: Cnt:%d Vax:%s Vcn:%s " % (vbrts,vib["Vax"],vib["Vcn"])
 						print "Accelarometer.: Acx:%s Acy:%s Acz:%s" % (acl["Acx"],acl["Acy"],acl["Acz"])
 						print "Magnatometer..: Mgx:%s Mgy:%s Mgz:%s" % (mag["Mgx"],mag["Mgy"],mag["Mgz"])
 						print "Time..........: Sec:%s\n" % (tim["Sec"])
+						if udpflg:
+							vbuf = "{" + str(vib) + str(tim) + str(acl) + str(mag) + "}"
+							sio.send_event_pkt(ebuf,ipaddr,ipport)
+						if logflg:
+							log.write(vbuf)
+
 
 				if wstflg:
 					dweather = dweather + 1
@@ -427,18 +443,13 @@ def main():
 
 				ebuf = evt.get_evt()
 				if len(ebuf) > 1:
+					events = events + 1
+					print "Cosmic ray events flushed:%d\n" % (events)
 					if udpflg:
 						sio.send_event_pkt(ebuf,ipaddr,ipport)
-						if ipaddr == 'localhost':
-							recv = sio.recv_event_pkt()
-							if recv != False:
-								print recv
-							else:
-								print "\nRecvFrom: TimeOut Sending:OFF"
-								udpflg = False
+
 					if logflg:
 						log.write(ebuf)
-					events = events + 1
 					if debug:
 						sys.stdout.write(rc)
 				else:
@@ -448,7 +459,7 @@ def main():
 						ts = time.strftime("%d/%b/%Y %H:%M:%S",time.gmtime(time.time()))
 						tim = evt.get_tim();
 						sts = evt.get_sts();
-						s = "cosmic_pi:Upt:%s :Qsz:%s Tim:[%s] %s\r" % (tim["Upt"],sts["Qsz"],ts,tim["Sec"])
+						s = "cosmic_pi:Upt:%s :Qsz:%s Tim:[%s] %s    \r" % (tim["Upt"],sts["Qsz"],ts,tim["Sec"])
 						sys.stdout.write(s)
 						sys.stdout.flush()
 

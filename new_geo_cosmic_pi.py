@@ -81,7 +81,7 @@ class Event(object):
 		self.LOC = { "Lat":"f","Lon":"f","Alt":"f" }
 		self.TIM = { "Upt":"i","Frq":"i","Sec":"i" }
 		self.STS = { "Qsz":"i","Mis":"i","Ter":"i","Htu":"i","Bmp":"i","Acl":"i","Mag":"i" }
-		self.EVT = { "Evt":"i","Frq":"i","Tks":"i","Etm":"f" }
+		self.EVT = { "Evt":"i","Frq":"i","Tks":"i","Etm":"f","Adc0":"[i,i,i,i,i,i,i,i]","Adc1":"[i,i,i,i,i,i,i,i]"  }
 
 		self.recd = {	"HTU":self.HTU, "BMP":self.BMP, "VIB":self.VIB, "MAG":self.MAG, "MOG":self.MOG,
 				"ACL":self.ACL, "AOL":self.AOL, "LOC":self.LOC, "TIM":self.TIM, "STS":self.STS,
@@ -207,12 +207,12 @@ class Socket_io(object):
 		self.sok.close()		
 
 def main():
-	use = "Usage: %prog [--ip=cosmicpi.ddns.net --port=4901 --usb=/dev/ttyACM1 --debug --dirnam=/tmp]"
+	use = "Usage: %prog [--ip=cosmicpi.ddns.net --port=4901 --usb=/dev/ttyACM0 --debug --dirnam=/tmp]"
 	parser = OptionParser(usage=use, version="cosmic_pi version 1.0")
 	
 	parser.add_option("-i", "--ip",    help="Server IP address or name", dest="ipaddr", default="localhost")
 	parser.add_option("-p", "--port",  help="Server portnumber", dest="ipport", type="int", default="4901")
-	parser.add_option("-u", "--usb",   help="USB device name", dest="usbdev", default="/dev/ttyACM1")
+	parser.add_option("-u", "--usb",   help="USB device name", dest="usbdev", default="/dev/ttyACM0")
 	parser.add_option("-d", "--debug", help="Debug Option", dest="debug", default=False, action="store_true")
 	parser.add_option("-o", "--odir",  help="Path to log directory", dest="logdir", default="/tmp")
 	parser.add_option("-n", "--noip",  help="IP Sending", dest="udpflg", default=True, action="store_false")

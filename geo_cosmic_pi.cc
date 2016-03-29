@@ -71,7 +71,7 @@
 // STS:Qsz:i:Mis:%i:Ter:i:Htu:i:Bmp:i:Acl:i:Mag:i
 // Status record containing Qsz:events on queue Mis:missed events Ter:buffer error Htu:status Bmp:status Acl:status Mag:status
 //
-// EVT:Evt:i:Frq:i:Tks:i:Etm:f:Adc0:[i]:Adc1[i]
+// EVT:Evt:i:Frq:i:Tks:i:Etm:f:Adc0:[i,i,i,i,i,i,i,i]:Adc1[i,i,i,i,i,i,i,i]
 // Event record containing Evt:event number in second Frq:timer frequency Tks:ticks since last event in second 
 // Etm:event time stamp to 100ns Adc0:[list 10 integer values], Adc1:[list 10 integer values]
 
@@ -537,7 +537,7 @@ uint8_t AclReadStatus() {
 // Set up the ADC channels
 
 void AdcSetup() {
-	REG_ADC_MR = 0x10380180;	// Free run as fast as you can
+	REG_ADC_MR = 0x10380080;	// Free run as fast as you can
 	REG_ADC_CHER = 3;		// Channels 0 and 1
 }
 
@@ -971,9 +971,11 @@ void PushEvq(int flg, int *qsize, int *missed) {
 			evtm += ((double) eb.Ticks / (double) eb.Frequency);	// Add time since last event
 			sprintf(stx,"%9.7f",evtm);				// It will be 0.something
 
-			// Build string and push it out to the print buffer
+			// Build string and push it out to the print buffer (sprintf - crap code will fix !)
 
-			sprintf(txt,"EVT:Evt:%01d:Frq:%08d:Tks:%08d:Etm:%s%s:Adc0:%d,%d,%d,%d,%d,%d,%d,%d:Adc1:%d,%d,%d,%d,%d,%d,%d,%d\n",
+			sprintf(txt,
+				"EVT:Evt:%01d:Frq:%08d:Tks:%08d:Etm:%s%s:"
+				"Adc0:[%d,%d,%d,%d,%d,%d,%d,%d]:Adc1:[%d,%d,%d,%d,%d,%d,%d,%d]\n",
 				eb.Count, eb.Frequency, eb.Ticks, eb.DateTime, index(stx,'.'),
 				eb.Ch0[0],eb.Ch0[1],eb.Ch0[2],eb.Ch0[3],eb.Ch0[4],eb.Ch0[5],eb.Ch0[6],eb.Ch0[7],
 				eb.Ch1[0],eb.Ch1[1],eb.Ch1[2],eb.Ch1[3],eb.Ch1[4],eb.Ch1[5],eb.Ch1[6],eb.Ch1[7]);

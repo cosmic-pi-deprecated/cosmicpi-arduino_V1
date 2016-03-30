@@ -12,7 +12,7 @@
 
 // Julian Lewis lewis.julian@gmail.com
 
-#define VERS "2016/Mar/26"
+#define VERS "2016/Mar/29"
 
 // In this sketch I am using an Adafruite ultimate GPS breakout which exposes the PPS output
 // The Addafruite Rx is connected to the DUE TX1 (Pin 18) and its Tx to DUE RX1 (Pin 19)
@@ -24,65 +24,53 @@
 // serial line. There has to be mutual aggreement between this program and the monitor.
 
 // Output strings
-// All fields in all output strings are seperated by the ':' this makes breaking up the output strings
-// very simple.
-// Each string begins with a 3 upper case character record name followed by field name/value pairs.
-// Each name value contains one upper case character followed by two lower case characters.
-// Record names and field names are unique.
-// The values are either integers following the standard radix syntax or floats. So 0x10 is
-// hexadecimal 10 and 10 is decimal 10. No other radix is used.
-
-// For example
-//      RNM:Rnm:123:Xyx:0x44:Zyx:13.88:Val:-68
-//      Denotes record named RNM has fields [Rnm, Xyz, Zyx, Val] with values [123,0x44,13.88,-68] respectivley
+// All fields in all output strings conform to the json standard
 
 // Here is the list of all records where 'f' denotes float and 'i' denotes integer ...
-// HTU:Tmh:f:Hum:f
+// {'HTU':{'Tmh':f,'Hum':f}}
 // HTU21DF record containing Tmh:temperature in C Hum:humidity percent
 //
-// BMP:Tmb:f:Prs:f:Alb:f
+// {'BMP':{'Tmb':f,'Prs':f,'Alb':f}}
 // BMP085 record containing Tmb:temperature Prs:pressure Alb:Barrometric altitude
 //
-// VIB:Vax:i:Vcn:i
+// {'VIB':{'Vax':i,'Vcn':i}}
 // Vibration record containing Vax:3 bit xyz direction mask Vcn:vibration count
 // This record is always immediatly followed by 3 more records, TIM, ACL, and MAG
 //
-// MAG:Mgx:f:Mgy:f:Mgz:f
+// {'MAG':{'Mgx':f,'Mgy':f,'Mgz':f}}
 // LSM303DLH magnatometer record containing Mgx:the x field strength Mgy:the y field Mgz:ther z field
 //
-// MOG:Mox:f:Moy:f:Moz:f
+// {'MOG':{'Mox':f,'Moy':f,'Moz':f}}
 // LSM303DLH magnatometer record containing Mox:x orientation Moy:y orientation Moz:z orientation
 // This record is optional, by default its turned off (it can always be calculated later - Python)
 //
-// ACL:Acx:f:Acy:f:Acz:f
+// {'ACL':{'Acx':f,'Acy':f,'Acz':f}}
 // LSM303DLH acclerometer record containing Acx:the x acceleration Acy:the y acceleration Acz:the z acceleration
 // If this record immediatly follows a VIB record the fields were hardware latched when the g threshold was exceeded
 //
-// AOL:Aox:f:Aoy:f:Aoz:f
+// {'AOL':{'Aox':f,'Aoy':f,'Aoz':f}}
 // LSM303DLH accelerometer record containing Aox:x orientation Aoy:y orientation Aoz:z orientation
 // This record is optional, by default its turned off (it can always be calculated later - Python)
 //
-// LOC:Lat:f:Lon:f:Alt:f
+// {'LOC':{'Lat':f,'Lon':f,'Alt':f}}
 // GPS location record containing Lat:latitude in degrees Lon:longitude in degrees Alt:altitude in meters
 //
-// TIM:Upt:i:Frq:i:Sec:i
+// {'TIM':{'Upt':i,'Frq':i,'Sec':i}}
 // Time record containing Upt:up time seconds Frq:counter frequency Sec:time string
 //
-// STS:Qsz:i:Mis:%i:Ter:i:Htu:i:Bmp:i:Acl:i:Mag:i
+// {'STS':{'Qsz':i,'Mis':i,'Ter':i,'Htu':i,'Bmp':i,'Acl':i,'Mag':i}}
 // Status record containing Qsz:events on queue Mis:missed events Ter:buffer error Htu:status Bmp:status Acl:status Mag:status
 //
-// EVT:Evt:i:Frq:i:Tks:i:Etm:f:Adc0:[i,i,i,i,i,i,i,i]:Adc1[i,i,i,i,i,i,i,i]
+// {'EVT':{'Evt':i,'Frq':i,'Tks':i,'Etm':f,'Adc':[[i,i,i,i,i,i,i,i][i,i,i,i,i,i,i,i]]}}
 // Event record containing Evt:event number in second Frq:timer frequency Tks:ticks since last event in second 
-// Etm:event time stamp to 100ns Adc0:[list 10 integer values], Adc1:[list 10 integer values]
+// Etm:event time stamp to 100ns Adc:[[Channel 0 values][Channel 1 values]]
 
 // N.B. These records pass the data to a python monitor over the serial line. Python has awsome string handling and looks them up in
 // associative arrays to build records of any arbitary format you want. So this is only the start of the story of record processing.
 // N.B. Also some of these records are sent out at regular intervals and or when an event occurs.
 
 // This program also accepts commands sent to it on the serial line.
-// When a command arrives it is immediatly executed. Each command has name and value.
-// Each command name contains 4 upper case characters and an optional integer value.
-// See below for the complete list of possible commands.
+// When a command arrives it is immediatly executed.
 
 #include <time.h>
 #include <Wire.h>
@@ -203,11 +191,13 @@ typedef enum {
 
 typedef struct {
 	int   Id;		// Command ID number
-	void  (*proc)(int arg);	// Function
+	void  (*proc)(int arg);	// Function to call
 	char *Name;		// Command name
 	char *Help;		// Command help text
 	int   Par;		// Command parameter flag
 } CmdStruct;
+
+// Function forward references 
 
 void noop(int arg);
 void help(int arg);
@@ -222,10 +212,12 @@ void acld(int arg);
 void magd(int arg);
 void aclt(int arg);
 
+// Command table
+
 CmdStruct cmd_table[CMDS] = {
 	{ NOOP, noop, "NOOP", "Do nothing", 0 },
 	{ HELP, help, "HELP", "Display commands", 0 },
-	{ HTUX, htux, "HTUX", "Reset the HTH chip", 0 },
+	{ HTUX, htux, "HTUX", "Reset the HTU chip", 0 },
 	{ HTUD, htud, "HTUD", "HTU Temperature-Humidity display rate", 1 },
 	{ BMPD, bmpd, "BMPD", "BMP Temperature-Altitude display rate", 1 },
 	{ LOCD, locd, "LOCD", "Location latitude-longitude display rate", 1 },
@@ -349,8 +341,8 @@ struct Event {
 
 static struct Event b1[PPS_EVENTS];	// Event ticks buffeer
 static struct Event b2[PPS_EVENTS];	// Event ticks buffer
-static struct Event *wbuf = b1;	// Write event buffer pointer and its index
-static struct Event *rbuf = b2;	// Read event buffer pointer and its index
+static struct Event *wbuf = b1;		// Write event buffer pointer and its index
+static struct Event *rbuf = b2;		// Read event buffer pointer and its index
 static int ridx, widx;
 
 // We also need a time value for the current and previous second
@@ -367,6 +359,7 @@ static char *wdtm = t1;			// Write date/time pointer
 static char *rdtm = t2;			// Read date/time pointer
 
 // Swap read write event buffers and indexes along with their time strings
+// each second, so we have the current and previous second numbers
 
 void SwapBufs() {
 	struct Event *tbuf;			// Temp event buf pointer
@@ -376,11 +369,11 @@ void SwapBufs() {
 	tdtm = rdtm; rdtm = wdtm; wdtm = tdtm;	// And swap asociated buffer date/time
 }
 
-static uint32_t	rega1, stsr1 = 0;
-
 // Handle isolated PPS (via diode) LOR with the Event
 // The diode is needed to block Event pulses getting back to TC0
 // LOR means Logical inclusive OR
+
+static uint32_t	rega1, stsr1 = 0;
 
 void TC6_Handler() {
 
@@ -400,6 +393,10 @@ void TC6_Handler() {
 		digitalWrite(EVT_PIN,HIGH);	// Event detected
 #endif
 		if (widx < PPS_EVENTS) {	// Up to PPS_EVENTS stored per PPS
+			
+			// Read the latched tick count getting the event time
+			// and then pull the ADC pipe line
+
 			wbuf[widx].Tks = TC2->TC_CHANNEL[0].TC_RA;
 			AdcPullData(&wbuf[widx]);
 			widx++;
@@ -408,7 +405,7 @@ void TC6_Handler() {
 #if FLG_PIN	
 	digitalWrite(FLG_PIN,ppsfl);		// Flag out
 #endif
-	rega1 = TC2->TC_CHANNEL[0].TC_RA;	// Read thge RA on channel 1 (PPS period)
+	rega1 = TC2->TC_CHANNEL[0].TC_RA;	// Read the RA on channel 1 (PPS period)
 	stsr1 = TC_GetStatus(TC2, 0); 		// Read status clear load bits
 }
 
@@ -967,7 +964,7 @@ void PushEvq(int flg, int *qsize, int *missed) {
 			evtm += ((double) eb.Ticks / (double) eb.Frequency);	// Add time since last event
 			sprintf(stx,"%9.7f",evtm);				// It will be 0.something
 
-			// Build string and push it out to the print buffer (sprintf - crap code will fix !)
+			// Build string and push it out to the print buffer
 
 			sprintf(txt,
 				"{'EVT':{'Evt':%01d,'Frq':%08d,'Tks':%08d,'Etm':%s%s,"
@@ -1067,7 +1064,7 @@ void ParseCmd() {
 void DoCmd() {
 	if (irdy) {
 		if (irdp) {
-			sprintf(txt,"CMD:%s\n",cmd);
+			sprintf(txt,"{'CMD':%s}\n",cmd);
 			PushTxt(txt);
 			ParseCmd();
 		}

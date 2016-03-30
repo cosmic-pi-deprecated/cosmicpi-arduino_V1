@@ -51,13 +51,14 @@ class Socket_io(object):
 	def __init__(self,ipport):
 		try:
 			self.sik = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+			self.sik.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
 			self.sik.setblocking(0)
-			self.sik.bind(("192.168.1.11",ipport))
+			self.sik.bind(("",ipport))
 
 		except Exception, e:
 			msg = "Exception: Can't open Socket: %s" % (e)
 			print "Sending OFF:%s" % msg
-			udpflg = False	
+			udpflg = False
 
 	def recv_event_pkt(self):
 		try:
@@ -122,12 +123,14 @@ def main():
 	kbrd = KeyBoard()
 	kbrd.echo_off()
 
-	sik = Socket_io(ipport)
+	sio = Socket_io(ipport)
 
 	try:
 		while(True):
 
-			print sik.recv_event_pkt();
+			recv = sio.recv_event_pkt();
+			if recv:
+				print recv
 
 			if kbrd.test_input():
 				kbrd.echo_on()

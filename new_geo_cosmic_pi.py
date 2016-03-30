@@ -180,9 +180,6 @@ class Socket_io(object):
 	def __init__(self,ipaddr,ipport):
 		try:
 			self.sok = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-			self.sik = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-			self.sik.setblocking(0)
-			self.sik.bind((ipaddr,ipport))
 
 		except Exception, e:
 			msg = "Exception: Can't open Socket: %s" % (e)
@@ -198,19 +195,6 @@ class Socket_io(object):
 			print "Sending OFF:%s" % msg
 			udpflg = False
 
-	def recv_event_pkt(self):
-		try:
-			available = select.select([self.sik], [], [], 1)
-			if available[0]:
-				recv = self.sik.recvfrom(1024)
-				return recv
-
-		except Exception, e:
-			msg = "Exception: Can't recvfrom: %s" % (e)
-			print "Sending OFF:%s" % msg
-			udpflg = False
-
-		return False	# I love Python
 
 	def close(self):
 		self.sok.close()		
@@ -426,7 +410,7 @@ def main():
 						
 						vbuf = "{%s,%s,%s,%s}" % (str(vib),str(tim),str(acl),str(mag))
 						if udpflg:
-							sio.send_event_pkt(ebuf,ipaddr,ipport)
+							sio.send_event_pkt(vbuf,ipaddr,ipport)
 						if logflg:
 							log.write(vbuf)
 

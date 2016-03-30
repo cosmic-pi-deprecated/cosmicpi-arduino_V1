@@ -423,8 +423,9 @@ def main():
 						print "Accelarometer.: Acx:%s Acy:%s Acz:%s" % (acl["Acx"],acl["Acy"],acl["Acz"])
 						print "Magnatometer..: Mgx:%s Mgy:%s Mgz:%s" % (mag["Mgx"],mag["Mgy"],mag["Mgz"])
 						print "Time..........: Sec:%s\n" % (tim["Sec"])
+						
+						vbuf = "{%s,%s,%s,%s}" % (str(vib),str(tim),str(acl),str(mag))
 						if udpflg:
-							vbuf = "{" + str(vib) + str(tim) + str(acl) + str(mag) + "}"
 							sio.send_event_pkt(ebuf,ipaddr,ipport)
 						if logflg:
 							log.write(vbuf)
@@ -444,14 +445,12 @@ def main():
 				ebuf = evt.get_evt()
 				if len(ebuf) > 1:
 					events = events + 1
-					print "Cosmic ray events flushed:%d\n" % (events)
+					sys.stdout.write("Cosmic ray events flushed:%d - %s" % (events,time.asctime(time.gmtime(time.time()))))
+					sys.stdout.write("                               \n")	# Clean text off screen !!
 					if udpflg:
 						sio.send_event_pkt(ebuf,ipaddr,ipport)
-
 					if logflg:
 						log.write(ebuf)
-					if debug:
-						sys.stdout.write(rc)
 				else:
 					if debug:
 						sys.stdout.write(rc)

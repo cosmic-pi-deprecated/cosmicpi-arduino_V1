@@ -85,13 +85,14 @@ class Event(object):
 		self.LOC = { "Lat":"f","Lon":"f","Alt":"f" }
 		self.TIM = { "Upt":"i","Frq":"i","Sec":"i" }
 		self.STS = { "Qsz":"i","Mis":"i","Ter":"i","Htu":"i","Bmp":"i","Acl":"i","Mag":"i" }
-		self.EVT = { "Evt":"i","Frq":"i","Tks":"i","Etm":"f","Adc":"[[i,i,i,i,i,i,i,i],[i,i,i,i,i,i,i,i]]"  }
+		self.EVT = { "Evt":"i","Frq":"i","Tks":"i","Etm":"f","Adc":"[[i,i,i,i,i,i,i,i],[i,i,i,i,i,i,i,i]]" }
+		self.DAT = { "Dat":"s" }
 
 		# Now build the main dictionary with one entry for each json string we will process
 
 		self.recd = {	"HTU":self.HTU, "BMP":self.BMP, "VIB":self.VIB, "MAG":self.MAG, "MOG":self.MOG,
 				"ACL":self.ACL, "AOL":self.AOL, "LOC":self.LOC, "TIM":self.TIM, "STS":self.STS,
-				"EVT":self.EVT }
+				"EVT":self.EVT, "DAT":self.DAT }
 
 		self.oetm = "f"
 		self.ovib = "i"
@@ -109,39 +110,66 @@ class Event(object):
 		except Exception, e:
 			pass					# Didnt understand, throw it away
 
-	# For weather stations
+	def extract(self, entry):
+		if self.recd.has_key(entry):
+			if entry is "DAT":
+				self.recd["DAT"] = time.asctime(time.gmtime(time.time()))
+			nstr = "{\'%s\':%s}" % (entry,str(self.recd[entry]))
+			return nstr
+		else:
+			return ""
+
+	# build weather, cosmic ray and vibration event strings suitable to be sent over the network to server
+	# these strings are self describing json format for easy decoding at the server end
 
 	def get_weather(self):
-		self.weather =	"{" + str(self.recd["HTU"]) + \
-				"," + str(self.recd["BMP"]) + \
-				"," + str(self.recd["LOC"]) + \
-				"," + str(self.recd["TIM"]) + \
-				"}"
+
+		# Build a list of dictionary entries as a string
+
+		self.weather =	"[" + self.extract("HTU") + \
+				"," + self.extract("BMP") + \
+				"," + self.extract("LOC") + \
+				"," + self.extract("TIM") + \
+				"]"
 		return self.weather
 
-	def get_evt(self):
+	def get_event(self):
 		if self.oetm == self.recd["EVT"]["Etm"]:
 			return ""
 
 		self.oetm = self.recd["EVT"]["Etm"]
 
-		# Here is where you can play around with the format of the message strings
-		# that will be sent to the server.
-		# I am just sending everything in json format, so if there is python
-		# program at the recieving end, it trivial to convert back to dictionary form
-		# as demonstrated in the pars method.
-
-		self.evt =	"{" + str(self.recd["EVT"]) + \
-				"," + str(self.recd["TIM"]) + \
-				"," + str(self.recd["LOC"]) + \
-				"," + str(self.recd["BMP"]) + \
-				"," + str(self.recd["ACL"]) + \
-				"," + str(self.recd["MAG"]) + \
-				"," + str(self.recd["HTU"]) + \
-				"," + str(self.recd["STS"]) + \
-				"," + time.asctime(time.gmtime(time.time())) + \
-				"}\n"
+		self.evt =	"[" + self.extract("EVT") + \
+				"," + self.extract("TIM") + \
+				"," + self.extract("LOC") + \
+				"," + self.extract("BMP") + \
+				"," + self.extract("ACL") + \
+				"," + self.extract("MAG") + \
+				"," + self.extract("HTU") + \
+				"," + self.extract("STS") + \
+				"," + self.extract("DAT") + \
+				"]\n"
 		return self.evt
+
+	def get_vibration(self):
+		if self.ovib == self.recd["VIB"]["Vcn"]:
+			return ""
+
+		self.ovib = self.recd["VIB"]["Vcn"]
+
+		self.vib =	"[" + self.extract("VIB") + \
+				"," + self.extract("LOC") + \
+				"," + self.extract("ACL") + \
+				"," + self.extract("MAG") + \
+				"," + self.extract("TIM") + \
+				"," + self.extract("DAT") + \
+				"]\n"
+		return self.vib
+
+	# Here we just return dictionaries
+
+	def get_vib(self):
+		return self.recd["VIB"]
 
 	def get_tim(self):
 		return self.recd["TIM"]
@@ -161,19 +189,10 @@ class Event(object):
 	def get_mag(self):
 		return self.recd["MAG"]
 
-	def get_vib(self,flg):
-		if flg:
-			if self.ovib == self.recd["VIB"]["Vcn"]:
-				return False
-
-			self.ovib = self.recd["VIB"]["Vcn"]
-
-		return self.recd["VIB"]
-
 	def get_htu(self):
 		return self.recd["HTU"]
 
-# Send/recieve UDP packets to the remote server
+# Send UDP packets to the remote server
 
 class Socket_io(object):
 
@@ -319,7 +338,7 @@ def main():
 					mag = evt.get_mag()
 					bmp = evt.get_bmp()
 					htu = evt.get_htu()
-					vib = evt.get_vib(0)
+					vib = evt.get_vib()
 
 					print "ARDUINO STATUS"
 					print "Status........: Upt:%s Frq:%s Qsz:%s Mis:%s" % (tim["Upt"],tim["Frq"],sts["Qsz"],sts["Mis"])
@@ -397,9 +416,10 @@ def main():
 				evt.parse(rc)
 
 				if vibflg:
-					vib = evt.get_vib(1)
-					if (vib):
+					vbuf = evt.get_vibration()
+					if len(vbuf) > 0:
 						vbrts = vbrts + 1
+						vib = evt.get_vib()
 						tim = evt.get_tim()
 						acl = evt.get_acl()
 						mag = evt.get_mag()
@@ -408,7 +428,6 @@ def main():
 						print "Magnatometer..: Mgx:%s Mgy:%s Mgz:%s" % (mag["Mgx"],mag["Mgy"],mag["Mgz"])
 						print "Time..........: Sec:%s\n" % (tim["Sec"])
 						
-						vbuf = "{%s,%s,%s,%s}" % (str(vib),str(tim),str(acl),str(mag))
 						if udpflg:
 							sio.send_event_pkt(vbuf,ipaddr,ipport)
 						if logflg:
@@ -426,11 +445,12 @@ def main():
 						print "Humidity......: Tmh:%s Hum:%s Alt:%s" % (htu["Tmh"],htu["Hum"],loc["Alt"])
 						print "Time..........: Sec:%s\n" % (tim["Sec"])
 
-				ebuf = evt.get_evt()
+				ebuf = evt.get_event()
 				if len(ebuf) > 1:
 					events = events + 1
 					sys.stdout.write("Cosmic ray events flushed:%d - %s" % (events,time.asctime(time.gmtime(time.time()))))
 					sys.stdout.write("                               \n")	# Clean text off screen !!
+
 					if udpflg:
 						sio.send_event_pkt(ebuf,ipaddr,ipport)
 					if logflg:

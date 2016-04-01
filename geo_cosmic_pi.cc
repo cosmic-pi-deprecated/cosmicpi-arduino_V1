@@ -967,7 +967,7 @@ void PushEvq(int flg, int *qsize, int *missed) {
 			// Build string and push it out to the print buffer
 
 			sprintf(txt,
-				"{'EVT':{'Evt':%01d,'Frq':%08d,'Tks':%08d,'Etm':%s%s,"
+				"{'EVT':{'Evt':%1d,'Frq':%8d,'Tks':%8d,'Etm':%s%s,"
 				"'Adc':[[%d,%d,%d,%d,%d,%d,%d,%d],[%d,%d,%d,%d,%d,%d,%d,%d]]}}\n",
 				eb.Count, eb.Frequency, eb.Ticks, eb.DateTime, index(stx,'.'),
 				eb.Ch0[0],eb.Ch0[1],eb.Ch0[2],eb.Ch0[3],eb.Ch0[4],eb.Ch0[5],eb.Ch0[6],eb.Ch0[7],

@@ -126,11 +126,12 @@ class Event(object):
 
 		# Build a list of dictionary entries as a string
 
-		self.weather =	"[" + self.extract("HTU") + \
-				"," + self.extract("BMP") + \
-				"," + self.extract("LOC") + \
-				"," + self.extract("TIM") + \
-				"]"
+		self.weather =		self.extract("HTU") + \
+				"*" +	self.extract("BMP") + \
+				"*" +	self.extract("LOC") + \
+				"*" +	self.extract("TIM") + \
+				"*" +	self.extract("DAT")
+ 
 		return self.weather
 
 	def get_event(self):
@@ -139,16 +140,15 @@ class Event(object):
 
 		self.oetm = self.recd["EVT"]["Etm"]
 
-		self.evt =	"[" + self.extract("EVT") + \
-				"," + self.extract("TIM") + \
-				"," + self.extract("LOC") + \
-				"," + self.extract("BMP") + \
-				"," + self.extract("ACL") + \
-				"," + self.extract("MAG") + \
-				"," + self.extract("HTU") + \
-				"," + self.extract("STS") + \
-				"," + self.extract("DAT") + \
-				"]\n"
+		self.evt =		self.extract("EVT") + \
+				"*" +	self.extract("BMP") + \
+				"*" +	self.extract("ACL") + \
+				"*" +	self.extract("MAG") + \
+				"*" +	self.extract("HTU") + \
+				"*" +	self.extract("STS") + \
+				"*" +	self.extract("LOC") + \
+				"*" +	self.extract("TIM") + \
+				"*" +	self.extract("DAT")
 		return self.evt
 
 	def get_vibration(self):
@@ -157,13 +157,12 @@ class Event(object):
 
 		self.ovib = self.recd["VIB"]["Vcn"]
 
-		self.vib =	"[" + self.extract("VIB") + \
-				"," + self.extract("LOC") + \
-				"," + self.extract("ACL") + \
-				"," + self.extract("MAG") + \
-				"," + self.extract("TIM") + \
-				"," + self.extract("DAT") + \
-				"]\n"
+		self.vib =		self.extract("VIB") + \
+				"*" +	self.extract("ACL") + \
+				"*" +	self.extract("MAG") + \
+				"*" +	self.extract("LOC") + \
+				"*" +	self.extract("TIM") + \
+				"*" +	self.extract("DAT")
 		return self.vib
 
 	# Here we just return dictionaries

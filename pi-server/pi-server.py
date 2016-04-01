@@ -16,6 +16,7 @@ import os
 import termios
 import fcntl
 import re
+import ast
 from optparse import OptionParser
 
 # Handle keyboard input
@@ -65,17 +66,147 @@ class Socket_io(object):
                 try:
                         available = select.select([self.sik], [], [], 1)
                         if available[0]:
-                                recv = self.sik.recvfrom(1024)
+                                recv = self.sik.recvfrom(2048)
                                 return recv
 
                 except Exception, e:
                         msg = "Exception: Can't recvfrom: %s" % (e)
                         print msg
 
-                return False    # I love Python
+                return ["",""]
 
         def close(self):
                 self.sik.close()
+
+# This is the event object, it builds a dictionary from incomming jsom strings 
+# and provides access to the dictionary entries containing the data for each field.
+
+class Event(object):
+
+	def __init__(self):
+
+		# These are the json strings we are expecting from the arduino
+
+		self.HTU = { "Tmh":"f","Hum":"f" }
+		self.BMP = { "Tmb":"f","Prs":"f","Alb":"f" }
+		self.VIB = { "Vax":"i","Vcn":"i" }
+		self.MAG = { "Mgx":"f","Mgy":"f","Mgz":"f" }
+		self.MOG = { "Mox":"f","Moy":"f","Moz":"f" }
+		self.ACL = { "Acx":"f","Acy":"f","Acz":"f" }
+		self.AOL = { "Aox":"f","Aoy":"f","Aoz":"f" }
+		self.LOC = { "Lat":"f","Lon":"f","Alt":"f" }
+		self.TIM = { "Upt":"i","Frq":"i","Sec":"i" }
+		self.STS = { "Qsz":"i","Mis":"i","Ter":"i","Htu":"i","Bmp":"i","Acl":"i","Mag":"i" }
+		self.EVT = { "Evt":"i","Frq":"i","Tks":"i","Etm":"f","Adc":"[[i,i,i,i,i,i,i,i],[i,i,i,i,i,i,i,i]]" }
+		self.DAT = { "Dat":"s" }
+
+		# Now build the main dictionary with one entry for each json string we will process
+
+		self.recd = {	"HTU":self.HTU, "BMP":self.BMP, "VIB":self.VIB, "MAG":self.MAG, "MOG":self.MOG,
+				"ACL":self.ACL, "AOL":self.AOL, "LOC":self.LOC, "TIM":self.TIM, "STS":self.STS,
+				"EVT":self.EVT, "DAT":self.DAT }
+
+		self.oetm = "f"
+		self.ovib = "i"
+
+	# Convert the incomming json strings into entries in the dictionary 
+
+	def parse(self, line):					# parse the incomming json strings from arduino
+		nstr = line.replace('\n','')			# Throw away <crtn>, we dont want them
+		try:
+			dic = ast.literal_eval(nstr)		# Build a dictionary entry
+			kys = dic.keys()			# Get key names, the first is the address
+			if self.recd.has_key(kys[0]):		# Check we know about records with this key
+				self.recd[kys[0]] = dic[kys[0]]	# and put it in the dictionary at that address
+			
+		except Exception, e:
+			pass					# Didnt understand, throw it away
+
+	def extract(self, entry):
+		if self.recd.has_key(entry):
+			if entry is "DAT":
+				self.recd["DAT"] = time.asctime(time.gmtime(time.time()))
+			nstr = "{\'%s\':%s}" % (entry,str(self.recd[entry]))
+			return nstr
+		else:
+			return ""
+
+	# build weather, cosmic ray and vibration event strings suitable to be sent over the network to server
+	# these strings are self describing json format for easy decoding at the server end
+
+	def get_weather(self):
+
+		# Build a list of dictionary entries as a string
+
+		self.weather =	"[" + self.extract("HTU") + \
+				"," + self.extract("BMP") + \
+				"," + self.extract("LOC") + \
+				"," + self.extract("TIM") + \
+				"," + self.extract("DAT") + \
+				"]"
+		return self.weather
+
+	def get_event(self):
+		if self.oetm == self.recd["EVT"]["Etm"]:
+			return ""
+
+		self.oetm = self.recd["EVT"]["Etm"]
+
+		self.evt =	"[" + self.extract("EVT") + \
+				"," + self.extract("BMP") + \
+				"," + self.extract("ACL") + \
+				"," + self.extract("MAG") + \
+				"," + self.extract("HTU") + \
+				"," + self.extract("STS") + \
+				"," + self.extract("LOC") + \
+				"," + self.extract("TIM") + \
+				"," + self.extract("DAT") + \
+				"]\n"
+		return self.evt
+
+	def get_vibration(self):
+		if self.ovib == self.recd["VIB"]["Vcn"]:
+			return ""
+
+		self.ovib = self.recd["VIB"]["Vcn"]
+
+		self.vib =	"[" + self.extract("VIB") + \
+				"," + self.extract("ACL") + \
+				"," + self.extract("MAG") + \
+				"," + self.extract("LOC") + \
+				"," + self.extract("TIM") + \
+				"," + self.extract("DAT") + \
+				"]\n"
+		return self.vib
+
+	# Here we just return dictionaries
+
+	def get_vib(self):
+		return self.recd["VIB"]
+
+	def get_tim(self):
+		return self.recd["TIM"]
+
+	def get_loc(self):
+		return self.recd["LOC"]
+
+	def get_sts(self):
+		return self.recd["STS"]
+
+	def get_bmp(self):
+		return self.recd["BMP"]
+
+	def get_acl(self):
+		return self.recd["ACL"]
+
+	def get_mag(self):
+		return self.recd["MAG"]
+
+	def get_htu(self):
+		return self.recd["HTU"]
+
+	def get_evt(self):
+		return self.recd["EVT"]
 
 def main():
         use = "Usage: %prog [--port=4901 --odir=/tmp]"
@@ -92,9 +223,9 @@ def main():
         debug  = options.debug
         logflg = options.logflg
 
-        print "\n\ncosmic_pi server running, hit '>' for commands\n"
+        print ""
+	print "cosmic_pi server running, hit '>' for commands\n"
 
-        print "\n"
         print "options (Server Port number)     port:%d" % ipport
         print "options (Logging directory)      odir:%s" % logdir
         print "options (Event logging)          log: %s" % logflg
@@ -123,17 +254,54 @@ def main():
 
         sio = Socket_io(ipport)
 
+	evt = Event()
+
         try:
                 while(True):
 
                         recv = sio.recv_event_pkt()
-			if recv:
-				if len(recv[0]):
-					if debug:
-                	                	print "Message:%s From:%s" % (recv[0],recv[1])
-					if logflg:
-						line = "%s - %s" % (str(recv[0]),str(recv[1]))
-						log.write(line)
+			if len(recv[0]):
+
+				if debug:
+					print "FromIP:%s" % (str(recv[1]))
+
+					nstr = recv[0].split('*')
+					for i in range(0,len(nstr)):
+						nstr[i] = nstr[i].replace('\n','')
+						#print "Parse:%s" % nstr[i]
+						evt.parse(nstr[i])
+
+					if nstr[0].find("EVT") != -1:
+						evd = evt.get_evt()
+						print
+						print "Cosmic Event..: Evt:%s Frq:%s Tks:%s Etm:%s" % (evd["Evt"],evd["Frq"],evd["Tks"],evd["Etm"])
+						print "Adc...........: %s" % (str(evd["Adc"])) 
+
+					elif nstr[0].find("VIB") != -1:
+						print
+                                                vib = evt.get_vib()
+                                                print "Vibration.....: Vax:%s Vcn:%s " % (vib["Vax"],vib["Vcn"])
+                                                tim = evt.get_tim()
+                                                print "Time..........: Sec:%s" % (tim["Sec"])
+                                                acl = evt.get_acl()
+                                                print "Accelarometer.: Acx:%s Acy:%s Acz:%s" % (acl["Acx"],acl["Acy"],acl["Acz"])
+                                                mag = evt.get_mag()
+                                                print "Magnatometer..: Mgx:%s Mgy:%s Mgz:%s" % (mag["Mgx"],mag["Mgy"],mag["Mgz"])
+
+					elif nstr[0].find("HTU") != -1:
+                                                tim = evt.get_tim()
+                                                bmp = evt.get_bmp()
+                                                htu = evt.get_htu()
+                                                loc = evt.get_loc()
+						print
+                                                print "Barometer.....: Tmb:%s Prs:%s Alb:%s" % (bmp["Tmb"],bmp["Prs"],bmp["Alb"])
+                                                print "Humidity......: Tmh:%s Hum:%s Alt:%s" % (htu["Tmh"],htu["Hum"],loc["Alt"])
+                                                print "Time..........: Sec:%s\n" % (tim["Sec"])
+
+				if logflg:
+					line = "%s - %s" % (str(recv[0]),str(recv[1]))
+					log.write(line)
+					log.write("\n\n")
 
                         if kbrd.test_input():
                                 kbrd.echo_on()

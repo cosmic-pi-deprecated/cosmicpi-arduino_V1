@@ -97,6 +97,9 @@ class Event(object):
 		self.oetm = "f"
 		self.ovib = "i"
 
+		self.newvib = 0
+		self.newevt = 0
+
 	# Convert the incomming json strings into entries in the dictionary 
 
 	def parse(self, line):					# parse the incomming json strings from arduino
@@ -107,13 +110,19 @@ class Event(object):
 			if self.recd.has_key(kys[0]):		# Check we know about records with this key
 				self.recd[kys[0]] = dic[kys[0]]	# and put it in the dictionary at that address
 			
+			if kys[0] == "VIB":
+				self.newvib = 1
+			
+			if kys[0] == "EVT":
+				self.newevt = 1	
+
 		except Exception, e:
+			#print e
+			#print "BAD:%s" % line
 			pass					# Didnt understand, throw it away
 
 	def extract(self, entry):
 		if self.recd.has_key(entry):
-			if entry is "DAT":
-				self.recd["DAT"] = time.asctime(time.gmtime(time.time()))
 			nstr = "{\'%s\':%s}" % (entry,str(self.recd[entry]))
 			return nstr
 		else:
@@ -135,35 +144,35 @@ class Event(object):
 		return self.weather
 
 	def get_event(self):
-		if self.oetm == self.recd["EVT"]["Etm"]:
+		if self.newevt:
+			self.newevt = 0
+
+			self.evt =		self.extract("EVT") + \
+					"*" +	self.extract("BMP") + \
+					"*" +	self.extract("ACL") + \
+					"*" +	self.extract("MAG") + \
+					"*" +	self.extract("HTU") + \
+					"*" +	self.extract("STS") + \
+					"*" +	self.extract("LOC") + \
+					"*" +	self.extract("TIM") + \
+					"*" +	self.extract("DAT")
+			return self.evt
+		else:
 			return ""
-
-		self.oetm = self.recd["EVT"]["Etm"]
-
-		self.evt =		self.extract("EVT") + \
-				"*" +	self.extract("BMP") + \
-				"*" +	self.extract("ACL") + \
-				"*" +	self.extract("MAG") + \
-				"*" +	self.extract("HTU") + \
-				"*" +	self.extract("STS") + \
-				"*" +	self.extract("LOC") + \
-				"*" +	self.extract("TIM") + \
-				"*" +	self.extract("DAT")
-		return self.evt
 
 	def get_vibration(self):
-		if self.ovib == self.recd["VIB"]["Vcn"]:
+		if self.newvib:
+			self.newvib = 0
+
+			self.vib =		self.extract("VIB") + \
+					"*" +	self.extract("ACL") + \
+					"*" +	self.extract("MAG") + \
+					"*" +	self.extract("LOC") + \
+					"*" +	self.extract("TIM") + \
+					"*" +	self.extract("DAT")
+			return self.vib
+		else:
 			return ""
-
-		self.ovib = self.recd["VIB"]["Vcn"]
-
-		self.vib =		self.extract("VIB") + \
-				"*" +	self.extract("ACL") + \
-				"*" +	self.extract("MAG") + \
-				"*" +	self.extract("LOC") + \
-				"*" +	self.extract("TIM") + \
-				"*" +	self.extract("DAT")
-		return self.vib
 
 	# Here we just return dictionaries
 
@@ -191,6 +200,13 @@ class Event(object):
 	def get_htu(self):
 		return self.recd["HTU"]
 
+	def get_evt(self):
+		return self.recd["EVT"]
+
+	def get_dat(self):
+		self.recd["DAT"]["Dat"] = time.asctime(time.gmtime(time.time()))
+		return self.recd["DAT"]
+
 # Send UDP packets to the remote server
 
 class Socket_io(object):
@@ -206,7 +222,9 @@ class Socket_io(object):
 
 	def send_event_pkt(self,pkt,ipaddr,ipport):
 		try:
-			self.sok.sendto(pkt, (ipaddr, ipport))
+			sent = 0
+			while sent < len(pkt):
+				sent = sent + self.sok.sendto(pkt[sent:], (ipaddr, ipport))
 
 		except Exception, e:
 			msg = "Exception: Can't sendto: %s" % (e)
@@ -422,6 +440,7 @@ def main():
 						tim = evt.get_tim()
 						acl = evt.get_acl()
 						mag = evt.get_mag()
+						print ""
 						print "Vibration.....: Cnt:%d Vax:%s Vcn:%s " % (vbrts,vib["Vax"],vib["Vcn"])
 						print "Accelarometer.: Acx:%s Acy:%s Acz:%s" % (acl["Acx"],acl["Acy"],acl["Acz"])
 						print "Magnatometer..: Mgx:%s Mgy:%s Mgz:%s" % (mag["Mgx"],mag["Mgy"],mag["Mgz"])
@@ -440,6 +459,7 @@ def main():
 						bmp = evt.get_bmp()
 						htu = evt.get_htu()
 						loc = evt.get_loc()
+						print ""
 						print "Barometer.....: Tmb:%s Prs:%s Alb:%s" % (bmp["Tmb"],bmp["Prs"],bmp["Alb"])
 						print "Humidity......: Tmh:%s Hum:%s Alt:%s" % (htu["Tmh"],htu["Hum"],loc["Alt"])
 						print "Time..........: Sec:%s\n" % (tim["Sec"])
@@ -447,8 +467,14 @@ def main():
 				ebuf = evt.get_event()
 				if len(ebuf) > 1:
 					events = events + 1
-					sys.stdout.write("Cosmic ray events flushed:%d - %s" % (events,time.asctime(time.gmtime(time.time()))))
-					sys.stdout.write("                               \n")	# Clean text off screen !!
+					dat = evt.get_dat()
+					evd = evt.get_evt()
+					tim = evt.get_tim()
+					print ""
+					print "Cosmic Event..: Evt:%s Frq:%s Tks:%s Etm:%s" % (evd["Evt"],evd["Frq"],evd["Tks"],evd["Etm"])
+					print "Adc[[Ch0][Ch1]: Adc:%s" % (str(evd["Adc"]))
+					print "Time..........: Upt:%s Sec:%s" % (tim["Upt"],tim["Sec"])
+					print "Date..........: Dat:%s\n" % (dat["Dat"])
 
 					if udpflg:
 						sio.send_event_pkt(ebuf,ipaddr,ipport)

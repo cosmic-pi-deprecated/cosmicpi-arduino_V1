@@ -21,7 +21,7 @@ Typing the '>' character turns on command input
 It is important to keep the Python dictionary objects synchronised with the Arduino firmware
 otherwise this monitor will not understand the data being sent to it
 
-julian.lewis lewis.julian@gmail.com 29/Mar/2016
+julian.lewis lewis.julian@gmail.com 2/Apr/2016
 
 """
 
@@ -86,19 +86,27 @@ class Event(object):
 		self.TIM = { "Upt":"i","Frq":"i","Sec":"i" }
 		self.STS = { "Qsz":"i","Mis":"i","Ter":"i","Htu":"i","Bmp":"i","Acl":"i","Mag":"i" }
 		self.EVT = { "Evt":"i","Frq":"i","Tks":"i","Etm":"f","Adc":"[[i,i,i,i,i,i,i,i],[i,i,i,i,i,i,i,i]]" }
-		self.DAT = { "Dat":"s" }
+
+		# Add ons
+
+		self.DAT = { "Dat":"s" }	# Date
+		self.SQN = { "Sqn":"i" }	# Sequence number
 
 		# Now build the main dictionary with one entry for each json string we will process
 
 		self.recd = {	"HTU":self.HTU, "BMP":self.BMP, "VIB":self.VIB, "MAG":self.MAG, "MOG":self.MOG,
 				"ACL":self.ACL, "AOL":self.AOL, "LOC":self.LOC, "TIM":self.TIM, "STS":self.STS,
-				"EVT":self.EVT, "DAT":self.DAT }
+				"EVT":self.EVT, "DAT":self.DAT, "SQN":self.SQN }
 
-		self.oetm = "f"
-		self.ovib = "i"
+		self.newvib = 0	# Vibration
+		self.newevt = 0	# Cosmic ray
+		self.newhtu = 0	# Weather report
+	
+		self.sqn = 0	# Packet sequenc number
 
-		self.newvib = 0
-		self.newevt = 0
+		self.ohum = 0.0	# Old humidity value
+		self.otmb = 0.0	# Old barometric temperature value
+		self.oprs = 0.0	# Old barometric presure value
 
 	# Convert the incomming json strings into entries in the dictionary 
 
@@ -109,12 +117,15 @@ class Event(object):
 			kys = dic.keys()			# Get key names, the first is the address
 			if self.recd.has_key(kys[0]):		# Check we know about records with this key
 				self.recd[kys[0]] = dic[kys[0]]	# and put it in the dictionary at that address
-			
+
 			if kys[0] == "VIB":
 				self.newvib = 1
 			
 			if kys[0] == "EVT":
-				self.newevt = 1	
+				self.newevt = 1
+
+			if kys[0] == "HTU":
+				self.newhtu = 1
 
 		except Exception, e:
 			#print e
@@ -132,21 +143,39 @@ class Event(object):
 	# these strings are self describing json format for easy decoding at the server end
 
 	def get_weather(self):
+		if self.newhtu:
+			self.newhtu = 0
+			try:
+				hum = float(self.recd["HTU"]["Hum"])
+				tmb = float(self.recd["BMP"]["Tmb"])
+				prs = float(self.recd["BMP"]["Prs"])
 
-		# Build a list of dictionary entries as a string
+			except Exception, e:
+				hum = 0.0
+				tmb = 0.0
+				prs = 0.0
+				pass
 
-		self.weather =		self.extract("HTU") + \
-				"*" +	self.extract("BMP") + \
-				"*" +	self.extract("LOC") + \
-				"*" +	self.extract("TIM") + \
-				"*" +	self.extract("DAT")
- 
-		return self.weather
+			tol = abs(hum - self.ohum) + abs(tmb - self.otmb) + abs(prs - self.oprs)
+			if tol > 1.0:
+				self.ohum = hum
+				self.otmb = tmb
+				self.oprs = prs
+
+				self.weather =		self.extract("HTU") + \
+						"*" +	self.extract("BMP") + \
+						"*" +	self.extract("LOC") + \
+						"*" +	self.extract("TIM") + \
+						"*" +	self.extract("DAT") + \
+						"*" +	self.extract("SQN")
+                 
+				return self.weather
+			
+		return ""
 
 	def get_event(self):
 		if self.newevt:
 			self.newevt = 0
-
 			self.evt =		self.extract("EVT") + \
 					"*" +	self.extract("BMP") + \
 					"*" +	self.extract("ACL") + \
@@ -155,24 +184,25 @@ class Event(object):
 					"*" +	self.extract("STS") + \
 					"*" +	self.extract("LOC") + \
 					"*" +	self.extract("TIM") + \
-					"*" +	self.extract("DAT")
-			return self.evt
-		else:
-			return ""
+					"*" +	self.extract("DAT") + \
+					"*" +	self.extract("SQN")
+			return self.evti
+
+		return ""
 
 	def get_vibration(self):
 		if self.newvib:
 			self.newvib = 0
-
 			self.vib =		self.extract("VIB") + \
 					"*" +	self.extract("ACL") + \
 					"*" +	self.extract("MAG") + \
 					"*" +	self.extract("LOC") + \
 					"*" +	self.extract("TIM") + \
-					"*" +	self.extract("DAT")
+					"*" +	self.extract("DAT") + \
+					"*" +	self.extract("SQN")
 			return self.vib
-		else:
-			return ""
+
+		return ""
 
 	# Here we just return dictionaries
 
@@ -206,6 +236,13 @@ class Event(object):
 	def get_dat(self):
 		self.recd["DAT"]["Dat"] = time.asctime(time.gmtime(time.time()))
 		return self.recd["DAT"]
+
+	def get_sqn(self):
+		return self.recd["SQN"]
+
+	def nxt_sqn(self):
+		self.recd["SQN"]["Sqn"] = self.sqn
+		self.sqn = self.sqn + 1
 
 # Send UDP packets to the remote server
 
@@ -248,6 +285,7 @@ def main():
 	parser.add_option("-l", "--log",   help="Event Logging", dest="logflg", default=False, action="store_true")
 	parser.add_option("-v", "--vib",   help="Vibration monitor", dest="vibflg", default=False, action="store_true")
 	parser.add_option("-w", "--ws",    help="Weather station", dest="wstflg", default=False, action="store_true")
+	parser.add_option("-c", "--cray",  help="Cosmic ray sending", dest="evtflg", default=True, action="store_false")
 
 	options, args = parser.parse_args()
 
@@ -260,20 +298,22 @@ def main():
 	logflg = options.logflg
 	vibflg = options.vibflg
 	wstflg = options.wstflg
+	evtflg = options.evtflg
 
-	print "\n\ncosmic_pi monitor running, hit '>' for commands\n\n"
 
-	if debug:
-		print "\n"
-		print "options (Server IP address)	ip:  %s" % ipaddr
-		print "options (Server Port number)	port:%d" % ipport
-		print "options (USB device name)	usb: %s" % usbdev
-		print "options (Logging directory)	odir:%s" % logdir
-		print "options (Event logging)          log: %s" % logflg
-		print "options (UDP sending)            udp: %s" % udpflg
-		print "options (Vibration monitor)      vib: %s" % vibflg
-		print "options (Weather Station)        wst: %s" % wstflg
-	
+	print "\n"
+	print "options (Server IP address)     ip   : %s" % ipaddr
+	print "options (Server Port number)    port : %d" % ipport
+	print "options (USB device name)       usb  : %s" % usbdev
+	print "options (Logging directory)     odir : %s" % logdir
+	print "options (Event logging)         log  : %s" % logflg
+	print "options (UDP sending)           udp  : %s" % udpflg
+	print "options (Vibration monitor)     vib  : %s" % vibflg
+	print "options (Weather Station)       wst  : %s" % wstflg
+	print "options (Cosmic Ray Station)    cray : %s" % evtflg
+	print "options (Debug Flag)            debug: %s" % debug
+
+	print "\ncosmic_pi monitor running, hit '>' for commands\n"
 
 	now = time.asctime(time.localtime(time.time()))
 	now = now.replace(" ","-")
@@ -302,17 +342,13 @@ def main():
 		print "Fatal: %s" % msg
 		sys.exit(1)
 	
-	if debug:
-		print "\n"
-		print "USB device is: %s" % usbdev
-
 	kbrd = KeyBoard()
 	kbrd.echo_off()
 
 	evt = Event()
 	events = 0
 	vbrts = 0
-	dweather = 0
+	weathers = 0
 
 	sio = Socket_io(ipaddr,ipport)
 
@@ -416,7 +452,9 @@ def main():
 					ser.write(cmd.upper())
 			
 				kbrd.echo_off()
-				 
+			
+			# Process Arduino data json strings
+	 
 			rc = ser.readline()
 
 			if len(rc) == 0:
@@ -436,64 +474,82 @@ def main():
 					vbuf = evt.get_vibration()
 					if len(vbuf) > 0:
 						vbrts = vbrts + 1
+						evt.nxt_sqn()
+						dat = evt.get_dat()
 						vib = evt.get_vib()
 						tim = evt.get_tim()
 						acl = evt.get_acl()
 						mag = evt.get_mag()
+						sqn = evt.get_sqn()
 						print ""
 						print "Vibration.....: Cnt:%d Vax:%s Vcn:%s " % (vbrts,vib["Vax"],vib["Vcn"])
 						print "Accelarometer.: Acx:%s Acy:%s Acz:%s" % (acl["Acx"],acl["Acy"],acl["Acz"])
 						print "Magnatometer..: Mgx:%s Mgy:%s Mgz:%s" % (mag["Mgx"],mag["Mgy"],mag["Mgz"])
-						print "Time..........: Sec:%s\n" % (tim["Sec"])
-						
+						print "Time..........: Upt:%s Sec:%s Sqn:%d\n" % (tim["Upt"],tim["Sec"],sqn["Sqn"])
+							
 						if udpflg:
 							sio.send_event_pkt(vbuf,ipaddr,ipport)
 						if logflg:
 							log.write(vbuf)
 
-
+						continue
 				if wstflg:
-					dweather = dweather + 1
-					if (dweather % 60) == 0:
+					wbuf = evt.get_weather()
+					if len(wbuf) > 0:
+						weathers = weathers + 1
+						evt.nxt_sqn()
+						dat = evt.get_dat()
 						tim = evt.get_tim()
 						bmp = evt.get_bmp()
 						htu = evt.get_htu()
 						loc = evt.get_loc()
+						sqn = evt.get_sqn()
 						print ""
 						print "Barometer.....: Tmb:%s Prs:%s Alb:%s" % (bmp["Tmb"],bmp["Prs"],bmp["Alb"])
 						print "Humidity......: Tmh:%s Hum:%s Alt:%s" % (htu["Tmh"],htu["Hum"],loc["Alt"])
-						print "Time..........: Sec:%s\n" % (tim["Sec"])
+						print "Time..........: Upt:%s Sec:%s Sqn:%d\n" % (tim["Upt"],tim["Sec"],sqn["Sqn"])
+							
+						if udpflg:
+							sio.send_event_pkt(wbuf,ipaddr,ipport)
+						if logflg:
+							log.write(wbuf)
+						
+						continue
+				if evtflg:
+					ebuf = evt.get_event()
+					if len(ebuf) > 1:
+						events = events + 1
+						evt.nxt_sqn()
+						dat = evt.get_dat()
+						evd = evt.get_evt()
+						tim = evt.get_tim()
+						sqn = evt.get_sqn()
+						print ""
+						print "Cosmic Event..: Evt:%s Frq:%s Tks:%s Etm:%s" % (evd["Evt"],evd["Frq"],evd["Tks"],evd["Etm"])
+						print "Adc[[Ch0][Ch1]: Adc:%s" % (str(evd["Adc"]))
+						print "Time..........: Upt:%s Sec:%s Sqn:%d\n" % (tim["Upt"],tim["Sec"],sqn["Sqn"])
+        
+						if udpflg:
+							sio.send_event_pkt(ebuf,ipaddr,ipport)
+						if logflg:
+							log.write(ebuf)
 
-				ebuf = evt.get_event()
-				if len(ebuf) > 1:
-					events = events + 1
-					dat = evt.get_dat()
-					evd = evt.get_evt()
-					tim = evt.get_tim()
-					print ""
-					print "Cosmic Event..: Evt:%s Frq:%s Tks:%s Etm:%s" % (evd["Evt"],evd["Frq"],evd["Tks"],evd["Etm"])
-					print "Adc[[Ch0][Ch1]: Adc:%s" % (str(evd["Adc"]))
-					print "Time..........: Upt:%s Sec:%s" % (tim["Upt"],tim["Sec"])
-					print "Date..........: Dat:%s\n" % (dat["Dat"])
-
-					if udpflg:
-						sio.send_event_pkt(ebuf,ipaddr,ipport)
-					if logflg:
-						log.write(ebuf)
+						continue
+				if debug:
+					sys.stdout.write(rc)
 				else:
-					if debug:
-						sys.stdout.write(rc)
-					else:
-						ts = time.strftime("%d/%b/%Y %H:%M:%S",time.gmtime(time.time()))
-						tim = evt.get_tim();
-						sts = evt.get_sts();
-						s = "cosmic_pi:Upt:%s :Qsz:%s Tim:[%s] %s    \r" % (tim["Upt"],sts["Qsz"],ts,tim["Sec"])
-						sys.stdout.write(s)
-						sys.stdout.flush()
+					ts = time.strftime("%d/%b/%Y %H:%M:%S",time.gmtime(time.time()))
+					tim = evt.get_tim();
+					sts = evt.get_sts();
+					s = "cosmic_pi:Upt:%s :Qsz:%s Tim:[%s] %s    \r" % (tim["Upt"],sts["Qsz"],ts,tim["Sec"])
+					sys.stdout.write(s)
+					sys.stdout.flush()
 
 	except Exception, e:
 		msg = "Exception: main: %s" % (e)
 		print "Fatal: %s" % msg
+		traceback.print_exc()
+
 
 	finally:
 		kbrd.echo_on()

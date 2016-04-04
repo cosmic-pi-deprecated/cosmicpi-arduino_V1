@@ -210,6 +210,9 @@ class Event(object):
 			return self.extract("PAT")
 		return ""
 
+	def get_status(self):
+		return self.extract("STS")
+
 	# Here we just return dictionaries
 
 	def get_vib(self):
@@ -413,6 +416,8 @@ def main():
 							evt.set_pat(patok,pushflg)
 							pbuf = evt.get_notification()
 							sio.send_event_pkt(pbuf,ipaddr,ipport)
+							sbuf = evt.get_status()
+							sio.send_event_pkt(sbuf,ipaddr,ipport)
 							print "Sent notification request:%s" % pbuf 
 						else:
 							print "UDP sending is OFF, can not register with server"

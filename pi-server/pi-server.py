@@ -82,21 +82,65 @@ class Socket_io(object):
 
 class Notifications(object):
 
-	def __init__(self):
-		conn = httplib.HTTPSConnection("api.pushover.net:443")
-
 	def send_ntf(self,kyp,msg):
 
 		nstr = kyp.split('-')
+
+		self.conn = httplib.HTTPSConnection("api.pushover.net:443")
 		
-		conn.request(	"POST", "/1/messages.json",
+		self.conn.request(	"POST", "/1/messages.json",
 					urllib.urlencode({	"token"  : nstr[1],
     								"user"   : nstr[0],
     								"sound"  : "Cosmic",
     								"message": msg}), 
 				{ "Content-type": "application/x-www-form-urlencoded" })
 
-		conn.getresponse()
+		self.conn.getresponse()
+
+class Registrations(object):
+
+	def __init__(self):
+
+		self.reg = {"Ipa":"s","Sqn":0,"Pat":"s","Ntf":False,"Htu":"i","Bmp":"i","Acl":"i","Mag":"i"}
+		self.regs = []
+
+	def get_len(self):
+		return len(self.regs)
+
+	def get_index_by_value(self,knam,kval):
+		if self.reg.has_key(knam):
+			for i in range(0,len(self.regs)):
+				if self.regs[i][knam] == kval:
+					return i
+		return False
+
+	def get_reg_by_value(self,knam,kval):
+		if self.reg.has_key(knam):
+			for i in range(0,len(self.regs)):
+				if self.regs[i][knam] == kval:
+					return self.regs[i]
+		return False
+
+	def get_reg_by_index(self,indx):
+	  	if indx in range(0,len(self.regs)):
+			return self.regs[indx]
+		return False
+
+	def get_create_reg(self,knam,kval):
+		r = self.get_reg_by_value(knam,kval)
+		if r == False:
+			i = len(self.regs)
+			self.regs.append(self.reg.copy())
+			self.regs[i][knam] = kval
+			return self.regs[i]
+		else:
+			return r
+
+	def set_reg(self,r):
+		i = self.get_index_by_value("Ipa",r["Ipa"])
+		if i == False:
+			return False
+		self.regs[i] = r.copy()
 
 # This is the event object, it builds a dictionary from incomming jsom strings 
 # and provides access to the dictionary entries containing the data for each field.
@@ -132,7 +176,8 @@ class Event(object):
 				"ACL":self.ACL, "AOL":self.AOL, "LOC":self.LOC, "TIM":self.TIM, "STS":self.STS,
 				"EVT":self.EVT, "DAT":self.DAT, "SQN":self.SQN, "PAT":self.PAT }
 
-		self.newpat = 0
+		self.newpat = False
+		self.newsqn = False
 
 	# Convert the incomming json strings into entries in the dictionary 
 
@@ -145,7 +190,10 @@ class Event(object):
 				self.recd[kys[0]] = dic[kys[0]]	# and put it in the dictionary at that address
 			
 			if kys[0] == "PAT":
-				self.newpat = 1
+				self.newpat = True
+
+			if kys[0] == "SQN":
+				self.newsqn = True
 
 		except Exception, e:
 			pass					# Didnt understand, throw it away
@@ -239,62 +287,121 @@ def main():
 
 	nfs = Notifications()
 
+	reg = Registrations()
+
+	newsqn = False
+	badhard = False
+
 	try:
 		while(True):
 
 			recv = sio.recv_event_pkt()
 			if len(recv[0]):
 
-				if debug:
-					print "FromIP:%s" % (str(recv[1]))
+				print "FromIP:%s" % (str(recv[1]))
 
-					nstr = recv[0].split('*')
-					for i in range(0,len(nstr)):
-						nstr[i] = nstr[i].replace('\n','')
-						#print "Parse:%s" % nstr[i]
-						evt.parse(nstr[i])
+				nstr = recv[0].split('*')
+				for i in range(0,len(nstr)):
+					nstr[i] = nstr[i].replace('\n','')
+					#print "Parse:%s" % nstr[i]
+					evt.parse(nstr[i])
 
-					if nstr[0].find("EVT") != -1:
-						evd = evt.get_evt()
-						tim = evt.get_tim()
-						dat = evt.get_dat()
-						print
-						print "Cosmic Event..: Evt:%s Frq:%s Tks:%s Etm:%s" % (evd["Evt"],evd["Frq"],evd["Tks"],evd["Etm"])
-						print "Adc[[Ch0][Ch1]: Adc:%s" % (str(evd["Adc"]))
-						print "Time..........: Upt:%s Sec:%s" % (tim["Upt"],tim["Sec"])
-						print "Date..........: Dat:%s" % (dat["Dat"])
+				if nstr[0].find("EVT") != -1:
+					newsqn = True
+					evd = evt.get_evt()
+					tim = evt.get_tim()
+					dat = evt.get_dat()
+					print
+					print "Cosmic Event..: Evt:%s Frq:%s Tks:%s Etm:%s" % (evd["Evt"],evd["Frq"],evd["Tks"],evd["Etm"])
+					print "Adc[[Ch0][Ch1]: Adc:%s" % (str(evd["Adc"]))
+					print "Time..........: Upt:%s Sec:%s" % (tim["Upt"],tim["Sec"])
+					print "Date..........: Dat:%s" % (dat["Dat"])
 
-					elif nstr[0].find("VIB") != -1:
-						mag = evt.get_mag()
-						vib = evt.get_vib()
-						tim = evt.get_tim()
-						acl = evt.get_acl()
-						print
-						print "Vibration.....: Vax:%s Vcn:%s " % (vib["Vax"],vib["Vcn"])
-						print "Time..........: Sec:%s" % (tim["Sec"])
-						print "Accelarometer.: Acx:%s Acy:%s Acz:%s" % (acl["Acx"],acl["Acy"],acl["Acz"])
-						print "Magnatometer..: Mgx:%s Mgy:%s Mgz:%s" % (mag["Mgx"],mag["Mgy"],mag["Mgz"])
+				elif nstr[0].find("VIB") != -1:
+					newsqn = True
+					mag = evt.get_mag()
+					vib = evt.get_vib()
+					tim = evt.get_tim()
+					acl = evt.get_acl()
+					sqn = evt.get_sqn()
+					print
+					print "Vibration.....: Vax:%s Vcn:%s Sqn:%d" % (vib["Vax"],vib["Vcn"],sqn["Sqn"])
+					print "Time..........: Sec:%s" % (tim["Sec"])
+					print "Accelarometer.: Acx:%s Acy:%s Acz:%s" % (acl["Acx"],acl["Acy"],acl["Acz"])
+					print "Magnatometer..: Mgx:%s Mgy:%s Mgz:%s" % (mag["Mgx"],mag["Mgy"],mag["Mgz"])
 
-					elif nstr[0].find("HTU") != -1:
-						tim = evt.get_tim()
-						bmp = evt.get_bmp()
-						htu = evt.get_htu()
-						loc = evt.get_loc()
-						print
-						print "Barometer.....: Tmb:%s Prs:%s Alb:%s" % (bmp["Tmb"],bmp["Prs"],bmp["Alb"])
-						print "Humidity......: Tmh:%s Hum:%s Alt:%s" % (htu["Tmh"],htu["Hum"],loc["Alt"])
-						print "Time..........: Sec:%s\n" % (tim["Sec"])
+				elif nstr[0].find("HTU") != -1:
+					newsqn = True
+					tim = evt.get_tim()
+					bmp = evt.get_bmp()
+					htu = evt.get_htu()
+					loc = evt.get_loc()
+					print
+					print "Barometer.....: Tmb:%s Prs:%s Alb:%s" % (bmp["Tmb"],bmp["Prs"],bmp["Alb"])
+					print "Humidity......: Tmh:%s Hum:%s Alt:%s" % (htu["Tmh"],htu["Hum"],loc["Alt"])
+					print "Time..........: Sec:%s\n" % (tim["Sec"])
 
-					elif nstr[0].find("PAT") != -1:
-						pat = evt.get_pat()
-						print
-						print "Notification..: Pat:%s Ntf:%s" % (pat["Pat"],pat["Ntf"])
-						if pat["Ntf"] == True
-							msg = "Your are now registered to recieve pi server notifications"
+				elif nstr[0].find("PAT") != -1:
+					pat = evt.get_pat()
+					print
+					print "Notification..: Pat:%s Ntf:%s" % (pat["Pat"],pat["Ntf"])
+					if pat["Ntf"] == True:
+						msg = "Your are now registered to recieve pi server notifications"
+					else:
+						msg = "You will no longer recieve pi server notifications"
+
+					#nfs.send_ntf(pat["Pat"],msg)
+
+					r = reg.get_create_reg("Ipa",str(recv[1])) 
+					r["Pat"] = pat["Pat"] 
+					r["Ntf"] = pat["Ntf"]
+					reg.set_reg(r)
+
+				elif nstr[0].find("STS") != -1:
+					sts = evt.get_sts()
+					r = reg.get_create_reg("Ipa",str(recv[1]))
+					r["Htu"] = sts["Htu"]
+					r["Bmp"] = sts["Bmp"]
+					r["Acl"] = sts["Acl"]
+					r["Mag"] = sts["Mag"]
+					reg.set_reg(r)
+
+					msg = ""
+					if int(r["Htu"]) == 0:
+						msg = msg + "Htu down: "
+					if int(r["Bmp"]) == 0:
+						msg = msg + "Bmp down: "
+					if int(r["Acl"]) == 0:
+						msg = msg + "Acl down: "
+					if int(r["Mag"]) == 0:
+						msg = msg + "Mag down: "
+
+					if r["Ntf"]: 
+						if len(msg) > 0:
+							if badhard == False:
+								badhard = True
+								nfs.send_ntf(pat["Pat"],msg)
+								print "Hardware error:%s %s" % (str(recv[1],msg))
 						else:
-							msg = "You will no longer recieve pi server notifications"
+							if badhard == True:
+								badhard = False
+								msg = "Hardware OK again"
+								nfs.send_ntf(pat["Pat"],msg)
+								print "%s:%s" % (msg,str(recv[1]))
+				if newsqn:
+					newsqn = False
+					sqn = evt.get_sqn()
+					r = reg.get_create_reg("Ipa",str(recv[1]))
+					j = int(r["Sqn"])
+					i = int(sqn["Sqn"])
+					if i != j+1 and j != 0:
+						msg = "Sequence error: %s %d-%d" % (str(recv[1],i,j))
+						print msg
+						if r["Ntf"]:
+							nfs.send_ntf(pat["Pat"],msg)
 
-						nfs.send_ntf(pat["Pat"],msg)
+					r["Sqn"] = i
+					reg.set_reg(r)					
 
 				if logflg:
 					line = "%s - %s" % (str(recv[0]),str(recv[1]))
@@ -306,8 +413,25 @@ def main():
 				print "\n"
 				cmd = raw_input(">")
 
+				if cmd.find("h") != -1:
+					print "Commands: h=help, r=registrations, s=status q=quit"
+
 				if cmd.find("q") != -1:
 					break
+
+				if cmd.find("s") != -1:
+					print "Server Status"
+					print "Log file......:%s" % (lgf)
+					print "Registrations.:%d" % (reg.get_len())
+
+				if cmd.find("r") != -1:
+					k = reg.get_len()
+					if k>0:
+						print "Client registrations and status"
+						for i in range(0,k):
+							r = reg.get_reg_by_index(i)
+							print "Idx:%d Ipa:%s Pat:%s Sqn:%d Ntf:%d" % (i,r["Ipa"],r["Pat"],r["Sqn"],r["Ntf"])
+							print "Idx:%d Htu:%s Bmp:%s Acl:%s Mag:%s" % (i,r["Htu"],r["Bmp"],r["Acl"],r["Mag"])
 
 				kbrd.echo_off()
 

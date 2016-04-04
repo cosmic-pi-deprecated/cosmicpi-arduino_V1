@@ -186,7 +186,7 @@ class Event(object):
 					"*" +	self.extract("TIM") + \
 					"*" +	self.extract("DAT") + \
 					"*" +	self.extract("SQN")
-			return self.evti
+			return self.evt
 
 		return ""
 

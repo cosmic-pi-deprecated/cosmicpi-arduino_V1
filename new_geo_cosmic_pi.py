@@ -89,14 +89,15 @@ class Event(object):
 
 		# Add ons
 
-		self.DAT = { "Dat":"s" }	# Date
-		self.SQN = { "Sqn":"i" }	# Sequence number
+		self.DAT = { "Dat":"s" }		# Date
+		self.SQN = { "Sqn":"i" }		# Sequence number
+		self.PAT = { "Pat":"s","Ntf":"i" }	# Pushover application token
 
 		# Now build the main dictionary with one entry for each json string we will process
 
 		self.recd = {	"HTU":self.HTU, "BMP":self.BMP, "VIB":self.VIB, "MAG":self.MAG, "MOG":self.MOG,
 				"ACL":self.ACL, "AOL":self.AOL, "LOC":self.LOC, "TIM":self.TIM, "STS":self.STS,
-				"EVT":self.EVT, "DAT":self.DAT, "SQN":self.SQN }
+				"EVT":self.EVT, "DAT":self.DAT, "SQN":self.SQN, "PAT":self.PAT }
 
 		self.newvib = 0	# Vibration
 		self.newevt = 0	# Cosmic ray
@@ -204,6 +205,11 @@ class Event(object):
 
 		return ""
 
+	def get_notification(self):
+		if len(self.recd["PAT"]["Pat"]) > 1:
+			return self.extract("PAT")
+		return ""
+
 	# Here we just return dictionaries
 
 	def get_vib(self):
@@ -244,6 +250,13 @@ class Event(object):
 		self.recd["SQN"]["Sqn"] = self.sqn
 		self.sqn = self.sqn + 1
 
+	def get_pat(self):
+		return self.recd["PAT"]
+
+	def set_pat(self,token,flag):
+		self.recd["PAT"]["Pat"] = token
+		self.recd["PAT"]["Ntf"] = flag
+	
 # Send UDP packets to the remote server
 
 class Socket_io(object):
@@ -286,6 +299,7 @@ def main():
 	parser.add_option("-v", "--vib",   help="Vibration monitor", dest="vibflg", default=False, action="store_true")
 	parser.add_option("-w", "--ws",    help="Weather station", dest="wstflg", default=False, action="store_true")
 	parser.add_option("-c", "--cray",  help="Cosmic ray sending", dest="evtflg", default=True, action="store_false")
+	parser.add_option("-k", "--patk",  help="Server push notification token", dest="patok", default="")
 
 	options, args = parser.parse_args()
 
@@ -299,7 +313,9 @@ def main():
 	vibflg = options.vibflg
 	wstflg = options.wstflg
 	evtflg = options.evtflg
-
+	patok  = options.patok
+		
+	pushflg = False
 
 	print "\n"
 	print "options (Server IP address)     ip   : %s" % ipaddr
@@ -311,6 +327,7 @@ def main():
 	print "options (Vibration monitor)     vib  : %s" % vibflg
 	print "options (Weather Station)       wst  : %s" % wstflg
 	print "options (Cosmic Ray Station)    cray : %s" % evtflg
+	print "options (Push notifications)    patk : %s" % patok
 	print "options (Debug Flag)            debug: %s" % debug
 
 	print "\ncosmic_pi monitor running, hit '>' for commands\n"
@@ -383,6 +400,26 @@ def main():
 						wstflg = True
 					print "WeatherStation:%s\n" % wstflg
 
+				elif cmd.find("r") != -1:
+					if len(patok) > 0:
+						if pushflg:
+							pushflg = False
+							print "Unregister server notifications"
+						else:
+							pushflg = True
+							print "Register for server notifications"
+                                        
+						if udpflg:
+							evt.set_pat(patok,pushflg)
+							pbuf = evt.get_notification()
+							sio.send_event_pkt(pbuf,ipaddr,ipport)
+							print "Sent notification request:%s" % pbuf 
+						else:
+							print "UDP sending is OFF, can not register with server"
+							pbuf = ""
+					else:
+						print "Token option is not set"
+ 	
 				elif cmd.find("s") != -1:
 					tim = evt.get_tim()
 					sts = evt.get_sts()
@@ -406,6 +443,7 @@ def main():
 					print "MONITOR STATUS"
 					print "USB device....: %s" % (usbdev)
 					print "Remote........: Ip:%s Port:%s UdpFlag:%s" % (ipaddr,ipport,udpflg)
+					print "Notifications.: Flag:%s Token:%s" % (pushflg, patok)
 					print "Vibration.....: Sent:%d Flag:%s" % (vbrts,vibflg)
 					print "WeatherStation: Flag:%s" % (wstflg)
 					print "Events........: Sent:%d LogFlag:%s" % (events,logflg)
@@ -414,7 +452,7 @@ def main():
 				elif cmd.find("h") != -1:
 					print "MONITOR COMMANDS"
 					print "   q=quit, s=status, d=toggle_debug, n=toggle_send, l=toggle_log"
-					print "   v=vibration, w=weather, h=help\n"
+					print "   v=vibration, w=weather, r=toggle_notifications h=help\n"
 					print "ARDUINO COMMANDS"
 					print "   NOOP, Do nothing"
 					print "   HELP, Display commands"

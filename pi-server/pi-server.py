@@ -18,6 +18,7 @@ import fcntl
 import re
 import ast
 from optparse import OptionParser
+import httplib, urllib
 
 # Handle keyboard input
 
@@ -78,6 +79,25 @@ class Socket_io(object):
 	def close(self):
 		self.sik.close()
 
+
+class Notifications(object):
+
+	def __init__(self):
+		conn = httplib.HTTPSConnection("api.pushover.net:443")
+
+	def send_ntf(self,kyp,msg):
+
+		nstr = kyp.split('-')
+		
+		conn.request(	"POST", "/1/messages.json",
+					urllib.urlencode({	"token"  : nstr[1],
+    								"user"   : nstr[0],
+    								"sound"  : "Cosmic",
+    								"message": msg}), 
+				{ "Content-type": "application/x-www-form-urlencoded" })
+
+		conn.getresponse()
+
 # This is the event object, it builds a dictionary from incomming jsom strings 
 # and provides access to the dictionary entries containing the data for each field.
 
@@ -99,12 +119,20 @@ class Event(object):
 		self.STS = { "Qsz":"i","Mis":"i","Ter":"i","Htu":"i","Bmp":"i","Acl":"i","Mag":"i" }
 		self.EVT = { "Evt":"i","Frq":"i","Tks":"i","Etm":"f","Adc":"[[i,i,i,i,i,i,i,i],[i,i,i,i,i,i,i,i]]" }
 		self.DAT = { "Dat":"s" }
+		
+		# Add ons
+
+		self.DAT = { "Dat":"s" }		# Date
+		self.SQN = { "Sqn":"i" }		# Sequence number
+		self.PAT = { "Pat":"s","Ntf":"i" }	# Pushover application token
 
 		# Now build the main dictionary with one entry for each json string we will process
 
 		self.recd = {	"HTU":self.HTU, "BMP":self.BMP, "VIB":self.VIB, "MAG":self.MAG, "MOG":self.MOG,
 				"ACL":self.ACL, "AOL":self.AOL, "LOC":self.LOC, "TIM":self.TIM, "STS":self.STS,
-				"EVT":self.EVT, "DAT":self.DAT }
+				"EVT":self.EVT, "DAT":self.DAT, "SQN":self.SQN, "PAT":self.PAT }
+
+		self.newpat = 0
 
 	# Convert the incomming json strings into entries in the dictionary 
 
@@ -116,6 +144,9 @@ class Event(object):
 			if self.recd.has_key(kys[0]):		# Check we know about records with this key
 				self.recd[kys[0]] = dic[kys[0]]	# and put it in the dictionary at that address
 			
+			if kys[0] == "PAT":
+				self.newpat = 1
+
 		except Exception, e:
 			pass					# Didnt understand, throw it away
 
@@ -150,6 +181,13 @@ class Event(object):
 
 	def get_dat(self):
 		return self.recd["DAT"]
+
+	def get_sqn(self):
+		return self.recd["SQN"]
+
+	def get_pat(self):
+		return self.recd["PAT"]
+
 
 def main():
 	use = "Usage: %prog [--port=4901 --odir=/tmp]"
@@ -199,6 +237,8 @@ def main():
 
 	evt = Event()
 
+	nfs = Notifications()
+
 	try:
 		while(True):
 
@@ -244,6 +284,17 @@ def main():
 						print "Barometer.....: Tmb:%s Prs:%s Alb:%s" % (bmp["Tmb"],bmp["Prs"],bmp["Alb"])
 						print "Humidity......: Tmh:%s Hum:%s Alt:%s" % (htu["Tmh"],htu["Hum"],loc["Alt"])
 						print "Time..........: Sec:%s\n" % (tim["Sec"])
+
+					elif nstr[0].find("PAT") != -1:
+						pat = evt.get_pat()
+						print
+						print "Notification..: Pat:%s Ntf:%s" % (pat["Pat"],pat["Ntf"])
+						if pat["Ntf"] == True
+							msg = "Your are now registered to recieve pi server notifications"
+						else:
+							msg = "You will no longer recieve pi server notifications"
+
+						nfs.send_ntf(pat["Pat"],msg)
 
 				if logflg:
 					line = "%s - %s" % (str(recv[0]),str(recv[1]))

@@ -335,7 +335,7 @@ def main():
 
 	print "\ncosmic_pi monitor running, hit '>' for commands\n"
 
-	ts = time.strftime("%d/%b/%Y %H:%M:%S",time.gmtime(time.time()))
+	ts = time.strftime("%d-%b-%Y-%H-%M-%S",time.gmtime(time.time()))
 	lgf = "%s/cosmicpi-logs/%s.log" % (logdir,ts)
 	dir = os.path.dirname(lgf)
 	if not os.path.exists(dir):

@@ -267,6 +267,15 @@ def main():
 	print "options (Logging directory)	odir:%s" % logdir
 	print "options (Event logging)		log: %s" % logflg
 
+	file_name = "/tmp/pi-server-lock"
+	fp = open(file_name, 'w')
+	try:
+		fcntl.lockf(fp, fcntl.LOCK_EX | fcntl.LOCK_NB)
+	except Exception, e:
+		print "Only one instance of the server can run at any one time"
+		print "Please kill the other instance first"
+		sys.exit(1)
+
 	ts = time.strftime("%d-%b-%Y-%H-%M-%S",time.gmtime(time.time()))
 	lgf = "%s/cosmicpi-logs/%s.log" % (logdir,ts)
 	dir = os.path.dirname(lgf)

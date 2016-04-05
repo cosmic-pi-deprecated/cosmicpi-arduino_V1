@@ -79,6 +79,10 @@ class Socket_io(object):
 	def close(self):
 		self.sik.close()
 
+# Send notifications to registered mobile phones
+# Currently I am using pushover and the client has to install the
+# pushover app and register a user and application token.
+# The client supplies the keys on the cosmic pi client launch command line
 
 class Notifications(object):
 
@@ -96,6 +100,9 @@ class Notifications(object):
 				{ "Content-type": "application/x-www-form-urlencoded" })
 
 		self.conn.getresponse()
+
+# Each cosmic pi client can register with the server
+# We check package sequence numbers, hardware status
 
 class Registrations(object):
 
@@ -141,6 +148,7 @@ class Registrations(object):
 		if i == False:
 			return False
 		self.regs[i] = r.copy()
+		return True
 
 # This is the event object, it builds a dictionary from incomming jsom strings 
 # and provides access to the dictionary entries containing the data for each field.
@@ -350,7 +358,7 @@ def main():
 					else:
 						msg = "You will no longer recieve pi server notifications"
 
-					#nfs.send_ntf(pat["Pat"],msg)
+					nfs.send_ntf(pat["Pat"],msg)
 
 					r = reg.get_create_reg("Ipa",str(recv[1])) 
 					r["Pat"] = pat["Pat"] 
@@ -376,18 +384,19 @@ def main():
 					if int(r["Mag"]) == 0:
 						msg = msg + "Mag down: "
 
-					if r["Ntf"]: 
-						if len(msg) > 0:
-							if badhard == False:
-								badhard = True
+					if len(msg) > 0:
+						if badhard == False:
+							badhard = True
+							if r["Ntf"]: 
 								nfs.send_ntf(pat["Pat"],msg)
-								print "Hardware error:%s %s" % (str(recv[1],msg))
-						else:
-							if badhard == True:
-								badhard = False
-								msg = "Hardware OK again"
+							print "Hardware error:%s %s" % (str(recv[1],msg))
+					else:
+						if badhard == True:
+							badhard = False
+							msg = "Hardware OK again"
+							if r["Ntf"]: 
 								nfs.send_ntf(pat["Pat"],msg)
-								print "%s:%s" % (msg,str(recv[1]))
+							print "%s:%s" % (msg,str(recv[1]))
 				if newsqn:
 					newsqn = False
 					sqn = evt.get_sqn()
@@ -432,7 +441,7 @@ def main():
 							r = reg.get_reg_by_index(i)
 							print "Idx:%d Ipa:%s Pat:%s Sqn:%d Ntf:%d" % (i,r["Ipa"],r["Pat"],r["Sqn"],r["Ntf"])
 							print "Idx:%d Htu:%s Bmp:%s Acl:%s Mag:%s" % (i,r["Htu"],r["Bmp"],r["Acl"],r["Mag"])
-
+							print ""
 				kbrd.echo_off()
 
 			ts = time.strftime("%d/%b/%Y %H:%M:%S",time.gmtime(time.time()))

@@ -108,7 +108,7 @@ class Registrations(object):
 
 	def __init__(self):
 
-		self.reg = {"Ipa":"s","Sqn":0,"Pat":"s","Ntf":False,"Htu":"i","Bmp":"i","Acl":"i","Mag":"i"}
+		self.reg = {"Ipa":"s","Sqn":0,"Pat":"s","Ntf":False,"Htu":"0","Bmp":"0","Acl":"0","Mag":"0"}
 		self.regs = []
 
 	def get_len(self):
@@ -150,33 +150,33 @@ class Registrations(object):
 		self.regs[i] = r.copy()
 		return True
 
-# This is the event object, it builds a dictionary from incomming jsom strings 
+# This is the event object, it builds a dictionary from incomming json strings 
 # and provides access to the dictionary entries containing the data for each field.
 
 class Event(object):
 
 	def __init__(self):
 
-		# These are the json strings we are expecting from the arduino
+		# These are the UDP packets containing json strings we are expecting
 
-		self.HTU = { "Tmh":"f","Hum":"f" }
-		self.BMP = { "Tmb":"f","Prs":"f","Alb":"f" }
-		self.VIB = { "Vax":"i","Vcn":"i" }
-		self.MAG = { "Mgx":"f","Mgy":"f","Mgz":"f" }
-		self.MOG = { "Mox":"f","Moy":"f","Moz":"f" }
-		self.ACL = { "Acx":"f","Acy":"f","Acz":"f" }
-		self.AOL = { "Aox":"f","Aoy":"f","Aoz":"f" }
-		self.LOC = { "Lat":"f","Lon":"f","Alt":"f" }
-		self.TIM = { "Upt":"i","Frq":"i","Sec":"i" }
-		self.STS = { "Qsz":"i","Mis":"i","Ter":"i","Htu":"i","Bmp":"i","Acl":"i","Mag":"i" }
-		self.EVT = { "Evt":"i","Frq":"i","Tks":"i","Etm":"f","Adc":"[[i,i,i,i,i,i,i,i],[i,i,i,i,i,i,i,i]]" }
+		self.HTU = { "Tmh":"0.0","Hum":"0.0" }
+		self.BMP = { "Tmb":"0.0","Prs":"0.0","Alb":"0.0" }
+		self.VIB = { "Vax":"0","Vcn":"0" }
+		self.MAG = { "Mgx":"0.0","Mgy":"0.0","Mgz":"0.0" }
+		self.MOG = { "Mox":"0.0","Moy":"0.0","Moz":"0.0" }
+		self.ACL = { "Acx":"0.0","Acy":"0.0","Acz":"0.0" }
+		self.AOL = { "Aox":"0.0","Aoy":"0.0","Aoz":"0.0" }
+		self.LOC = { "Lat":"0.0","Lon":"0.0","Alt":"0.0" }
+		self.TIM = { "Upt":"0","Frq":"0","Sec":"0" }
+		self.STS = { "Qsz":"0","Mis":"0","Ter":"0","Htu":"0","Bmp":"0","Acl":"0","Mag":"0" }
+		self.EVT = { "Evt":"0","Frq":"0","Tks":"0","Etm":"0.0","Adc":"[[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0]]" }
 		self.DAT = { "Dat":"s" }
 		
 		# Add ons
 
 		self.DAT = { "Dat":"s" }		# Date
-		self.SQN = { "Sqn":"i" }		# Sequence number
-		self.PAT = { "Pat":"s","Ntf":"i" }	# Pushover application token
+		self.SQN = { "Sqn":"0" }		# Sequence number
+		self.PAT = { "Pat":"s","Ntf":"0" }	# Pushover application token
 
 		# Now build the main dictionary with one entry for each json string we will process
 

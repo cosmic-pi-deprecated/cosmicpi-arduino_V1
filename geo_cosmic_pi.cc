@@ -545,8 +545,9 @@ uint8_t AdcPullData(struct Event *b) {
 	int i;
 
 	for (i=0; i<ADC_BUF_LEN; i++) {			// For all in ADC pipeline
-		while((ADC->ADC_ISR & 0x03)==0);	// Wait for both channels (2.5us)
+		while((ADC->ADC_ISR & 0x01)==0);	// Wait for channel 0 (2.5us)
 		b->Ch0[i] = (uint16_t) ADC->ADC_CDR[0];	// Read ch 0
+		while((ADC->ADC_ISR & 0x02)==0);	// Wait for channel 1 (2.5us)
 		b->Ch1[i] = (uint16_t) ADC->ADC_CDR[1];	// Read ch 1
 	}
 }

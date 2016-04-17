@@ -168,7 +168,7 @@ class Event(object):
 		self.AOL = { "Aox":"0.0","Aoy":"0.0","Aoz":"0.0" }
 		self.LOC = { "Lat":"0.0","Lon":"0.0","Alt":"0.0" }
 		self.TIM = { "Upt":"0","Frq":"0","Sec":"0" }
-		self.STS = { "Qsz":"0","Mis":"0","Ter":"0","Htu":"0","Bmp":"0","Acl":"0","Mag":"0" }
+		self.STS = { "Qsz":"0","Mis":"0","Ter":"0","Htu":"0","Bmp":"0","Acl":"0","Mag":"0","Gps":"0" }
 		self.EVT = { "Evt":"0","Frq":"0","Tks":"0","Etm":"0.0","Adc":"[[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0]]" }
 		self.DAT = { "Dat":"s" }
 		
@@ -379,6 +379,7 @@ def main():
 					r["Bmp"] = sts["Bmp"]
 					r["Acl"] = sts["Acl"]
 					r["Mag"] = sts["Mag"]
+					r["Gps"] = sts["Gps"]
 					reg.set_reg(r)
 
 					msg = ""
@@ -390,6 +391,8 @@ def main():
 						msg = msg + "Acl down: "
 					if int(r["Mag"]) == 0:
 						msg = msg + "Mag down: "
+					if int(r["Gps"]) == 0:
+						msg = msg + "Gps down: "
 
 					if len(msg) > 0:
 						if badhard == False:
@@ -447,7 +450,7 @@ def main():
 						for i in range(0,k):
 							r = reg.get_reg_by_index(i)
 							print "Idx:%d Ipa:%s Pat:%s Sqn:%d Ntf:%d" % (i,r["Ipa"],r["Pat"],r["Sqn"],r["Ntf"])
-							print "Idx:%d Htu:%s Bmp:%s Acl:%s Mag:%s" % (i,r["Htu"],r["Bmp"],r["Acl"],r["Mag"])
+							print "Idx:%d Htu:%s Bmp:%s Acl:%s Mag:%s Gps:%s" % (i,r["Htu"],r["Bmp"],r["Acl"],r["Mag"],r["Gps"])
 							print ""
 				kbrd.echo_off()
 

@@ -58,8 +58,9 @@
 // {'TIM':{'Upt':i,'Frq':i,'Sec':i}}
 // Time record containing Upt:up time seconds Frq:counter frequency Sec:time string
 //
-// {'STS':{'Qsz':i,'Mis':i,'Ter':i,'Htu':i,'Bmp':i,'Acl':i,'Mag':i}}
-// Status record containing Qsz:events on queue Mis:missed events Ter:buffer error Htu:status Bmp:status Acl:status Mag:status
+// {'STS':{'Qsz':i,'Mis':i,'Ter':i,'Htu':i,'Bmp':i,'Acl':i,'Mag':i, 'Gps':i}}
+// Status record containing Qsz:events on queue Mis:missed events Ter:buffer error 
+// Htu:status Bmp:status Acl:status Mag:status Gps:ststus
 //
 // {'EVT':{'Evt':i,'Frq':i,'Tks':i,'Etm':f,'Adc':[[i,i,i,i,i,i,i,i][i,i,i,i,i,i,i,i]]}}
 // Event record containing Evt:event number in second Frq:timer frequency Tks:ticks since last event in second 
@@ -127,6 +128,7 @@
 // Instantiate external hardware breakouts
 
 Adafruit_GPS		gps(&Serial1);			// GPS Serial1 on pins RX1 and TX1
+boolean			gps_ok = false;			// Chip OK flag
 
 Adafruit_HTU21DF	htu = Adafruit_HTU21DF();	// Humidity and temperature measurment
 boolean			htu_ok = false;			// Chip OK
@@ -922,8 +924,8 @@ void PushSts(int flg, int qsize, int missed) {
 uint8_t res;
 
 	if ((flg) || ((ppcnt % status_display_rate) == 0)) {
-		sprintf(txt,"{'STS':{'Qsz':%2d,'Mis':%2d,'Ter':%d,'Htu':%d,'Bmp':%d,'Acl':%d,'Mag':%d}}\n",
-			qsize,missed,terr,htu_ok,bmp_ok,acl_ok,mag_ok);
+		sprintf(txt,"{'STS':{'Qsz':%2d,'Mis':%2d,'Ter':%d,'Htu':%d,'Bmp':%d,'Acl':%d,'Mag':%d,'Gps':%d}}\n",
+			qsize,missed,terr,htu_ok,bmp_ok,acl_ok,mag_ok,gps_ok);
 		PushTxt(txt);
 		terr = 0;
 	}
@@ -1097,8 +1099,15 @@ void loop() {
 #if PPS_PIN
 		digitalWrite(PPS_PIN,LOW);	// Reset PPS
 #endif
-		displ = 0;			// Clear flag for next PPS				
+		displ = 0;			// Clear flag for next PPS			
+		gps_ok = true;			// Its OK because we got a PPS	
 	}
+
+	if (gps_ok == false) {
+		delay(1000);			// One second sleep
+		PushSts(0,qsize,missed);        // Push bad hardware status
+	}
+
 	PutChar();	// Print one character per loop !!!
 	ReadOneChar();	// Get next input command char
 }

@@ -20,7 +20,7 @@
 
 #include <Wire.h>
 #include <limits.h>
-#include <Math.h>
+#include <math.h>
 
 #include "Adafruit_10DOF.h"
 

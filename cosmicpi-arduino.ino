@@ -74,6 +74,7 @@
 
 #include <time.h>
 #include <Wire.h>
+#include <math.h>
 
 #include "Adafruit_BMP085_U.h"	// Barrometric pressure
 

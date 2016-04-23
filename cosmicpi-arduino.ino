@@ -320,10 +320,10 @@ void TC0_Handler() {
 	// hence the debug flag which I look at with a scope to be sure.
 	// I may introduce a small delay line to ensure this is true, so far it is.
 
-	ppsfl = HIGH;				// Seen a rising edge on the PPS
-#if FLG_PIN
-	digitalWrite(FLG_PIN,ppsfl);		// Flag set (for debug)
-#endif
+//	ppsfl = HIGH;				// Seen a rising edge on the PPS
+//#if FLG_PIN
+//	digitalWrite(FLG_PIN,ppsfl);		// Flag set (for debug)
+//#endif
 	rega0 = TC0->TC_CHANNEL[0].TC_RA;	// Read the RA reg (PPS period)
 	stsr0 = TC_GetStatus(TC0, 0); 		// Read status and clear load bits
 
@@ -359,6 +359,21 @@ static char t2[DATE_TIME_LEN];
 static char *wdtm = t1;			// Write date/time pointer
 static char *rdtm = t2;			// Read date/time pointer
 
+
+// Pull all data (16 values) from the ADC into a buffer
+
+uint8_t AdcPullData(struct Event *b) {
+  
+  int i;
+
+  for (i=0; i<ADC_BUF_LEN; i++) {     // For all in ADC pipeline
+    while((ADC->ADC_ISR & 0x01)==0);  // Wait for channel 0 (2.5us)
+    b->Ch0[i] = (uint16_t) ADC->ADC_CDR[0]; // Read ch 0
+    while((ADC->ADC_ISR & 0x02)==0);  // Wait for channel 1 (2.5us)
+    b->Ch1[i] = (uint16_t) ADC->ADC_CDR[1]; // Read ch 1
+  }
+}
+
 // Swap read write event buffers and indexes along with their time strings
 // each second, so we have the current and previous second numbers
 
@@ -383,30 +398,30 @@ void TC6_Handler() {
 	// and if its high we are seeing the PPS here, but if the
 	// flag is not set then this is a cosmic ray event.
 
-	if (ppsfl == HIGH) {			// Was ther a PPS ? 
-		ppsfl = LOW;			// Yes so we have seen it here
-		SwapBufs();			// Every PPS swap the read/write buffers
-#if EVT_PIN
-		digitalWrite(EVT_PIN,LOW);	// Not an event
-#endif
-	} else {
-#if EVT_PIN
-		digitalWrite(EVT_PIN,HIGH);	// Event detected
-#endif
+//	if (ppsfl == HIGH) {			// Was ther a PPS ? 
+//		ppsfl = LOW;			// Yes so we have seen it here
+//		SwapBufs();			// Every PPS swap the read/write buffers
+//#if EVT_PIN
+//		digitalWrite(EVT_PIN,LOW);	// Not an event
+//#endif
+//	} else {
+//#if EVT_PIN
+//		digitalWrite(EVT_PIN,HIGH);	// Event detected
+//#endif
 		if (widx < PPS_EVENTS) {	// Up to PPS_EVENTS stored per PPS
 			
 			// Read the latched tick count getting the event time
 			// and then pull the ADC pipe line
 
-			wbuf[widx].Tks = TC2->TC_CHANNEL[0].TC_RA;
+			wbuf[widx].Tks = TC0->TC_CHANNEL[0].TC_CV;
 			AdcPullData(&wbuf[widx]);
 			widx++;
 		}
-	}
-#if FLG_PIN	
-	digitalWrite(FLG_PIN,ppsfl);		// Flag out
-#endif
-	rega1 = TC2->TC_CHANNEL[0].TC_RA;	// Read the RA on channel 1 (PPS period)
+//	}
+//#if FLG_PIN	
+//	digitalWrite(FLG_PIN,ppsfl);		// Flag out
+//#endif
+	//rega1 = TC2->TC_CHANNEL[0].TC_RA;	// Read the RA on channel 1 (PPS period)
 	stsr1 = TC_GetStatus(TC2, 0); 		// Read status clear load bits
 }
 
@@ -537,20 +552,6 @@ uint8_t AclReadStatus() {
 void AdcSetup() {
 	REG_ADC_MR = 0x10380080;	// Free run as fast as you can
 	REG_ADC_CHER = 3;		// Channels 0 and 1
-}
-
-// Pull all data (16 values) from the ADC into a buffer
-
-uint8_t AdcPullData(struct Event *b) {
-	
-	int i;
-
-	for (i=0; i<ADC_BUF_LEN; i++) {			// For all in ADC pipeline
-		while((ADC->ADC_ISR & 0x01)==0);	// Wait for channel 0 (2.5us)
-		b->Ch0[i] = (uint16_t) ADC->ADC_CDR[0];	// Read ch 0
-		while((ADC->ADC_ISR & 0x02)==0);	// Wait for channel 1 (2.5us)
-		b->Ch1[i] = (uint16_t) ADC->ADC_CDR[1];	// Read ch 1
-	}
 }
 
 // This is the nmea data string from the GPS chip

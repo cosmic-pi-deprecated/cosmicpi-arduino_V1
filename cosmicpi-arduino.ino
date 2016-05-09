@@ -27,44 +27,43 @@
 // All fields in all output strings conform to the json standard
 
 // Here is the list of all records where 'f' denotes float and 'i' denotes integer ...
-// {'HTU':{'Tmh':f,'Hum':f}}
-// HTU21DF record containing Tmh:temperature in C Hum:humidity percent
+// {'temperature':{'temperature':f,'humidity':f}}
+// HTU21DF record
 //
-// {'BMP':{'Tmb':f,'Prs':f,'Alb':f}}
-// BMP085 record containing Tmb:temperature Prs:pressure Alb:Barrometric altitude
+// {'barometer':{'temperature':f,'pressure':f,'altitude':f}}
+// BMP085 record
 //
-// {'VIB':{'Vax':i,'Vcn':i}}
-// Vibration record containing Vax:3 bit xyz direction mask Vcn:vibration count
-// This record is always immediatly followed by 3 more records, TIM, ACL, and MAG
+// {'vibration':{'direction':i,'count':i}}
+// Vibration record containing "direction":3 bit xyz direction mask "count":vibration count
+// This record is always immediatly followed by 3 more records, "timing", "accelerometer", and "magnetometer"
 //
-// {'MAG':{'Mgx':f,'Mgy':f,'Mgz':f}}
-// LSM303DLH magnatometer record containing Mgx:the x field strength Mgy:the y field Mgz:ther z field
+// {'magnetometer':{'x':f,'y':f,'x':f}}
+// LSM303DLH magnetometer record containing "x":the x field strength "y":the y field "z":the z field
 //
 // {'MOG':{'Mox':f,'Moy':f,'Moz':f}}
 // LSM303DLH magnatometer record containing Mox:x orientation Moy:y orientation Moz:z orientation
 // This record is optional, by default its turned off (it can always be calculated later - Python)
 //
-// {'ACL':{'Acx':f,'Acy':f,'Acz':f}}
-// LSM303DLH acclerometer record containing Acx:the x acceleration Acy:the y acceleration Acz:the z acceleration
-// If this record immediatly follows a VIB record the fields were hardware latched when the g threshold was exceeded
+// {'accelerometer':{'x':f,'y':f,'z':f}}
+// LSM303DLH accelerometer record
+// If this record immediately follows a "vibration" record the fields were hardware latched when the g threshold was exceeded
 //
 // {'AOL':{'Aox':f,'Aoy':f,'Aoz':f}}
 // LSM303DLH accelerometer record containing Aox:x orientation Aoy:y orientation Aoz:z orientation
 // This record is optional, by default its turned off (it can always be calculated later - Python)
 //
-// {'LOC':{'Lat':f,'Lon':f,'Alt':f}}
-// GPS location record containing Lat:latitude in degrees Lon:longitude in degrees Alt:altitude in meters
+// {'location':{'latitude':f,'longitude':f,'altitude':f}}
+// GPS location record containing "latitude":latitude in degrees "longitude":longitude in degrees "altitude":altitude in meters
 //
-// {'TIM':{'Upt':i,'Frq':i,'Sec':i}}
-// Time record containing Upt:up time seconds Frq:counter frequency Sec:time string
+// {'timing':{'uptime':i,'counter_frequency':i,'time_string':i}}
+// Time record containing "uptime":up time seconds "counter_frequency":counter frequency "time_string":time string
 //
-// {'STS':{'Qsz':i,'Mis':i,'Ter':i,'Htu':i,'Bmp':i,'Acl':i,'Mag':i, 'Gps':i}}
-// Status record containing Qsz:events on queue Mis:missed events Ter:buffer error 
-// Htu:status Bmp:status Acl:status Mag:status Gps:ststus
+// {'status':{'queue_size':i,'missed_events':i,'buffer_error':i,'temp_status':i,'baro_status':i,'accel_status':i,'mag_status':i, 'gps_status':i}}
+// Status record
 //
-// {'EVT':{'Evt':i,'Frq':i,'Tks':i,'Etm':f,'Adc':[[i,i,i,i,i,i,i,i][i,i,i,i,i,i,i,i]]}}
-// Event record containing Evt:event number in second Frq:timer frequency Tks:ticks since last event in second
-// Etm:event time stamp to 100ns Adc:[[Channel 0 values][Channel 1 values]]
+// {'event':{'event_number':i,'timer_frequency':i,'ticks':i,'timestamp':f,'adc':[[i,i,i,i,i,i,i,i][i,i,i,i,i,i,i,i]]}}
+// Event record containing "event_number":event number in second "ticks":ticks since last event in seconds
+// "timestamp":event time stamp to 100ns adc:[[Channel 0 values][Channel 1 values]]
 
 // N.B. These records pass the data to a python monitor over the serial line. Python has awsome string handling and looks them up in
 // associative arrays to build records of any arbitary format you want. So this is only the start of the story of record processing.

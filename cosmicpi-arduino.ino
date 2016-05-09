@@ -40,17 +40,9 @@
 // {'magnetometer':{'x':f,'y':f,'x':f}}
 // LSM303DLH magnetometer record containing "x":the x field strength "y":the y field "z":the z field
 //
-// {'MOG':{'Mox':f,'Moy':f,'Moz':f}}
-// LSM303DLH magnatometer record containing Mox:x orientation Moy:y orientation Moz:z orientation
-// This record is optional, by default its turned off (it can always be calculated later - Python)
-//
 // {'accelerometer':{'x':f,'y':f,'z':f}}
 // LSM303DLH accelerometer record
 // If this record immediately follows a "vibration" record the fields were hardware latched when the g threshold was exceeded
-//
-// {'AOL':{'Aox':f,'Aoy':f,'Aoz':f}}
-// LSM303DLH accelerometer record containing Aox:x orientation Aoy:y orientation Aoz:z orientation
-// This record is optional, by default its turned off (it can always be calculated later - Python)
 //
 // {'location':{'latitude':f,'longitude':f,'altitude':f}}
 // GPS location record containing "latitude":latitude in degrees "longitude":longitude in degrees "altitude":altitude in meters
@@ -859,14 +851,6 @@ void PushMag(int flg) {	// Push the mago stuff
 			mag_event.magnetic.y,
 			mag_event.magnetic.z);
 		PushTxt(txt);
-
-		// Orientation (Easy to calculate later in Python - dont waste resources)
-#ifdef ORIENTATION
-		if (dof.magGetOrientation(SENSOR_AXIS_Z, &mag_event, &xyz)) {
-			sprintf(txt,"{'MOG':{'Mox':%f,'Moy':%f,'Moz':%f}}\n",xyz.x,xyz.y,xyz.z);
-			PushTxt(txt);
-		}
-#endif
 	}
 }
 
@@ -886,14 +870,6 @@ void PushAcl(int flg) { // Push the accelerometer and compass stuff
 			acl_event.acceleration.y,
 			acl_event.acceleration.z);
 		PushTxt(txt);
-
-		// Orientation (Easy to calculate later in Python - dont waste resources)
-#ifdef ORIENTATION		
-		if (dof.accelGetOrientation(&acl_event, &xyz)) {
-			sprintf(txt,"{'AOL':{'Aox':%f,'Aoy':%f,'Aoz':%f}}\n",xyz.x,xyz.y,xyz.z);
-			PushTxt(txt);
-		}
-#endif
 	}
 }
 

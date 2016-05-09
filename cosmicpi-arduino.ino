@@ -63,7 +63,7 @@
 // Htu:status Bmp:status Acl:status Mag:status Gps:ststus
 //
 // {'EVT':{'Evt':i,'Frq':i,'Tks':i,'Etm':f,'Adc':[[i,i,i,i,i,i,i,i][i,i,i,i,i,i,i,i]]}}
-// Event record containing Evt:event number in second Frq:timer frequency Tks:ticks since last event in second 
+// Event record containing Evt:event number in second Frq:timer frequency Tks:ticks since last event in second
 // Etm:event time stamp to 100ns Adc:[[Channel 0 values][Channel 1 values]]
 
 // N.B. These records pass the data to a python monitor over the serial line. Python has awsome string handling and looks them up in
@@ -796,7 +796,7 @@ void PushHtu(int flg) {	// If flg is true always push
 	if ((flg) || ((htu_ok) && ((ppcnt % humtmp_display_rate) == 0))) {
 		temph = htu.readTemperature();
 		humid = htu.readHumidity();
-		sprintf(txt,"{'HTU':{'Tmh':%5.3f,'Hum':%4.1f}}\n",temph,humid);
+		sprintf(txt,"{'temperature':{'temperature':%5.3f,'humidity':%4.1f}}\n",temph,humid);
 		PushTxt(txt);
 	}
 }
@@ -817,7 +817,7 @@ void PushBmp(int flg) {	// If flg is true always push
 			bmp.getTemperature(&tempb);
 			altib = bmp.pressureToAltitude((float) SENSORS_PRESSURE_SEALEVELHPA, 
 							presr,tempb);
-			sprintf(txt,"{'BMP':{'Tmb':%5.3f,'Prs':%5.3f,'Alb':%4.1f}}\n",tempb,presr,altib);
+			sprintf(txt,"{'barometer':{'temperature':%5.3f,'pressure':%5.3f,'altitude':%4.1f}}\n",tempb,presr,altib);
 			PushTxt(txt);
 		}
 	}
@@ -838,7 +838,7 @@ uint32_t old_icount = 0;
 			PushTim(1);		// Push these first, and then vib
 			PushAcl(1);		// This is the real latched value
 			PushMag(1);
-			sprintf(txt,"{'VIB':{'Vax':%d,'Vcn':%d}}\n",accl_flag,accl_icount);
+			sprintf(txt,"{'vibration':{'direction':%d,'count':%d}}\n",accl_flag,accl_icount);
 			PushTxt(txt);
 		}
 	}
@@ -855,7 +855,7 @@ void PushMag(int flg) {	// Push the mago stuff
 
 		// Micro Tesla
 
-		sprintf(txt,"{'MAG':{'Mgx':%f,'Mgy':%f,'Mgz':%f}}\n",
+		sprintf(txt,"{'magnetometer':{'x':%f,'y':%f,'z':%f}}\n",
 			mag_event.magnetic.x,
 			mag_event.magnetic.y,
 			mag_event.magnetic.z);
@@ -882,7 +882,7 @@ void PushAcl(int flg) { // Push the accelerometer and compass stuff
 
 		// Meters per second squared
 
-		sprintf(txt,"{'ACL':{'Acx':%f,'Acy':%f,'Acz':%f}}\n",
+		sprintf(txt,"{'accelerometer':{'x':%f,'y':%f,'z':%f}}\n",
 			acl_event.acceleration.x,
 			acl_event.acceleration.y,
 			acl_event.acceleration.z);
@@ -903,7 +903,7 @@ void PushAcl(int flg) { // Push the accelerometer and compass stuff
 void PushLoc(int flg) {
 		
 	if ((flg) || ((ppcnt % latlon_display_rate) == 0)) {
-		sprintf(txt,"{'LOC':{'Lat':%f,'Lon':%f,'Alt':%f}}\n",latitude,longitude,altitude);
+		sprintf(txt,"{'location':{'latitude':%f,'longitude':%f,'altitude':%f}}\n",latitude,longitude,altitude);
 		PushTxt(txt);
 	}
 }
@@ -913,7 +913,7 @@ void PushLoc(int flg) {
 void PushTim(int flg) {
 
 	if ((flg) || ((ppcnt % frqutc_display_rate) == 0)) {
-		sprintf(txt,"{'TIM':{'Upt':%4d,'Frq':%7d,'Sec':%s}}\n",ppcnt,rega0,rdtm);
+		sprintf(txt,"{'timing':{'uptime':%4d,'counter_frequency':%7d,'time_string':%s}}\n",ppcnt,rega0,rdtm);
 		PushTxt(txt);
 	}			
 }
@@ -924,7 +924,7 @@ void PushSts(int flg, int qsize, int missed) {
 uint8_t res;
 
 	if ((flg) || ((ppcnt % status_display_rate) == 0)) {
-		sprintf(txt,"{'STS':{'Qsz':%2d,'Mis':%2d,'Ter':%d,'Htu':%d,'Bmp':%d,'Acl':%d,'Mag':%d,'Gps':%d}}\n",
+		sprintf(txt,"{'status':{'queue_size':%2d,'missed_events':%2d,'buffer_error':%d,'temp_status':%d,'baro_status':%d,'accel_status':%d,'mag_status':%d,'gps_status':%d}}\n",
 			qsize,missed,terr,htu_ok,bmp_ok,acl_ok,mag_ok,gps_ok);
 		PushTxt(txt);
 		terr = 0;
@@ -970,8 +970,8 @@ void PushEvq(int flg, int *qsize, int *missed) {
 			// Build string and push it out to the print buffer
 
 			sprintf(txt,
-				"{'EVT':{'Evt':%1d,'Frq':%8d,'Tks':%8d,'Etm':%s%s,"
-				"'Adc':[[%d,%d,%d,%d,%d,%d,%d,%d],[%d,%d,%d,%d,%d,%d,%d,%d]]}}\n",
+				"{'event':{'event_number':%1d,'timer_frequency':%8d,'ticks':%8d,'timestamp':%s%s,"
+				"'adc':[[%d,%d,%d,%d,%d,%d,%d,%d],[%d,%d,%d,%d,%d,%d,%d,%d]]}}\n",
 				eb.Count, eb.Frequency, eb.Ticks, eb.DateTime, index(stx,'.'),
 				eb.Ch0[0],eb.Ch0[1],eb.Ch0[2],eb.Ch0[3],eb.Ch0[4],eb.Ch0[5],eb.Ch0[6],eb.Ch0[7],
 				eb.Ch1[0],eb.Ch1[1],eb.Ch1[2],eb.Ch1[3],eb.Ch1[4],eb.Ch1[5],eb.Ch1[6],eb.Ch1[7]);

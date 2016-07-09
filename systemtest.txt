@@ -1,0 +1,20 @@
+Testing requirements for PTS
+1) Power consumption, not measured, provided it's less than 500mA
+2) Serial communications over Programming port (send from Arduino to check it works)
+3) I2C line 0 (Due PINS SDA/SCL)
+  Write data to and read back: ACCEL/MAG (LMS303), BMP280, HTU21
+4) I2C line 1 (Due Pins SDA1 SCL1)
+  write data to and read back: MAX5387 variable resistor
+5) SPI interfacce
+  write data to and read back from MAX1932
+6) GPS UART
+  write generic text string, read back text string (check what would be a good code to send!)
+7) GPS PPS, when signal OK
+ check it's roughly 1s between events
+8) Bias PSU (MAX1932) set voltage and read back via high impedance potential divider (to be added to PCB).
+9) Indicator LED's, make them flash?
+10) Amplifiers (both stages tested together)
+  with jumper set to test mode, inject via DAC into one channel first, then both channels with second DAC
+  verify output at ADC.
+
+Add more tests here!

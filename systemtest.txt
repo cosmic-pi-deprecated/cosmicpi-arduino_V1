@@ -1,5 +1,6 @@
 Design test elements - Separate repository
 Regression test - a set of features to be verified, and run each time the master is changed.
+-2) Take 50 samples per channel per event.
 -1) Modification to software; start up with a 1s timer instead of PPS; then transition to PPS when available.
 0) GPS Reads to take place once per hour (nominal), with a parameter. Design case is for a static detector.
 1) Generate events from Arduino DUE; trigger signal and analogue waveform - test pattern for pulses to be defined

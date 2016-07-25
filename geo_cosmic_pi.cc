@@ -3,7 +3,7 @@
 // Each PPS interrupt the read/write buffers are swapped over by the event ISR
 // If any events are available in the read buffer the loop function puts them onto a queue
 // along with the UTC time string where they get stored. Once there are at
-// least DUMP_THRESHOLD entries on the queue, the loop function outputs them over the serial
+// least event_display entries on the queue, the loop function outputs them over the serial
 // line for processing. 
 
 // In this version interrupts come from the accelerometer chip, if the acceleration exceeds
@@ -117,6 +117,14 @@
 #define PPS_PIN 13	// PPS (Pulse Per Second) and LED
 #define EVT_PIN 12	// Cosmic ray event detected
 #define FLG_PIN 11	// Debug flag
+
+// Power pins for power on/off the breakouts after a reset
+// The DUE makes a reset if the USB connection is restarted
+// The AddaFruit breakouts loose it when this happens and the
+// only way to recover them is a power cycle
+
+#define POW_ONE 8	// High power 15ma
+#define POW_TWO 9	// 15ma
 
 // For siesmic event input
 #define ACL_PIN 10	// Accelarometer INT1 interrupt pin
@@ -306,28 +314,36 @@ void TimersStart() {
 
 static uint32_t displ = 0;	// Display values in loop
 
-static uint32_t ppsfl = LOW,	// PPS Flag boolean
-		rega0 = 0, 	// RA reg
+static uint32_t	rega0 = 0, 	// RA reg
 		stsr0 = 0,	// Interrupt status register
 		ppcnt = 0;	// PPS count
+
+static uint32_t	rega1, stsr1 = 0;
 
 // Handle the PPS interrupt in counter block 0 ISR
 
 void TC0_Handler() {
 
-	// This ISR is connected only to the PPS (Pulse Per Second) GPS event
-	// Each time this runs, set the flag to tell the TC6 ISR we have seen it
-	// This logic only works if the TC0 handler gets called before the TC6 handler
-	// hence the debug flag which I look at with a scope to be sure.
-	// I may introduce a small delay line to ensure this is true, so far it is.
+	// I hate this next statement, in principal we could connect a diode
+	// to pass on the PPS to counter block 2. However for some unknown
+	// reason this pulls down the PPS voltage level to less than 1V and
+	// the trigger becomes unreliable !! 
+	// In any case the PPS is 100ms wide !! Introducing a blind spot when
+	// the diode creates the OR of the event trigger and the PPS.
+	// The latency introduced by using the software trigger is not easy to
+	// measure because the first digitalWrite statement takes 10us to execute !!
 
-	ppsfl = HIGH;				// Seen a rising edge on the PPS
-#if FLG_PIN
-	digitalWrite(FLG_PIN,ppsfl);		// Flag set (for debug)
-#endif
+	TC2->TC_CHANNEL[0].TC_CCR = TC_CCR_SWTRG; // Forward PPS to counter block 2
+
 	rega0 = TC0->TC_CHANNEL[0].TC_RA;	// Read the RA reg (PPS period)
 	stsr0 = TC_GetStatus(TC0, 0); 		// Read status and clear load bits
-
+	
+	SwapBufs();				// Every PPS swap the read/write buffers
+	
+#if FLG_PIN
+	digitalWrite(FLG_PIN,HIGH);		// Flag set (for debug)
+	digitalWrite(FLG_PIN,LOW);
+#endif
 	ppcnt++;				// PPS count
 	displ = 1;				// Display stuff in the loop
 }
@@ -375,40 +391,24 @@ void SwapBufs() {
 // The diode is needed to block Event pulses getting back to TC0
 // LOR means Logical inclusive OR
 
-static uint32_t	rega1, stsr1 = 0;
-
 void TC6_Handler() {
 
-	// This ISR is connected to the OR of the event and the PPS 
-	// If the TC0 has seen the PPS it sets the flag high
-	// and if its high we are seeing the PPS here, but if the
-	// flag is not set then this is a cosmic ray event.
-
-	if (ppsfl == HIGH) {			// Was ther a PPS ? 
-		ppsfl = LOW;			// Yes so we have seen it here
-		SwapBufs();			// Every PPS swap the read/write buffers
-#if EVT_PIN
-		digitalWrite(EVT_PIN,LOW);	// Not an event
-#endif
-	} else {
-#if EVT_PIN
-		digitalWrite(EVT_PIN,HIGH);	// Event detected
-#endif
-		if (widx < PPS_EVENTS) {	// Up to PPS_EVENTS stored per PPS
+	if (widx < PPS_EVENTS) {	// Up to PPS_EVENTS stored per PPS
 			
-			// Read the latched tick count getting the event time
-			// and then pull the ADC pipe line
+		// Read the latched tick count getting the event time
+		// and then pull the ADC pipe line
 
-			wbuf[widx].Tks = TC2->TC_CHANNEL[0].TC_RA;
-			AdcPullData(&wbuf[widx]);
-			widx++;
-		}
+		wbuf[widx].Tks = TC2->TC_CHANNEL[0].TC_RA;
+		AdcPullData(&wbuf[widx]);
+		widx++;
 	}
-#if FLG_PIN	
-	digitalWrite(FLG_PIN,ppsfl);		// Flag out
-#endif
 	rega1 = TC2->TC_CHANNEL[0].TC_RA;	// Read the RA on channel 1 (PPS period)
 	stsr1 = TC_GetStatus(TC2, 0); 		// Read status clear load bits
+
+#if EVT_PIN
+	digitalWrite(EVT_PIN,HIGH);	// Event detected
+	digitalWrite(EVT_PIN,LOW);
+#endif
 }
 
 // Accelerometer setup
@@ -700,6 +700,9 @@ void setup() {
 	pinMode(PPS_PIN, OUTPUT);	// Pin for the PPS (LED pin)
 #endif
 
+	pinMode(POW_ONE, OUTPUT);	// Breakout power pin
+	pinMode(POW_TWO, OUTPUT);	// ditto
+
 	Serial.begin(SERIAL_BAUD_RATE);	// Start the serial line
 	Serial1.begin(GPS_BAUD_RATE);	// and the second
 
@@ -712,11 +715,21 @@ void setup() {
 #endif
 	gps.sendCommand(PMTK_SET_NMEA_UPDATE_1HZ);	// each second
 
-
 	InitQueue();			// Reset queue pointers, missed count, and size
 
 	strcpy(rdtm,"");		// Set initial value for date/time
 	strcpy(wdtm,"");
+
+	// Power OFF/ON the breakouts
+
+	digitalWrite(POW_ONE,LOW);	// Power off
+	digitalWrite(POW_TWO,LOW);	
+	delay(1000);			// Wait for caps to discharge
+	digitalWrite(POW_ONE,LOW);	// Power on
+	digitalWrite(POW_TWO,LOW);	
+	delay(1000);			// Hang around 
+
+	// Initialize breakouts
 
 	htu_ok = htu.begin();
 	bmp_ok = bmp.begin();
@@ -1101,11 +1114,6 @@ void loop() {
 #endif
 		displ = 0;			// Clear flag for next PPS			
 		gps_ok = true;			// Its OK because we got a PPS	
-	}
-
-	if (gps_ok == false) {
-		delay(1000);			// One second sleep
-		PushSts(0,qsize,missed);        // Push bad hardware status
 	}
 
 	PutChar();	// Print one character per loop !!!

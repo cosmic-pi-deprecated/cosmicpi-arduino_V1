@@ -137,6 +137,7 @@
 
 Adafruit_GPS		gps(&Serial1);			// GPS Serial1 on pins RX1 and TX1
 boolean			gps_ok = false;			// Chip OK flag
+boolean			first_gps_ok = false;		// PPS seen OK flag
 
 Adafruit_HTU21DF	htu = Adafruit_HTU21DF();	// Humidity and temperature measurment
 boolean			htu_ok = false;			// Chip OK
@@ -266,6 +267,7 @@ void TimersStart() {
 
         pmc_set_writeprotect(false);    // Enable write access to power management chip
         pmc_enable_periph_clk(ID_TC0);  // Turn on power for timer block 0 channel 0
+        pmc_enable_periph_clk(ID_TC3);  // Turn on power for timer block 1 channel 0
         pmc_enable_periph_clk(ID_TC6);  // Turn on power for timer block 2 channel 0
 
 	// Timer block zero channel zero is connected only to the PPS 
@@ -273,31 +275,44 @@ void TimersStart() {
 	// So RA will contain the number of clock ticks between two PPS, this
 	// value should be very stable +/- one tick
 
-        config = TC_CMR_TCCLKS_TIMER_CLOCK1 |        // Select fast clock MCK/2 = 42 MHz
-                 TC_CMR_ETRGEDG_RISING |             // External trigger rising edge on TIOA0
-                 TC_CMR_ABETRG |                     // Use the TIOA external input line
-                 TC_CMR_LDRA_RISING;                 // Latch counter value into RA
+        config = TC_CMR_TCCLKS_TIMER_CLOCK1 |        	// Select fast clock MCK/2 = 42 MHz
+                 TC_CMR_ETRGEDG_RISING |             	// External trigger rising edge on TIOA0
+                 TC_CMR_ABETRG |                    	// Use the TIOA external input line
+                 TC_CMR_LDRA_RISING;                 	// Latch counter value into RA
 
-        TC_Configure(TC0, 0, config);                // Configure channel 0 of TC0
-        TC_Start(TC0, 0);                            // Start timer running
+        TC_Configure(TC0, 0, config);                	// Configure channel 0 of TC0
+        TC_Start(TC0, 0);                            	// Start timer running
 
-        TC0->TC_CHANNEL[0].TC_IER =  TC_IER_LDRAS;   // Enable the load AR channel 0 interrupt each PPS
-        TC0->TC_CHANNEL[0].TC_IDR = ~TC_IER_LDRAS;   // and disable the rest of the interrupt sources
-        NVIC_EnableIRQ(TC0_IRQn);                    // Enable interrupt handler for channel 0
+        TC0->TC_CHANNEL[0].TC_IER =  TC_IER_LDRAS;   	// Enable the load AR channel 0 interrupt each PPS
+        TC0->TC_CHANNEL[0].TC_IDR = ~TC_IER_LDRAS;   	// and disable the rest of the interrupt sources
+        NVIC_EnableIRQ(TC0_IRQn);                    	// Enable interrupt handler for channel 0
+
+	// PLL for when the GPS chip isn't providing the PPS
+
+	config = TC_CMR_TCCLKS_TIMER_CLOCK1 |        	// Select fast clock MCK/2 = 42 MHz
+		 TC_CMR_CPCTRG;
+
+        TC_Configure(TC1, 0, config);                	// Configure channel 0 of TC1
+        TC_SetRC(TC1, 0, 42000000);			// One second approx initial PLL value
+	TC_Start(TC1, 0);                            	// Start timer running
+
+        TC1->TC_CHANNEL[0].TC_IER =  TC_IER_CPCS;	// Enable the C register compare interrupt
+        TC1->TC_CHANNEL[0].TC_IDR = ~TC_IER_CPCS;	// and disable the rest
+        NVIC_EnableIRQ(TC3_IRQn);			// Enable interrupt handler for channel 0
 
 	// Timer block 2 channel zero is connected to the OR of the PPS and the RAY event
  
-        config = TC_CMR_TCCLKS_TIMER_CLOCK1 |        // Select fast clock MCK/2 = 42 MHz
-                 TC_CMR_ETRGEDG_RISING |             // External trigger rising edge on TIOA1
-                 TC_CMR_ABETRG |                     // Use the TIOA external input line
-                 TC_CMR_LDRA_RISING;                 // Latch counter value into RA
+        config = TC_CMR_TCCLKS_TIMER_CLOCK1 |        	// Select fast clock MCK/2 = 42 MHz
+                 TC_CMR_ETRGEDG_RISING |             	// External trigger rising edge on TIOA1
+                 TC_CMR_ABETRG |                     	// Use the TIOA external input line
+                 TC_CMR_LDRA_RISING;                 	// Latch counter value into RA
  	
-	TC_Configure(TC2, 0, config);                // Configure channel 0 of TC2
-	TC_Start(TC2, 0);			     // Start timer running
+	TC_Configure(TC2, 0, config);                	// Configure channel 0 of TC2
+	TC_Start(TC2, 0);			     	// Start timer running
  
-	TC2->TC_CHANNEL[0].TC_IER =  TC_IER_LDRAS;   // Enable the load AR channel 0 interrupt each PPS
-	TC2->TC_CHANNEL[0].TC_IDR = ~TC_IER_LDRAS;   // and disable the rest of the interrupt sources
-	NVIC_EnableIRQ(TC6_IRQn);                    // Enable interrupt handler for channel 0
+	TC2->TC_CHANNEL[0].TC_IER =  TC_IER_LDRAS;   	// Enable the load AR channel 0 interrupt each PPS
+	TC2->TC_CHANNEL[0].TC_IDR = ~TC_IER_LDRAS;   	// and disable the rest of the interrupt sources
+	NVIC_EnableIRQ(TC6_IRQn);                    	// Enable interrupt handler for channel 0
 
 	// Set up the PIO controller to route input pins for TC0 and TC2
 
@@ -316,36 +331,58 @@ static uint32_t displ = 0;	// Display values in loop
 
 static uint32_t	rega0 = 0, 	// RA reg
 		stsr0 = 0,	// Interrupt status register
-		ppcnt = 0;	// PPS count
+		ppcnt = 0,	// PPS count
+		delcn = 0;	// Synthetic PPS ms
 
 static uint32_t	rega1, stsr1 = 0;
+
+static uint32_t stsr2 = 0;
 
 // Handle the PPS interrupt in counter block 0 ISR
 
 void TC0_Handler() {
 
-	// I hate this next statement, in principal we could connect a diode
-	// to pass on the PPS to counter block 2. However for some unknown
+	// In principal we could connect a diode
+	// to pass on the PPS to counter blocks 1 & 2. However for some unknown
 	// reason this pulls down the PPS voltage level to less than 1V and
 	// the trigger becomes unreliable !! 
 	// In any case the PPS is 100ms wide !! Introducing a blind spot when
 	// the diode creates the OR of the event trigger and the PPS.
-	// The latency introduced by using the software trigger is not easy to
-	// measure because the first digitalWrite statement takes 10us to execute !!
 
 	TC2->TC_CHANNEL[0].TC_CCR = TC_CCR_SWTRG; // Forward PPS to counter block 2
+	TC1->TC_CHANNEL[0].TC_CCR = TC_CCR_SWTRG; // Forward PPS to counter block 1
 
 	rega0 = TC0->TC_CHANNEL[0].TC_RA;	// Read the RA reg (PPS period)
 	stsr0 = TC_GetStatus(TC0, 0); 		// Read status and clear load bits
 	
-	SwapBufs();				// Every PPS swap the read/write buffers
+        TC_SetRC(TC1, 0, rega0);		// Set the PLL count to what we just counted
 	
+	SwapBufs();				// Every PPS swap the read/write buffers
+	ppcnt++;				// PPS count
+	displ = 1;				// Display stuff in the loop
+	gps_ok = true;				// Its OK because we got a PPS	
+	first_gps_ok = true;			// Its OK because we got a PPS	
+}
+
+// Handle PLL interrupts
+// When/If the PPS goes missing due to a lost lock we carry on with the last measured
+// value for the second from TC0
+
+void TC3_Handler() {
+
+	stsr2 = TC_GetStatus(TC1, 0); 		// Read status and clear interrupt
 #if FLG_PIN
 	digitalWrite(FLG_PIN,HIGH);		// Flag set (for debug)
 	digitalWrite(FLG_PIN,LOW);
 #endif
-	ppcnt++;				// PPS count
-	displ = 1;				// Display stuff in the loop
+
+	if (displ == 0) {
+		TC2->TC_CHANNEL[0].TC_CCR = TC_CCR_SWTRG; // Forward PPS to counter block 2
+		SwapBufs();				// Every PPS swap the read/write buffers
+		ppcnt++;				// PPS count
+		displ = 1;				// Display stuff in the loop
+		gps_ok = false;				// PPS missing	
+	}
 }
 
 // We need a double buffer, one is being written by the ISR while
@@ -724,10 +761,9 @@ void setup() {
 
 	digitalWrite(POW_ONE,LOW);	// Power off
 	digitalWrite(POW_TWO,LOW);	
-	delay(1000);			// Wait for caps to discharge
+	delay(100);			// Wait for caps to discharge
 	digitalWrite(POW_ONE,LOW);	// Power on
 	digitalWrite(POW_TWO,LOW);	
-	delay(1000);			// Hang around 
 
 	// Initialize breakouts
 
@@ -1095,7 +1131,17 @@ void loop() {
 
 	int missed, qsize;	// Queue vars
 
-	if (displ) {				// Displ is set in the PPS ISR, we will reset it here
+	// If the GPS is not locked yet (no PPS at startup) print status
+
+	if (first_gps_ok == false) {
+		delay(1);
+		if (delcn++ >= 1000) {		// Wait for a second approw
+			delcn = 0;		// Reset delay
+			PushSts(0,qsize,missed);// Push status
+		}
+	}
+
+	else if (displ) {			// Displ is set in the PPS ISR, we will reset it here
 #if PPS_PIN		
 		digitalWrite(PPS_PIN,HIGH);	// PPS arrived
 #endif	
@@ -1108,14 +1154,13 @@ void loop() {
 		PushMag(0);			// Push mago data
 		PushAcl(0);			// Push accelarometer data
 		PushSts(0,qsize,missed);	// Push status
-		GetDateTime();			// Read the next date/time from the GPS chip
+		GetDateTime();		// Read the next date/time from the GPS chip
 #if PPS_PIN
 		digitalWrite(PPS_PIN,LOW);	// Reset PPS
 #endif
 		displ = 0;			// Clear flag for next PPS			
-		gps_ok = true;			// Its OK because we got a PPS	
 	}
-
+	
 	PutChar();	// Print one character per loop !!!
 	ReadOneChar();	// Get next input command char
 }

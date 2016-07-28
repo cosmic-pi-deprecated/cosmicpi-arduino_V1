@@ -196,6 +196,7 @@ typedef enum {
 	MAGD,	// Magnetometer display rate
 
 	ACLT,	// Accelerometer event threshold
+	GPRI,	// GPS read increment
 
 	CMDS };	// Command count
 
@@ -221,6 +222,7 @@ void evqt(int arg);
 void acld(int arg);
 void magd(int arg);
 void aclt(int arg);
+void gpri(int arg);
 
 // Command table
 
@@ -236,7 +238,8 @@ CmdStruct cmd_table[CMDS] = {
 	{ EVQT, evqt, "EVQT", "Event queue dump threshold", 1 },
 	{ ACLD, acld, "ACLD", "Accelerometer display rate", 1 },
 	{ MAGD, magd, "MAGD", "Magnatometer display rate", 1 },
-	{ ACLT, aclt, "ACLT", "Accelerometer event trigger threshold", 1 }
+	{ ACLT, aclt, "ACLT", "Accelerometer event trigger threshold", 1 },
+	{ GPRI, gpri, "GPRI", "GPS read increment in seconds", 1 }
 };
 
 #define CMDLEN 32
@@ -1132,6 +1135,8 @@ void aclt(int arg) {
 	val = accelr_event_threshold;
 	acl.write8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_INT1_THS_A, val);
 }
+
+void gpri(int arg) { gps_read_inc = arg; }
 
 // Look up a command in the command table for the given command string
 // and call it with its single integer parameter

@@ -3,7 +3,7 @@
 // Each PPS interrupt the read/write buffers are swapped over by the event ISR
 // If any events are available in the read buffer the loop function puts them onto a queue
 // along with the UTC time string where they get stored. Once there are at
-// least DUMP_THRESHOLD entries on the queue, the loop function outputs them over the serial
+// least event_display entries on the queue, the loop function outputs them over the serial
 // line for processing. 
 
 // In this version interrupts come from the accelerometer chip, if the acceleration exceeds
@@ -12,7 +12,7 @@
 
 // Julian Lewis lewis.julian@gmail.com
 
-#define VERS "2016/Mar/29"
+#define VERS "2016/July/27"
 
 // In this sketch I am using an Adafruite ultimate GPS breakout which exposes the PPS output
 // The Addafruite Rx is connected to the DUE TX1 (Pin 18) and its Tx to DUE RX1 (Pin 19)
@@ -27,35 +27,44 @@
 // All fields in all output strings conform to the json standard
 
 // Here is the list of all records where 'f' denotes float and 'i' denotes integer ...
-// {'temperature':{'temperature':f,'humidity':f}}
-// HTU21DF record
+// {'HTU':{'Tmh':f,'Hum':f}}
+// HTU21DF record containing Tmh:temperature in C Hum:humidity percent
 //
-// {'barometer':{'temperature':f,'pressure':f,'altitude':f}}
-// BMP085 record
+// {'BMP':{'Tmb':f,'Prs':f,'Alb':f}}
+// BMP085 record containing Tmb:temperature Prs:pressure Alb:Barrometric altitude
 //
-// {'vibration':{'direction':i,'count':i}}
-// Vibration record containing "direction":3 bit xyz direction mask "count":vibration count
-// This record is always immediatly followed by 3 more records, "timing", "accelerometer", and "magnetometer"
+// {'VIB':{'Vax':i,'Vcn':i}}
+// Vibration record containing Vax:3 bit xyz direction mask Vcn:vibration count
+// This record is always immediatly followed by 3 more records, TIM, ACL, and MAG
 //
-// {'magnetometer':{'x':f,'y':f,'x':f}}
-// LSM303DLH magnetometer record containing "x":the x field strength "y":the y field "z":the z field
+// {'MAG':{'Mgx':f,'Mgy':f,'Mgz':f}}
+// LSM303DLH magnatometer record containing Mgx:the x field strength Mgy:the y field Mgz:ther z field
 //
-// {'accelerometer':{'x':f,'y':f,'z':f}}
-// LSM303DLH accelerometer record
-// If this record immediately follows a "vibration" record the fields were hardware latched when the g threshold was exceeded
+// {'MOG':{'Mox':f,'Moy':f,'Moz':f}}
+// LSM303DLH magnatometer record containing Mox:x orientation Moy:y orientation Moz:z orientation
+// This record is optional, by default its turned off (it can always be calculated later - Python)
 //
-// {'location':{'latitude':f,'longitude':f,'altitude':f}}
-// GPS location record containing "latitude":latitude in degrees "longitude":longitude in degrees "altitude":altitude in meters
+// {'ACL':{'Acx':f,'Acy':f,'Acz':f}}
+// LSM303DLH acclerometer record containing Acx:the x acceleration Acy:the y acceleration Acz:the z acceleration
+// If this record immediatly follows a VIB record the fields were hardware latched when the g threshold was exceeded
 //
-// {'timing':{'uptime':i,'counter_frequency':i,'time_string':i}}
-// Time record containing "uptime":up time seconds "counter_frequency":counter frequency "time_string":time string
+// {'AOL':{'Aox':f,'Aoy':f,'Aoz':f}}
+// LSM303DLH accelerometer record containing Aox:x orientation Aoy:y orientation Aoz:z orientation
+// This record is optional, by default its turned off (it can always be calculated later - Python)
 //
-// {'status':{'queue_size':i,'missed_events':i,'buffer_error':i,'temp_status':i,'baro_status':i,'accel_status':i,'mag_status':i, 'gps_status':i}}
-// Status record
+// {'LOC':{'Lat':f,'Lon':f,'Alt':f}}
+// GPS location record containing Lat:latitude in degrees Lon:longitude in degrees Alt:altitude in meters
 //
-// {'event':{'event_number':i,'timer_frequency':i,'ticks':i,'timestamp':f,'adc':[[i,i,i,i,i,i,i,i][i,i,i,i,i,i,i,i]]}}
-// Event record containing "event_number":event number in second "ticks":ticks since last event in seconds
-// "timestamp":event time stamp to 100ns adc:[[Channel 0 values][Channel 1 values]]
+// {'TIM':{'Upt':i,'Frq':i,'Sec':i}}
+// Time record containing Upt:up time seconds Frq:counter frequency Sec:time string
+//
+// {'STS':{'Qsz':i,'Mis':i,'Ter':i,'Htu':i,'Bmp':i,'Acl':i,'Mag':i, 'Gps':i}}
+// Status record containing Qsz:events on queue Mis:missed events Ter:buffer error 
+// Htu:status Bmp:status Acl:status Mag:status Gps:ststus
+//
+// {'EVT':{'Evt':i,'Frq':i,'Tks':i,'Etm':f,'Adc':[[i,i,i,i,i,i,i,i][i,i,i,i,i,i,i,i]]}}
+// Event record containing Evt:event number in second Frq:timer frequency Tks:ticks since last event in second 
+// Etm:event time stamp to 100ns Adc:[[Channel 0 values][Channel 1 values]]
 
 // N.B. These records pass the data to a python monitor over the serial line. Python has awsome string handling and looks them up in
 // associative arrays to build records of any arbitary format you want. So this is only the start of the story of record processing.
@@ -78,7 +87,6 @@
 
 #include "Adafruit_GPS.h"	// GPS chip
 #define GPSECHO true
-#define RMCGGA			// Altitude on, yy/mm/dd off
 
 #include "Adafruit_L3GD20_U.h"	// Magoscope
 
@@ -109,6 +117,14 @@
 #define EVT_PIN 12	// Cosmic ray event detected
 #define FLG_PIN 11	// Debug flag
 
+// Power pins for power on/off the breakouts after a reset
+// The DUE makes a reset if the USB connection is restarted
+// The AddaFruit breakouts loose it when this happens and the
+// only way to recover them is a power cycle
+
+#define POW_ONE 8	// High power 15ma
+#define POW_TWO 9	// 15ma
+
 // For siesmic event input
 #define ACL_PIN 10	// Accelarometer INT1 interrupt pin
 
@@ -120,6 +136,7 @@
 
 Adafruit_GPS		gps(&Serial1);			// GPS Serial1 on pins RX1 and TX1
 boolean			gps_ok = false;			// Chip OK flag
+boolean			time_ok = false;		// Time read from GPS OK
 
 Adafruit_HTU21DF	htu = Adafruit_HTU21DF();	// Humidity and temperature measurment
 boolean			htu_ok = false;			// Chip OK
@@ -154,7 +171,7 @@ uint32_t frqutc_display_rate = 1;	// Display frequency and UTC time each X secon
 uint32_t status_display_rate = 4;	// Display status (UpTime, QueueSize, MissedEvents, HardwareOK)
 uint32_t accelr_display_rate = 1;	// Display accelarometer x,y,z
 uint32_t magnot_display_rate = 12;	// Display magnotometer data x,y,z
-
+uint32_t gps_read_inc        = 0;	// How often to read the GPS (600 = every 10 minutes, 0 = always)
 uint32_t events_display_size = 20;	// Display events after recieving X events
 
 // Siesmic event trigger parameters
@@ -179,6 +196,7 @@ typedef enum {
 	MAGD,	// Magnetometer display rate
 
 	ACLT,	// Accelerometer event threshold
+	GPRI,	// GPS read increment
 
 	CMDS };	// Command count
 
@@ -204,6 +222,7 @@ void evqt(int arg);
 void acld(int arg);
 void magd(int arg);
 void aclt(int arg);
+void gpri(int arg);
 
 // Command table
 
@@ -219,7 +238,8 @@ CmdStruct cmd_table[CMDS] = {
 	{ EVQT, evqt, "EVQT", "Event queue dump threshold", 1 },
 	{ ACLD, acld, "ACLD", "Accelerometer display rate", 1 },
 	{ MAGD, magd, "MAGD", "Magnatometer display rate", 1 },
-	{ ACLT, aclt, "ACLT", "Accelerometer event trigger threshold", 1 }
+	{ ACLT, aclt, "ACLT", "Accelerometer event trigger threshold", 1 },
+	{ GPRI, gpri, "GPRI", "GPS read increment in seconds", 1 }
 };
 
 #define CMDLEN 32
@@ -240,6 +260,9 @@ static char txt[TXTLEN];		// For writing to serial
 // The event pulse is also connected to pin D5. So D5 sees the LOR of the PPS and the
 // event, while D2 sees only the PPS. In this way we measure the frequency of the
 // clock MCLK/2 each second on the first counter, and the time between EVENTs on the second
+// I use a the unconnected timer block TC1 to make a PLL that is kept in phase by the PPS
+// arrival in TC0 and which is loaded with the last measured PPS frequency. This PLL will
+// take over the PPS generation if the real PPS goes missing.
 
 void TimersStart() {
 
@@ -249,38 +272,55 @@ void TimersStart() {
 
         pmc_set_writeprotect(false);    // Enable write access to power management chip
         pmc_enable_periph_clk(ID_TC0);  // Turn on power for timer block 0 channel 0
+        pmc_enable_periph_clk(ID_TC3);  // Turn on power for timer block 1 channel 0
         pmc_enable_periph_clk(ID_TC6);  // Turn on power for timer block 2 channel 0
 
-	// Timer block zero channel zero is connected only to the PPS 
+	// Timer block 0 channel 0 is connected only to the PPS 
 	// We set it up to load regester RA on each PPS and reset
 	// So RA will contain the number of clock ticks between two PPS, this
-	// value should be very stable +/- one tick
+	// value is the clock frequency and should be very stable +/- one tick
 
-        config = TC_CMR_TCCLKS_TIMER_CLOCK1 |        // Select fast clock MCK/2 = 42 MHz
-                 TC_CMR_ETRGEDG_RISING |             // External trigger rising edge on TIOA0
-                 TC_CMR_ABETRG |                     // Use the TIOA external input line
-                 TC_CMR_LDRA_RISING;                 // Latch counter value into RA
+        config = TC_CMR_TCCLKS_TIMER_CLOCK1 |        	// Select fast clock MCK/2 = 42 MHz
+                 TC_CMR_ETRGEDG_RISING |             	// External trigger rising edge on TIOA0
+                 TC_CMR_ABETRG |                    	// Use the TIOA external input line
+                 TC_CMR_LDRA_RISING;                 	// Latch counter value into RA
 
-        TC_Configure(TC0, 0, config);                // Configure channel 0 of TC0
-        TC_Start(TC0, 0);                            // Start timer running
+        TC_Configure(TC0, 0, config);                	// Configure channel 0 of TC0
+        TC_Start(TC0, 0);                            	// Start timer running
 
-        TC0->TC_CHANNEL[0].TC_IER =  TC_IER_LDRAS;   // Enable the load AR channel 0 interrupt each PPS
-        TC0->TC_CHANNEL[0].TC_IDR = ~TC_IER_LDRAS;   // and disable the rest of the interrupt sources
-        NVIC_EnableIRQ(TC0_IRQn);                    // Enable interrupt handler for channel 0
+        TC0->TC_CHANNEL[0].TC_IER =  TC_IER_LDRAS;   	// Enable the load AR channel 0 interrupt each PPS
+        TC0->TC_CHANNEL[0].TC_IDR = ~TC_IER_LDRAS;   	// and disable the rest of the interrupt sources
+        NVIC_EnableIRQ(TC0_IRQn);                    	// Enable interrupt handler for channel 0
 
-	// Timer block 2 channel zero is connected to the OR of the PPS and the RAY event
+	// Timer block 1 channel 0 is the PLL for when the GPS chip isn't providing the PPS
+	// it has the frequency loaded in reg C and is triggered from the TC0 ISR
+
+	config = TC_CMR_TCCLKS_TIMER_CLOCK1 |        	// Select fast clock MCK/2 = 42 MHz
+		 TC_CMR_CPCTRG;				// Compare register C with count value
+
+        TC_Configure(TC1, 0, config);                	// Configure channel 0 of TC1
+        TC_SetRC(TC1, 0, 42000000);			// One second approx initial PLL value
+	TC_Start(TC1, 0);                            	// Start timer running
+
+        TC1->TC_CHANNEL[0].TC_IER =  TC_IER_CPCS;	// Enable the C register compare interrupt
+        TC1->TC_CHANNEL[0].TC_IDR = ~TC_IER_CPCS;	// and disable the rest
+        NVIC_EnableIRQ(TC3_IRQn);			// Enable interrupt handler for channel 0
+
+	// Timer block 2 channel 0 is connected to the RAY event
+	// It is kept in phase by the PPS comming from TC0 when the PPS arrives
+	// or from TC1 when the PLL is active (This is the so called software diode logic)
  
-        config = TC_CMR_TCCLKS_TIMER_CLOCK1 |        // Select fast clock MCK/2 = 42 MHz
-                 TC_CMR_ETRGEDG_RISING |             // External trigger rising edge on TIOA1
-                 TC_CMR_ABETRG |                     // Use the TIOA external input line
-                 TC_CMR_LDRA_RISING;                 // Latch counter value into RA
+        config = TC_CMR_TCCLKS_TIMER_CLOCK1 |        	// Select fast clock MCK/2 = 42 MHz
+                 TC_CMR_ETRGEDG_RISING |             	// External trigger rising edge on TIOA1
+                 TC_CMR_ABETRG |                     	// Use the TIOA external input line
+                 TC_CMR_LDRA_RISING;                 	// Latch counter value into RA
  	
-	TC_Configure(TC2, 0, config);                // Configure channel 0 of TC2
-	TC_Start(TC2, 0);			     // Start timer running
+	TC_Configure(TC2, 0, config);                	// Configure channel 0 of TC2
+	TC_Start(TC2, 0);			     	// Start timer running
  
-	TC2->TC_CHANNEL[0].TC_IER =  TC_IER_LDRAS;   // Enable the load AR channel 0 interrupt each PPS
-	TC2->TC_CHANNEL[0].TC_IDR = ~TC_IER_LDRAS;   // and disable the rest of the interrupt sources
-	NVIC_EnableIRQ(TC6_IRQn);                    // Enable interrupt handler for channel 0
+	TC2->TC_CHANNEL[0].TC_IER =  TC_IER_LDRAS;   	// Enable the load AR channel 0 interrupt each PPS
+	TC2->TC_CHANNEL[0].TC_IDR = ~TC_IER_LDRAS;   	// and disable the rest of the interrupt sources
+	NVIC_EnableIRQ(TC6_IRQn);                    	// Enable interrupt handler for channel 0
 
 	// Set up the PIO controller to route input pins for TC0 and TC2
 
@@ -297,30 +337,70 @@ void TimersStart() {
 
 static uint32_t displ = 0;	// Display values in loop
 
-static uint32_t ppsfl = LOW,	// PPS Flag boolean
-		rega0 = 0, 	// RA reg
+static uint32_t	rega0 = 0, 	// RA reg
 		stsr0 = 0,	// Interrupt status register
-		ppcnt = 0;	// PPS count
+		ppcnt = 0,	// PPS count
+		delcn = 0;	// Synthetic PPS ms
+
+static uint32_t	rega1, stsr1 = 0;
+
+static uint32_t stsr2 = 0;
+
+boolean pll_flag = false;	
 
 // Handle the PPS interrupt in counter block 0 ISR
 
 void TC0_Handler() {
 
-	// This ISR is connected only to the PPS (Pulse Per Second) GPS event
-	// Each time this runs, set the flag to tell the TC6 ISR we have seen it
-	// This logic only works if the TC0 handler gets called before the TC6 handler
-	// hence the debug flag which I look at with a scope to be sure.
-	// I may introduce a small delay line to ensure this is true, so far it is.
+	// In principal we could connect a diode
+	// to pass on the PPS to counter blocks 1 & 2. However for some unknown
+	// reason this pulls down the PPS voltage level to less than 1V and
+	// the trigger becomes unreliable !! 
+	// In any case the PPS is 100ms wide !! Introducing a blind spot when
+	// the diode creates the OR of the event trigger and the PPS.
+	// So this is a software diode
 
-	ppsfl = HIGH;				// Seen a rising edge on the PPS
-#if FLG_PIN
-	digitalWrite(FLG_PIN,ppsfl);		// Flag set (for debug)
-#endif
+	TC2->TC_CHANNEL[0].TC_CCR = TC_CCR_SWTRG; // Forward PPS to counter block 2
+	TC1->TC_CHANNEL[0].TC_CCR = TC_CCR_SWTRG; // Forward PPS to counter block 1
+
 	rega0 = TC0->TC_CHANNEL[0].TC_RA;	// Read the RA reg (PPS period)
 	stsr0 = TC_GetStatus(TC0, 0); 		// Read status and clear load bits
+	
+        TC_SetRC(TC1, 0, rega0);		// Set the PLL count to what we just counted
 
+	SwapBufs();				// Every PPS swap the read/write buffers
 	ppcnt++;				// PPS count
 	displ = 1;				// Display stuff in the loop
+	gps_ok = true;				// Its OK because we got a PPS	
+	pll_flag = true;			// Inhibit PLL, dont take over PPS arrived
+
+#if PPS_PIN		
+	digitalWrite(PPS_PIN,HIGH);
+	digitalWrite(PPS_PIN,LOW);
+#endif	
+}
+
+// Handle PLL interrupts
+// When/If the PPS goes missing due to a lost lock we carry on with the last measured
+// value for the second from TC0
+
+void TC3_Handler() {
+
+	stsr2 = TC_GetStatus(TC1, 0); 		// Read status and clear interrupt
+#if FLG_PIN
+	digitalWrite(FLG_PIN,HIGH);		// Flag set (for debug)
+	digitalWrite(FLG_PIN,LOW);
+#endif
+
+	if (pll_flag == false) {		// Only take over when no PPS
+
+		TC2->TC_CHANNEL[0].TC_CCR = TC_CCR_SWTRG; // Forward PPS to counter block 2
+		SwapBufs();				// Every PPS swap the read/write buffers
+		ppcnt++;				// PPS count
+		displ = 1;				// Display stuff in the loop
+		gps_ok = false;				// PPS missing
+	}
+	pll_flag = false;				// Take over until PPS comes back
 }
 
 // We need a double buffer, one is being written by the ISR while
@@ -340,11 +420,7 @@ static int ridx, widx;
 
 // We also need a time value for the current and previous second
 
-#ifdef RMCGGA	
 #define DATE_TIME_LEN 9
-#else
-#define DATE_TIME_LEN 17
-#endif
 
 static char t1[DATE_TIME_LEN];		// Date time buffer text string
 static char t2[DATE_TIME_LEN];		
@@ -366,40 +442,24 @@ void SwapBufs() {
 // The diode is needed to block Event pulses getting back to TC0
 // LOR means Logical inclusive OR
 
-static uint32_t	rega1, stsr1 = 0;
-
 void TC6_Handler() {
 
-	// This ISR is connected to the OR of the event and the PPS 
-	// If the TC0 has seen the PPS it sets the flag high
-	// and if its high we are seeing the PPS here, but if the
-	// flag is not set then this is a cosmic ray event.
-
-	if (ppsfl == HIGH) {			// Was ther a PPS ? 
-		ppsfl = LOW;			// Yes so we have seen it here
-		SwapBufs();			// Every PPS swap the read/write buffers
-#if EVT_PIN
-		digitalWrite(EVT_PIN,LOW);	// Not an event
-#endif
-	} else {
-#if EVT_PIN
-		digitalWrite(EVT_PIN,HIGH);	// Event detected
-#endif
-		if (widx < PPS_EVENTS) {	// Up to PPS_EVENTS stored per PPS
+	if (widx < PPS_EVENTS) {	// Up to PPS_EVENTS stored per PPS
 			
-			// Read the latched tick count getting the event time
-			// and then pull the ADC pipe line
+		// Read the latched tick count getting the event time
+		// and then pull the ADC pipe line
 
-			wbuf[widx].Tks = TC2->TC_CHANNEL[0].TC_RA;
-			AdcPullData(&wbuf[widx]);
-			widx++;
-		}
+		wbuf[widx].Tks = TC2->TC_CHANNEL[0].TC_RA;
+		AdcPullData(&wbuf[widx]);
+		widx++;
 	}
-#if FLG_PIN	
-	digitalWrite(FLG_PIN,ppsfl);		// Flag out
-#endif
 	rega1 = TC2->TC_CHANNEL[0].TC_RA;	// Read the RA on channel 1 (PPS period)
 	stsr1 = TC_GetStatus(TC2, 0); 		// Read status clear load bits
+
+#if EVT_PIN
+	digitalWrite(EVT_PIN,HIGH);	// Event detected
+	digitalWrite(EVT_PIN,LOW);
+#endif
 }
 
 // Accelerometer setup
@@ -545,19 +605,36 @@ uint8_t AdcPullData(struct Event *b) {
 	}
 }
 
+// Increment date time by one second when not using the GPS
+
+int hour=0, minute=0, second=0;
+float latitude = 0.0, longitude = 0.0, altitude = 0.0;
+
+void IncDateTime() {
+
+	if (second++ >= 60) {
+		second = 0;
+		if (minute++ >= 60) {
+			minute = 0;
+			if (hour++ >= 24) {
+				hour = 0;
+			}
+		}
+	}
+	sprintf(wdtm,"%02d%02d%02d",hour,minute,second);
+}
+
 // This is the nmea data string from the GPS chip
 
 #define GPS_STRING_LEN 256
 static char gps_string[GPS_STRING_LEN + 1];
-	
-float latitude = 0.0, longitude = 0.0, altitude = 0.0;
 
 // This function is dependent on the GPS chip implementation
 // It should return a date time string as described above
 // So you need to re-implements this for whichever chip you are using
 // Here I am using the addafruit GPS chip
 
-char *GetDateTime() {
+boolean GpsDateTime() {
 
 	int i = 0;
 	while (Serial1.available()) {
@@ -568,29 +645,50 @@ char *GetDateTime() {
 	}
 	if (gps.parse(gps_string)) {
 
-#ifdef RMCGGA	
 		// I choose RMCGGA by default, and get the altitude but no date.
 		// Its easy to get the date once the records arrive at the Python end.
 		// The GPS altitude is far more accurate than the barrometric altitude.
 		// Warning: The syntax can not be changed, we need an integer hhmmss
 
-		sprintf(wdtm,"%02d%02d%02d",
-			gps.hour,gps.minute,gps.seconds);
-
 		altitude  = gps.altitude;	
-#else
-		sprintf(wdtm,"%02d%02d%02d%02d%02d%02d%02d%02d",
-			gps.year,gps.month,gps.day,
-			gps.hour,gps.minute,gps.seconds);
-
-		altitude = 0;
-#endif			
 		latitude  = gps.latitudeDegrees;	// Easy place to get location
 		longitude = gps.longitudeDegrees;	// Works well in Google maps
+		hour      = gps.hour;
+		minute    = gps.minute;
+		second	  = gps.seconds;
+		sprintf(wdtm,"%02d%02d%02d",hour,minute,second);
 
-		return rdtm;
-	} else
-		return NULL;
+		time_ok	  = true;
+		return true;
+	}
+	return false;
+}
+
+// Get the date time either from GPS or calculate it
+
+uint32_t nxtdtr = 0;	// Next DateTime read second number
+
+void GetDateTime() {
+
+	if (gps_ok) {						// If the GPS is up
+		if (!time_ok) { 				// If I havn't read it ever
+			if (GpsDateTime()) {			// read GPS time and check its OK
+				nxtdtr = ppcnt + gps_read_inc;	// Next time to read
+				return;
+			}
+		} else {
+			if (ppcnt >= nxtdtr) {			// Time to read GPS again ?
+				if (GpsDateTime()) {
+					nxtdtr = ppcnt + gps_read_inc;
+					return;
+				}
+			}
+		}
+	}
+	
+	// So if we are here then we didn't read the GPS, so just increment time
+
+	IncDateTime();
 }
 
 // Implement queue access mechanism for events, each second the user space (loop) copies
@@ -691,23 +789,31 @@ void setup() {
 	pinMode(PPS_PIN, OUTPUT);	// Pin for the PPS (LED pin)
 #endif
 
+	pinMode(POW_ONE, OUTPUT);	// Breakout power pin
+	pinMode(POW_TWO, OUTPUT);	// ditto
+
 	Serial.begin(SERIAL_BAUD_RATE);	// Start the serial line
 	Serial1.begin(GPS_BAUD_RATE);	// and the second
 
 	gps.begin(GPS_BAUD_RATE);	// Chip baud rate
 
-#ifdef RMCGGA
 	gps.sendCommand(PMTK_SET_NMEA_OUTPUT_RMCGGA);	// With altitude but no yy/mm/dd
-#else
-	gps.sendCommand(PMTK_SET_NMEA_OUTPUT_RMCONLY);	// With yy/mm/dd but no altitude
-#endif
 	gps.sendCommand(PMTK_SET_NMEA_UPDATE_1HZ);	// each second
-
 
 	InitQueue();			// Reset queue pointers, missed count, and size
 
 	strcpy(rdtm,"");		// Set initial value for date/time
 	strcpy(wdtm,"");
+
+	// Power OFF/ON the breakouts
+
+	digitalWrite(POW_ONE,LOW);	// Power off
+	digitalWrite(POW_TWO,LOW);	
+	delay(100);			// Wait for caps to discharge
+	digitalWrite(POW_ONE,LOW);	// Power on
+	digitalWrite(POW_TWO,LOW);	
+
+	// Initialize breakouts
 
 	htu_ok = htu.begin();
 	bmp_ok = bmp.begin();
@@ -787,7 +893,7 @@ void PushHtu(int flg) {	// If flg is true always push
 	if ((flg) || ((htu_ok) && ((ppcnt % humtmp_display_rate) == 0))) {
 		temph = htu.readTemperature();
 		humid = htu.readHumidity();
-		sprintf(txt,"{'temperature':{'temperature':%5.3f,'humidity':%4.1f}}\n",temph,humid);
+		sprintf(txt,"{'HTU':{'Tmh':%5.3f,'Hum':%4.1f}}\n",temph,humid);
 		PushTxt(txt);
 	}
 }
@@ -808,7 +914,7 @@ void PushBmp(int flg) {	// If flg is true always push
 			bmp.getTemperature(&tempb);
 			altib = bmp.pressureToAltitude((float) SENSORS_PRESSURE_SEALEVELHPA, 
 							presr,tempb);
-			sprintf(txt,"{'barometer':{'temperature':%5.3f,'pressure':%5.3f,'altitude':%4.1f}}\n",tempb,presr,altib);
+			sprintf(txt,"{'BMP':{'Tmb':%5.3f,'Prs':%5.3f,'Alb':%4.1f}}\n",tempb,presr,altib);
 			PushTxt(txt);
 		}
 	}
@@ -829,7 +935,7 @@ uint32_t old_icount = 0;
 			PushTim(1);		// Push these first, and then vib
 			PushAcl(1);		// This is the real latched value
 			PushMag(1);
-			sprintf(txt,"{'vibration':{'direction':%d,'count':%d}}\n",accl_flag,accl_icount);
+			sprintf(txt,"{'VIB':{'Vax':%d,'Vcn':%d}}\n",accl_flag,accl_icount);
 			PushTxt(txt);
 		}
 	}
@@ -846,11 +952,19 @@ void PushMag(int flg) {	// Push the mago stuff
 
 		// Micro Tesla
 
-		sprintf(txt,"{'magnetometer':{'x':%f,'y':%f,'z':%f}}\n",
+		sprintf(txt,"{'MAG':{'Mgx':%f,'Mgy':%f,'Mgz':%f}}\n",
 			mag_event.magnetic.x,
 			mag_event.magnetic.y,
 			mag_event.magnetic.z);
 		PushTxt(txt);
+
+		// Orientation (Easy to calculate later in Python - dont waste resources)
+#ifdef ORIENTATION
+		if (dof.magGetOrientation(SENSOR_AXIS_Z, &mag_event, &xyz)) {
+			sprintf(txt,"{'MOG':{'Mox':%f,'Moy':%f,'Moz':%f}}\n",xyz.x,xyz.y,xyz.z);
+			PushTxt(txt);
+		}
+#endif
 	}
 }
 
@@ -865,11 +979,19 @@ void PushAcl(int flg) { // Push the accelerometer and compass stuff
 
 		// Meters per second squared
 
-		sprintf(txt,"{'accelerometer':{'x':%f,'y':%f,'z':%f}}\n",
+		sprintf(txt,"{'ACL':{'Acx':%f,'Acy':%f,'Acz':%f}}\n",
 			acl_event.acceleration.x,
 			acl_event.acceleration.y,
 			acl_event.acceleration.z);
 		PushTxt(txt);
+
+		// Orientation (Easy to calculate later in Python - dont waste resources)
+#ifdef ORIENTATION		
+		if (dof.accelGetOrientation(&acl_event, &xyz)) {
+			sprintf(txt,"{'AOL':{'Aox':%f,'Aoy':%f,'Aoz':%f}}\n",xyz.x,xyz.y,xyz.z);
+			PushTxt(txt);
+		}
+#endif
 	}
 }
 
@@ -878,7 +1000,7 @@ void PushAcl(int flg) { // Push the accelerometer and compass stuff
 void PushLoc(int flg) {
 		
 	if ((flg) || ((ppcnt % latlon_display_rate) == 0)) {
-		sprintf(txt,"{'location':{'latitude':%f,'longitude':%f,'altitude':%f}}\n",latitude,longitude,altitude);
+		sprintf(txt,"{'LOC':{'Lat':%f,'Lon':%f,'Alt':%f}}\n",latitude,longitude,altitude);
 		PushTxt(txt);
 	}
 }
@@ -888,7 +1010,7 @@ void PushLoc(int flg) {
 void PushTim(int flg) {
 
 	if ((flg) || ((ppcnt % frqutc_display_rate) == 0)) {
-		sprintf(txt,"{'timing':{'uptime':%4d,'counter_frequency':%7d,'time_string':%s}}\n",ppcnt,rega0,rdtm);
+		sprintf(txt,"{'TIM':{'Upt':%4d,'Frq':%7d,'Sec':%s}}\n",ppcnt,rega0,rdtm);
 		PushTxt(txt);
 	}			
 }
@@ -899,7 +1021,7 @@ void PushSts(int flg, int qsize, int missed) {
 uint8_t res;
 
 	if ((flg) || ((ppcnt % status_display_rate) == 0)) {
-		sprintf(txt,"{'status':{'queue_size':%2d,'missed_events':%2d,'buffer_error':%d,'temp_status':%d,'baro_status':%d,'accel_status':%d,'mag_status':%d,'gps_status':%d}}\n",
+		sprintf(txt,"{'STS':{'Qsz':%2d,'Mis':%2d,'Ter':%d,'Htu':%d,'Bmp':%d,'Acl':%d,'Mag':%d,'Gps':%d}}\n",
 			qsize,missed,terr,htu_ok,bmp_ok,acl_ok,mag_ok,gps_ok);
 		PushTxt(txt);
 		terr = 0;
@@ -945,8 +1067,8 @@ void PushEvq(int flg, int *qsize, int *missed) {
 			// Build string and push it out to the print buffer
 
 			sprintf(txt,
-				"{'event':{'event_number':%1d,'timer_frequency':%8d,'ticks':%8d,'timestamp':%s%s,"
-				"'adc':[[%d,%d,%d,%d,%d,%d,%d,%d],[%d,%d,%d,%d,%d,%d,%d,%d]]}}\n",
+				"{'EVT':{'Evt':%1d,'Frq':%8d,'Tks':%8d,'Etm':%s%s,"
+				"'Adc':[[%d,%d,%d,%d,%d,%d,%d,%d],[%d,%d,%d,%d,%d,%d,%d,%d]]}}\n",
 				eb.Count, eb.Frequency, eb.Ticks, eb.DateTime, index(stx,'.'),
 				eb.Ch0[0],eb.Ch0[1],eb.Ch0[2],eb.Ch0[3],eb.Ch0[4],eb.Ch0[5],eb.Ch0[6],eb.Ch0[7],
 				eb.Ch1[0],eb.Ch1[1],eb.Ch1[2],eb.Ch1[3],eb.Ch1[4],eb.Ch1[5],eb.Ch1[6],eb.Ch1[7]);
@@ -1014,6 +1136,8 @@ void aclt(int arg) {
 	acl.write8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_INT1_THS_A, val);
 }
 
+void gpri(int arg) { gps_read_inc = arg; }
+
 // Look up a command in the command table for the given command string
 // and call it with its single integer parameter
 
@@ -1057,10 +1181,20 @@ void loop() {
 
 	int missed, qsize;	// Queue vars
 
-	if (displ) {				// Displ is set in the PPS ISR, we will reset it here
-#if PPS_PIN		
-		digitalWrite(PPS_PIN,HIGH);	// PPS arrived
-#endif	
+	// If the GPS is not locked yet (no PPS at startup) print status
+#if 0
+	if (time_ok == false) {
+		delay(1);
+		if (delcn++ >= 1000) {		// Wait for a second approw
+			delcn = 0;		// Reset delay
+			GetDateTime();		// Read the next date/time from the GPS chip
+			PushSts(0,qsize,missed);// Push status
+		}
+	}
+
+	else 
+#endif
+	if (displ) {			// Displ is set in the PPS ISR, we will reset it here
 		DoCmd();			// Execute any incomming commands
 		PushEvq(0,&qsize,&missed);	// Push any events
 		PushHtu(0);			// Push HTU temperature and humidity
@@ -1070,19 +1204,10 @@ void loop() {
 		PushMag(0);			// Push mago data
 		PushAcl(0);			// Push accelarometer data
 		PushSts(0,qsize,missed);	// Push status
-		GetDateTime();			// Read the next date/time from the GPS chip
-#if PPS_PIN
-		digitalWrite(PPS_PIN,LOW);	// Reset PPS
-#endif
+		GetDateTime();		// Read the next date/time from the GPS chip
 		displ = 0;			// Clear flag for next PPS			
-		gps_ok = true;			// Its OK because we got a PPS	
 	}
-
-	if (gps_ok == false) {
-		delay(1000);			// One second sleep
-		PushSts(0,qsize,missed);        // Push bad hardware status
-	}
-
+	
 	PutChar();	// Print one character per loop !!!
 	ReadOneChar();	// Get next input command char
 }

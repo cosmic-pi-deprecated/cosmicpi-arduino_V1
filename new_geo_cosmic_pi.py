@@ -572,8 +572,11 @@ def main():
 						if udpflg:
 							sio.send_event_pkt(ebuf,ipaddr,ipport)
 						if logflg:
-							log.write(ebuf)
-
+							# log.write(ebuf)
+							log.write("\nCosmic Event..: Evt:%s Frq:%s Tks:%s Etm:%s" % (evd["Evt"],evd["Frq"],evd["Tks"],evd["Etm"]))
+							log.write("\nAdc[[Ch0][Ch1]: Adc:%s" % (str(evd["Adc"])))
+							log.write("\nTime..........: Upt:%s Sec:%s Sqn:%d\n" % (tim["Upt"],tim["Sec"],sqn["Sqn"]))
+							log.write("\n")
 						continue
 				if debug:
 					sys.stdout.write(rc)

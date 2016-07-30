@@ -172,7 +172,7 @@ uint32_t status_display_rate = 4;	// Display status (UpTime, QueueSize, MissedEv
 uint32_t accelr_display_rate = 1;	// Display accelarometer x,y,z
 uint32_t magnot_display_rate = 12;	// Display magnotometer data x,y,z
 uint32_t gps_read_inc        = 0;	// How often to read the GPS (600 = every 10 minutes, 0 = always)
-uint32_t events_display_size = 20;	// Display events after recieving X events
+uint32_t events_display_size = 1;	// Display events after recieving X events
 
 // Siesmic event trigger parameters
 

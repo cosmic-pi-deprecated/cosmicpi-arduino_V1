@@ -708,7 +708,6 @@ typedef struct {
 	uint8_t		RdPtr;				// Read pointer
 	uint8_t		WrPtr;				// Write pointer
 	uint8_t		Missed;				// Missed events counter due to overflow
-	uint8_t		Lock;				// The queue spin lock (not needed here)
 	struct EventBuf	Events[EVENT_QSIZE];		// Queued events 
 } EventQueue;
 
@@ -721,7 +720,6 @@ uint8_t PutQueue(struct EventBuf *ebuf) {
 
 	EventQueue *q = &event_queue;
 
-	while(q->Lock) {}; q->Lock = 1;		// Spin lock on queue
 	q->Events[q->WrPtr] = *ebuf;		// Write event to the queue
 	q->WrPtr = (q->WrPtr + 1) % EVENT_QSIZE;// Increment the write pointer
 	if (q->Size < EVENT_QSIZE) q->Size++;	// If we are overwriting old enties that havnt been read
@@ -729,26 +727,24 @@ uint8_t PutQueue(struct EventBuf *ebuf) {
 		q->Missed++;					// Say we missed some events
 		q->RdPtr = (q->RdPtr + 1) % EVENT_QSIZE;	// and throw the oldest event away	
 	}
-	q->Lock = 0;
 	return q->Missed;
 }
 
 // Pop an event off the queue, if the queue is empty nothing happens
-// the queue size is zero when the queue is empty, and this is the
-// return value
+// the queue size is zero when the queue is empty.
+// If the pop resulted in an event return 1 else 0
 
 uint8_t PopQueue(struct EventBuf *ebuf) {	// Points to where the caller wants the event stored
 
 	EventQueue *q = &event_queue;
 
-	while(q->Lock) {}; q->Lock = 1;		// Spin lock on queue
 	if (q->Size) {
 		*ebuf = q->Events[q->RdPtr];
 		q->RdPtr = (q->RdPtr + 1) % EVENT_QSIZE;
 		q->Size--;
+		return 1;
 	}
-	q->Lock = 0;
-	return q->Size; 
+	return 0; 
 }
 
 // Get the size of the queue
@@ -766,12 +762,10 @@ void InitQueue() {
 
 	EventQueue *q = &event_queue;
 
-	q->Lock = 1;
 	q->Size = 0;
 	q->RdPtr = 0;
 	q->WrPtr = 0;
 	q->Missed = 0;
-	q->Lock = 0;
 }
 
 // Arduino setup function, initialize hardware and software

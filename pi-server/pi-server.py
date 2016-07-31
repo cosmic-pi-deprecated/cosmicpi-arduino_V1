@@ -462,7 +462,8 @@ def main():
 	except Exception, e:
 		msg = "Exception: main: %s" % (e)
 		print "Fatal: %s" % msg
-
+		traceback.print_exc(file=sys.stdout)
+		
 	finally:
 		kbrd.echo_on()
 		print "Quitting ..."

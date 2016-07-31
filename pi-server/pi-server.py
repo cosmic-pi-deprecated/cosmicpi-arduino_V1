@@ -252,6 +252,7 @@ def main():
 	parser.add_option("-d", "--debug", help="Debug Option", dest="debug", default=False, action="store_true")
 	parser.add_option("-o", "--odir",  help="Path to log directory", dest="logdir", default="/tmp")
 	parser.add_option("-n", "--nolog", help="Event Logging", dest="logflg", default=True, action="store_false")
+	parser.add_option("-z", "--zbl",   help="Zero Base Line", dest="zbl", default=False, action="store_true")
 
 	options, args = parser.parse_args()
 
@@ -259,6 +260,7 @@ def main():
 	logdir = options.logdir
 	debug  = options.debug
 	logflg = options.logflg
+	zbl    = options.zbl
 
 	print ""
 	print "cosmic_pi server running, hit '>' for commands\n"
@@ -266,6 +268,7 @@ def main():
 	print "options (Server Port number)	port:%d" % ipport
 	print "options (Logging directory)	odir:%s" % logdir
 	print "options (Event logging)		log: %s" % logflg
+	print "options (Zero Base Line)         zbl: %s" % zbl
 
 	file_name = "/tmp/pi-server-lock"
 	fp = open(file_name, 'w')
@@ -423,7 +426,11 @@ def main():
 					reg.set_reg(r)					
 
 				if logflg:
-					line = "%s - %s" % (str(recv[0]),str(recv[1]))
+					if zbl:
+						 if nstr[0].find("EVT") != -1:
+							line = "%s - %s" % (evt,str(recv[1]))
+					else:
+						line = "%s - %s" % (str(recv[0]),str(recv[1]))
 					log.write(line)
 					log.write("\n\n")
 

@@ -1116,8 +1116,6 @@ void stsd(int arg) { status_display_rate = arg; }
 
 void evqt(int arg) { 
 	events_display_size = arg % EVENT_QSIZE; 
-	if (events_display_size == 0)
-		events_display_size = 24;
 }
 
 void acld(int arg) { accelr_display_rate = arg; }

@@ -402,7 +402,7 @@ def main():
 							badhard = True
 							if r["Ntf"]: 
 								nfs.send_ntf(pat["Pat"],msg)
-							print "Hardware error:%s %s" % (str(recv[1],msg))
+							print "Hardware error:%s %s" % (str(recv[1]),msg)
 					else:
 						if badhard == True:
 							badhard = False
@@ -417,7 +417,7 @@ def main():
 					j = int(r["Sqn"])
 					i = int(sqn["Sqn"])
 					if i != j+1 and j != 0:
-						msg = "Sequence error: %s %d-%d" % (str(recv[1],i,j))
+						msg = "Sequence error: %s %d-%d" % (str(recv[1]),i,j)
 						print msg
 						if r["Ntf"]:
 							nfs.send_ntf(pat["Pat"],msg)

@@ -428,7 +428,9 @@ def main():
 				if logflg:
 					if zbl:
 						 if nstr[0].find("EVT") != -1:
-							line = "%s - %s" % (evt,str(recv[1]))
+							z1 = "{Evt:%s,Frq:%s,Tks:%s,Etm:%s}\n" % (evd["Evt"],evd["Frq"],evd["Tks"],evd["Etm"])
+							z2 = "{Adc:%s}\n" % (str(evd["Adc"]))
+							line = "%s%s%s" % (z1,z2,str(recv[1]))
 					else:
 						line = "%s - %s" % (str(recv[0]),str(recv[1]))
 					log.write(line)

@@ -2,7 +2,8 @@
 #	coding: utf8
 
 """
-Handle UDP packets from the cosmic pi and log then
+Handle UDP packets from the cosmic pi and log them
+Output can be csv or json depending on command line option -c
 julian.lewis lewis.julian@gmail.com 26/Feb/2016
 """
 
@@ -252,7 +253,7 @@ def main():
 	parser.add_option("-d", "--debug", help="Debug Option", dest="debug", default=False, action="store_true")
 	parser.add_option("-o", "--odir",  help="Path to log directory", dest="logdir", default="/tmp")
 	parser.add_option("-n", "--nolog", help="Event Logging", dest="logflg", default=True, action="store_false")
-	parser.add_option("-z", "--zbl",   help="Zero Base Line", dest="zbl", default=False, action="store_true")
+	parser.add_option("-c", "--csv",   help="Comma seperated value logging", dest="csv", default=False, action="store_true")
 
 	options, args = parser.parse_args()
 
@@ -260,7 +261,7 @@ def main():
 	logdir = options.logdir
 	debug  = options.debug
 	logflg = options.logflg
-	zbl    = options.zbl
+	csv    = options.csv
 
 	print ""
 	print "cosmic_pi server running, hit '>' for commands\n"
@@ -268,7 +269,7 @@ def main():
 	print "options (Server Port number)	port:%d" % ipport
 	print "options (Logging directory)	odir:%s" % logdir
 	print "options (Event logging)		log: %s" % logflg
-	print "options (Zero Base Line)         zbl: %s" % zbl
+	print "options (Comma Seperated Values) csv: %s" % csv
 
 	file_name = "/tmp/pi-server-lock"
 	fp = open(file_name, 'w')
@@ -281,7 +282,7 @@ def main():
 		sys.exit(1)
 
 	ts = time.strftime("%d-%b-%Y-%H-%M-%S",time.gmtime(time.time()))
-	lgf = "%s/cosmicpi-logs/%s.log" % (logdir,ts)
+	lgf = "%s/cosmicpi-logs/%s.srv" % (logdir,ts)
 	dir = os.path.dirname(lgf)
 	if not os.path.exists(dir):
 		os.makedirs(dir)
@@ -291,10 +292,6 @@ def main():
 		msg = "Exception: Cant open log file: %s" % (e)
 		print "Fatal: %s" % msg
 		sys.exit(1)
-
-	if options.debug:
-		print "\n"
-		print "Log file is: %s" % lgf
 
 	kbrd = KeyBoard()
 	kbrd.echo_off()
@@ -426,13 +423,24 @@ def main():
 					reg.set_reg(r)					
 
 				if logflg:
-					if zbl:
+					if csv:
 						 if nstr[0].find("EVT") != -1:
-							z1 = "{Evt:%s,Frq:%s,Tks:%s,Etm:%s}\n" % (evd["Evt"],evd["Frq"],evd["Tks"],evd["Etm"])
-							z2 = "{Adc:%s}\n" % (str(evd["Adc"]))
-							line = "%s%s%s" % (z1,z2,str(recv[1]))
+							z1 = "Evt:%s,Frq:%s,Tks:%s,Etm:%s\n" % (evd["Evt"],evd["Frq"],evd["Tks"],evd["Etm"])
+
+							z2 = "Adc:%s\n" % (str(evd["Adc"]))
+							z2 = z2.replace(' ','')
+
+							z3 = str(recv[1])
+							z3 = z3.replace('\'','')
+							z3 = z3.replace(' ','')
+							z3 = z3.replace(')','')
+							z3 = z3.replace('(','')
+							z3 = "Cli:%s\n" % z3
+
+							line = "%s%s%s" % (z1,z2,z3)
 					else:
 						line = "%s - %s" % (str(recv[0]),str(recv[1]))
+
 					log.write(line)
 					log.write("\n\n")
 

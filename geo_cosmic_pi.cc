@@ -12,7 +12,7 @@
 
 // Julian Lewis lewis.julian@gmail.com
 
-#define VERS "2016/July/27"
+#define VERS "2016/August"
 
 // In this sketch I am using an Adafruite ultimate GPS breakout which exposes the PPS output
 // The Addafruite Rx is connected to the DUE TX1 (Pin 18) and its Tx to DUE RX1 (Pin 19)

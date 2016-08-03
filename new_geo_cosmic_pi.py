@@ -293,7 +293,7 @@ def main():
 	parser = OptionParser(usage=use, version="cosmic_pi version 1.0")
 	
 	parser.add_option("-i", "--ip",    help="Server IP address or name", dest="ipaddr", default="localhost")
-	parser.add_option("-p", "--port",  help="Server portnumber", dest="ipport", type="int", default="4901")
+	parser.add_option("-p", "--port",  help="Server portnumber", dest="ipport", type="int", default="15443")
 	parser.add_option("-u", "--usb",   help="USB device name", dest="usbdev", default="/dev/ttyACM0")
 	parser.add_option("-d", "--debug", help="Debug Option", dest="debug", default=False, action="store_true")
 	parser.add_option("-o", "--odir",  help="Path to log directory", dest="logdir", default="/tmp")

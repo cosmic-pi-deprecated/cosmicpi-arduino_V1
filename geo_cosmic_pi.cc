@@ -99,7 +99,7 @@
 
 // The size of the one second event buffer
 #define PPS_EVENTS 8	// The maximum number of events stored per second
-#define ADC_BUF_LEN 8  // Number of ADC values per event
+#define ADC_BUF_LEN 50	// Maximum number of ADC values per event
 
 // This is the event queue size
 #define EVENT_QSIZE 32	// The number of events that can be queued for serial output
@@ -173,6 +173,7 @@ uint32_t accelr_display_rate = 1;	// Display accelarometer x,y,z
 uint32_t magnot_display_rate = 12;	// Display magnotometer data x,y,z
 uint32_t gps_read_inc        = 0;	// How often to read the GPS (600 = every 10 minutes, 0 = always)
 uint32_t events_display_size = 1;	// Display events after recieving X events
+uint32_t adc_samples_per_evt = 8;	// Number of ADC samples per event
 
 // Siesmic event trigger parameters
 
@@ -197,6 +198,7 @@ typedef enum {
 
 	ACLT,	// Accelerometer event threshold
 	GPRI,	// GPS read increment
+	NADC,	// Number of ADC samples per event
 
 	CMDS };	// Command count
 
@@ -223,6 +225,7 @@ void acld(int arg);
 void magd(int arg);
 void aclt(int arg);
 void gpri(int arg);
+void nadc(int arg);
 
 // Command table
 
@@ -239,7 +242,8 @@ CmdStruct cmd_table[CMDS] = {
 	{ ACLD, acld, "ACLD", "Accelerometer display rate", 1 },
 	{ MAGD, magd, "MAGD", "Magnatometer display rate", 1 },
 	{ ACLT, aclt, "ACLT", "Accelerometer event trigger threshold", 1 },
-	{ GPRI, gpri, "GPRI", "GPS read increment in seconds", 1 }
+	{ GPRI, gpri, "GPRI", "GPS read increment in seconds", 1 },
+	{ NADC, nadc, "NADC", "Number of ADC sampes tor read per event", 1}
 };
 
 #define CMDLEN 32
@@ -597,7 +601,7 @@ uint8_t AdcPullData(struct Event *b) {
 	
 	int i;
 
-	for (i=0; i<ADC_BUF_LEN; i++) {			// For all in ADC pipeline
+	for (i=0; i<adc_samples_per_evt; i++) {		// For all in ADC pipeline
 		while((ADC->ADC_ISR & 0x01)==0);	// Wait for channel 0 (2.5us)
 		b->Ch0[i] = (uint16_t) ADC->ADC_CDR[0];	// Read ch 0
 		while((ADC->ADC_ISR & 0x02)==0);	// Wait for channel 1 (2.5us)
@@ -1024,12 +1028,15 @@ uint8_t res;
 
 // Push event queue
 
+#define ADCHL (8*ADC_BUF_LEN)
+
 void PushEvq(int flg, int *qsize, int *missed) {
 		
 	struct EventBuf eb;		// Temporary event buffer
 	double evtm = 0.0;		// Time since last event or PPS in seconds (< 1.0)
 	char stx[16];			// Second text
 	int i,j;
+	char adch0[ADCHL],adch1[ADCHL];	// ADC channel values strings
 
 	// If there are any events waiting in the event read buffer, put them on the queue
 
@@ -1038,7 +1045,7 @@ void PushEvq(int flg, int *qsize, int *missed) {
 		eb.Frequency = rega0;			// Ticks between successive PPS pulses
 		eb.Ticks = rbuf[i].Tks;			// Ticks since LAST interrupt! (PPS or Event)
 		eb.Count = i+1;				// Event index 1..PPS_EVENTS in the second
-		for (j=0; j<ADC_BUF_LEN; j++) {		// Copy accross ADC values
+		for (j=0; j<adc_samples_per_evt; j++) {	// Copy accross ADC values
 			eb.Ch0[j] = rbuf[i].Ch0[j];
 			eb.Ch1[j] = rbuf[i].Ch1[j];
 		}
@@ -1059,13 +1066,21 @@ void PushEvq(int flg, int *qsize, int *missed) {
 			sprintf(stx,"%9.7f",evtm);				// It will be 0.something
 
 			// Build string and push it out to the print buffer
+			
+			adch0[0] = '\0';
+			adch1[0] = '\0';
 
+			for (i=0; i<adc_samples_per_evt; i++) {
+				sprintf(&adch0[strlen(adch0)],"%d,",eb.Ch0[i]);
+				sprintf(&adch1[strlen(adch1)],"%d,",eb.Ch1[i]);
+			}
+
+			adch0[strlen(adch0) -1] = '\0';
+			adch1[strlen(adch1) -1] = '\0';
+ 
 			sprintf(txt,
-				"{'EVT':{'Evt':%1d,'Frq':%8d,'Tks':%8d,'Etm':%s%s,"
-				"'Adc':[[%d,%d,%d,%d,%d,%d,%d,%d],[%d,%d,%d,%d,%d,%d,%d,%d]]}}\n",
-				eb.Count, eb.Frequency, eb.Ticks, eb.DateTime, index(stx,'.'),
-				eb.Ch0[0],eb.Ch0[1],eb.Ch0[2],eb.Ch0[3],eb.Ch0[4],eb.Ch0[5],eb.Ch0[6],eb.Ch0[7],
-				eb.Ch1[0],eb.Ch1[1],eb.Ch1[2],eb.Ch1[3],eb.Ch1[4],eb.Ch1[5],eb.Ch1[6],eb.Ch1[7]);
+				"{'EVT':{'Evt':%1d,'Frq':%8d,'Tks':%8d,'Etm':%s%s,'Adc':[[%s],[%s]]}}\n",
+				eb.Count, eb.Frequency, eb.Ticks, eb.DateTime, index(stx,'.'),adch0,adch1);
 			PushTxt(txt);
 		}
 		PushTxt("\n");
@@ -1129,6 +1144,7 @@ void aclt(int arg) {
 }
 
 void gpri(int arg) { gps_read_inc = arg; }
+void nadc(int arg) { adc_samples_per_evt = arg % ADC_BUF_LEN; }
 
 // Look up a command in the command table for the given command string
 // and call it with its single integer parameter

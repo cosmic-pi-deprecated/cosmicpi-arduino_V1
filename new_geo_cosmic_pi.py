@@ -317,7 +317,8 @@ def main():
 	wstflg = options.wstflg
 	evtflg = options.evtflg
 	patok  = options.patok
-		
+	
+	display = True	
 	pushflg = False
 
 	print "\n"
@@ -386,6 +387,13 @@ def main():
 						debug = True
 					print "Debug:%s\n" % debug
 
+				elif cmd.find("x") != -1:
+         				if display:
+						display = False
+					else:
+						display = True
+					print "Display:%s\n" % display
+
 				elif cmd.find("v") != -1:
          				if vibflg:
 						vibflg = False
@@ -450,11 +458,12 @@ def main():
 					print "WeatherStation: Flag:%s" % (wstflg)
 					print "Events........: Sent:%d LogFlag:%s" % (events,logflg)
 					print "LogFile.......: %s\n" % (lgf)
+					print "Display Events: %s\n" % (display)
 
 				elif cmd.find("h") != -1:
 					print "MONITOR COMMANDS"
 					print "   q=quit, s=status, d=toggle_debug, n=toggle_send, l=toggle_log"
-					print "   v=vibration, w=weather, r=toggle_notifications h=help\n"
+					print "   v=vibration, w=weather, r=toggle_notifications, x=toggle_display, h=help\n"
 					print "ARDUINO COMMANDS"
 					print "   NOOP, Do nothing"
 					print "   HELP, Display commands"
@@ -469,6 +478,8 @@ def main():
 					print "   MAGD, Magomagnatometer display rate, <rate>"
 					print "   ACLT, Accelerometer event trigger threshold, <threshold 0..127>"
 					print "   GPRI, GPS read increment in seconds"
+					print "   NADC, Number of ADC sampes tor read per event"
+					print "   RBRK, Reset power on=1/off=0 for breakouts"
 					print ""
 
 					if debug:
@@ -565,10 +576,11 @@ def main():
 						evd = evt.get_evt()
 						tim = evt.get_tim()
 						sqn = evt.get_sqn()
-						print ""
-						print "Cosmic Event..: Evt:%s Frq:%s Tks:%s Etm:%s" % (evd["Evt"],evd["Frq"],evd["Tks"],evd["Etm"])
-						print "Adc[[Ch0][Ch1]: Adc:%s" % (str(evd["Adc"]))
-						print "Time..........: Upt:%s Sec:%s Sqn:%d\n" % (tim["Upt"],tim["Sec"],sqn["Sqn"])
+						if display:
+							print ""
+							print "Cosmic Event..: Evt:%s Frq:%s Tks:%s Etm:%s" % (evd["Evt"],evd["Frq"],evd["Tks"],evd["Etm"])
+							print "Adc[[Ch0][Ch1]: Adc:%s" % (str(evd["Adc"]))
+							print "Time..........: Upt:%s Sec:%s Sqn:%d\n" % (tim["Upt"],tim["Sec"],sqn["Sqn"])
         
 						if udpflg:
 							sio.send_event_pkt(ebuf,ipaddr,ipport)

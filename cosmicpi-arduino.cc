@@ -960,14 +960,6 @@ void PushMag(int flg) {	// Push the mago stuff
 			mag_event.magnetic.y,
 			mag_event.magnetic.z);
 		PushTxt(txt);
-
-		// Orientation (Easy to calculate later in Python - dont waste resources)
-#ifdef ORIENTATION
-		if (dof.magGetOrientation(SENSOR_AXIS_Z, &mag_event, &xyz)) {
-			sprintf(txt,"{'MOG':{'Mox':%f,'Moy':%f,'Moz':%f}}\n",xyz.x,xyz.y,xyz.z);
-			PushTxt(txt);
-		}
-#endif
 	}
 }
 
@@ -987,14 +979,6 @@ void PushAcl(int flg) { // Push the accelerometer and compass stuff
 			acl_event.acceleration.y,
 			acl_event.acceleration.z);
 		PushTxt(txt);
-
-		// Orientation (Easy to calculate later in Python - dont waste resources)
-#ifdef ORIENTATION		
-		if (dof.accelGetOrientation(&acl_event, &xyz)) {
-			sprintf(txt,"{'AOL':{'Aox':%f,'Aoy':%f,'Aoz':%f}}\n",xyz.x,xyz.y,xyz.z);
-			PushTxt(txt);
-		}
-#endif
 	}
 }
 

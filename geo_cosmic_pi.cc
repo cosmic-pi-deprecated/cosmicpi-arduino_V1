@@ -199,6 +199,7 @@ typedef enum {
 	ACLT,	// Accelerometer event threshold
 	GPRI,	// GPS read increment
 	NADC,	// Number of ADC samples per event
+	RBRK,	// Reset breakouts
 
 	CMDS };	// Command count
 
@@ -226,6 +227,7 @@ void magd(int arg);
 void aclt(int arg);
 void gpri(int arg);
 void nadc(int arg);
+void rbrk(int arg);
 
 // Command table
 
@@ -243,7 +245,8 @@ CmdStruct cmd_table[CMDS] = {
 	{ MAGD, magd, "MAGD", "Magnatometer display rate", 1 },
 	{ ACLT, aclt, "ACLT", "Accelerometer event trigger threshold", 1 },
 	{ GPRI, gpri, "GPRI", "GPS read increment in seconds", 1 },
-	{ NADC, nadc, "NADC", "Number of ADC sampes tor read per event", 1}
+	{ NADC, nadc, "NADC", "Number of ADC sampes tor read per event", 1},
+	{ RBRK, rbrk, "RBRK", "Reset power on=1/off=0 for breakouts", 1}
 };
 
 #define CMDLEN 32
@@ -258,7 +261,10 @@ typedef enum { TXT_NOERR=0, TXT_TOOBIG=1, TXT_OVERFL=2 } TxtErr;
 
 #define TXTLEN 256
 static char txt[TXTLEN];		// For writing to serial	
-	 
+
+#define ADCHL 512	 
+static char adch0[ADCHL],adch1[ADCHL];	// ADC channel values strings
+
 // Initialize the timer chips to measure time between the PPS pulses and the EVENT pulse
 // The PPS enters pin D2, the PPS is forwarded accross an isolating diode to pin D5
 // The event pulse is also connected to pin D5. So D5 sees the LOR of the PPS and the
@@ -571,6 +577,8 @@ static uint8_t acl_src = 0;
 uint8_t AclReadStatus() {
 	uint8_t rval;
 
+	if (!acl_ok) return 0;
+
 	acl_src = acl.read8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_INT1_SOURCE_A);
 
 #define ZH 0x20	// Z High
@@ -805,11 +813,8 @@ void setup() {
 
 	// Power OFF/ON the breakouts
 
-	digitalWrite(POW_ONE,LOW);	// Power off
-	digitalWrite(POW_TWO,LOW);	
-	delay(100);			// Wait for caps to discharge
-	digitalWrite(POW_ONE,LOW);	// Power on
-	digitalWrite(POW_TWO,LOW);	
+	rbrk(0);
+	rbrk(1);
 
 	// Initialize breakouts
 
@@ -1028,15 +1033,12 @@ uint8_t res;
 
 // Push event queue
 
-#define ADCHL (8*ADC_BUF_LEN)
-
 void PushEvq(int flg, int *qsize, int *missed) {
 		
 	struct EventBuf eb;		// Temporary event buffer
 	double evtm = 0.0;		// Time since last event or PPS in seconds (< 1.0)
 	char stx[16];			// Second text
 	int i,j;
-	char adch0[ADCHL],adch1[ADCHL];	// ADC channel values strings
 
 	// If there are any events waiting in the event read buffer, put them on the queue
 
@@ -1145,6 +1147,29 @@ void aclt(int arg) {
 
 void gpri(int arg) { gps_read_inc = arg; }
 void nadc(int arg) { adc_samples_per_evt = arg % ADC_BUF_LEN; }
+
+void rbrk(int arg) {
+
+	if (arg == 0) {
+		htu_ok = false;
+		bmp_ok = false;
+		acl_ok = false;
+		mag_ok = false;
+		dof_ok = false;	
+		digitalWrite(POW_ONE,LOW);	// Power off to breakouts
+		digitalWrite(POW_TWO,LOW);
+		delay(100);	
+	} else {
+		digitalWrite(POW_ONE,HIGH);	// Power off
+		digitalWrite(POW_TWO,HIGH);	
+		delay(100);
+		htu_ok = htu.begin();
+		bmp_ok = bmp.begin();
+		acl_ok = acl.begin();
+		mag_ok = mag.begin();
+		dof_ok = dof.begin();
+	}
+}
 
 // Look up a command in the command table for the given command string
 // and call it with its single integer parameter

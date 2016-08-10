@@ -50,10 +50,10 @@
 // {'TIM':{'Upt':i,'Frq':i,'Sec':i}}
 // Time record containing Upt:up time seconds Frq:counter frequency Sec:time string
 //
-// {'STS':{'Qsz':i,'Mis':i,'Ter':i,'Htu':i,'Bmp':i,'Acl':i,'Mag':i, 'Gps':i, 'Adc':i, 'Gri':i, 'Eqt':i}}
+// {'STS':{'Qsz':i,'Mis':i,'Ter':i,'Htu':i,'Bmp':i,'Acl':i,'Mag':i, 'Gps':i, 'Adn':i, 'Gri':i, 'Eqt':i, 'Chm':i}}
 // Status record containing Qsz:events on queue Mis:missed events Ter:buffer error 
 // Htu:status Bmp:status Acl:status Mag:status Gps:ststus 
-// Adc:Number of samples per event Gri:Number of seconds between GPS reads Eqt:Event queue dump threshold 
+// Adn:Number of samples per event Gri:Number of seconds between GPS reads Eqt:Event queue dump threshold Chm:Channel mask
 //
 // {'EVT':{'Evt':i,'Frq':i,'Tks':i,'Etm':f,'Adc':[[i,i,i,i,i,i,i,i][i,i,i,i,i,i,i,i]]}}
 // Event record containing Evt:event number in second Frq:timer frequency Tks:ticks since last event in second 
@@ -92,7 +92,7 @@
 
 // The size of the one second event buffer
 #define PPS_EVENTS 8	// The maximum number of events stored per second
-#define ADC_BUF_LEN 50	// Maximum number of ADC values per event
+#define ADC_BUF_LEN 32	// Maximum number of ADC values per event
 
 // This is the event queue size
 #define EVENT_QSIZE 32	// The number of events that can be queued for serial output
@@ -103,7 +103,7 @@
 // #define HANDLE_OVERFLOW
 
 // This is the text ring buffer for real time output to serial line with interrupt on
-#define TBLEN 4096	// Serial line output ring buffer size
+#define TBLEN 8192	// Serial line output ring buffer size
 
 // Define some output debug pins to monitor whats going on via an oscilloscope
 #define PPS_PIN 13	// PPS (Pulse Per Second) and LED
@@ -259,7 +259,7 @@ typedef enum { TXT_NOERR=0, TXT_TOOBIG=1, TXT_OVERFL=2 } TxtErr;
 #define TXTLEN 256
 static char txt[TXTLEN];		// For writing to serial	
 
-#define ADCHL 512	 
+#define ADCHL (ADC_BUF_LEN * 6)		// "dddd," is 5 chars	 
 static char adch0[ADCHL],adch1[ADCHL];	// ADC channel values strings
 
 #define FREQ 42000000			// Clock frequency
@@ -1040,8 +1040,8 @@ void PushSts(int flg, int qsize, int missed) {
 uint8_t res;
 
 	if ((flg) || ((ppcnt % status_display_rate) == 0)) {
-		sprintf(txt,"{'STS':{'Qsz':%2d,'Mis':%2d,'Ter':%d,'Htu':%d,'Bmp':%d,'Acl':%d,'Mag':%d,'Gps':%d,'Adc':%d,'Gri':%d,'Eqt':%d}}\n",
-			qsize,missed,terr,htu_ok,bmp_ok,acl_ok,mag_ok,gps_ok,adc_samples_per_evt,gps_read_inc,events_display_size);
+		sprintf(txt,"{'STS':{'Qsz':%2d,'Mis':%2d,'Ter':%d,'Htu':%d,'Bmp':%d,'Acl':%d,'Mag':%d,'Gps':%d,'Adn':%d,'Gri':%d,'Eqt':%d,'Chm':%d}}\n",
+			qsize,missed,terr,htu_ok,bmp_ok,acl_ok,mag_ok,gps_ok,adc_samples_per_evt,gps_read_inc,events_display_size,channel_mask);
 		PushTxt(txt);
 		terr = 0;
 	}
@@ -1151,7 +1151,7 @@ void timd(int arg) { frqutc_display_rate = arg; }
 void stsd(int arg) { status_display_rate = arg; }
 
 void evqt(int arg) { 
-	events_display_size = arg % EVENT_QSIZE; 
+	events_display_size = arg % (EVENT_QSIZE + 1); 
 }
 
 void acld(int arg) { accelr_display_rate = arg; }
@@ -1181,7 +1181,12 @@ void gpri(int arg) {
 	ReadGpsString();	// Empty GPS output buffer 
 }
 
-void nadc(int arg) { adc_samples_per_evt = arg % ADC_BUF_LEN; }
+void nadc(int arg) { 
+	
+	adc_samples_per_evt = arg % (ADC_BUF_LEN + 1); 
+	if (channel_mask = 3)
+		adc_samples_per_evt >>= 1;
+}
 
 void rbrk(int arg) {
 
@@ -1207,7 +1212,8 @@ void rbrk(int arg) {
 }
 
 void chns(int arg) {
-
+	
+	adc_samples_per_evt = 8;
 	if (arg < 4)
 		channel_mask = arg;
 	else

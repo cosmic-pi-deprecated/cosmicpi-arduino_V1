@@ -265,6 +265,9 @@ static char txt[TXTLEN];		// For writing to serial
 #define ADCHL 512	 
 static char adch0[ADCHL],adch1[ADCHL];	// ADC channel values strings
 
+#define FREQ 42000000			// Clock frequency
+#define MFRQ 40000000			// Sanity check frequency value
+
 // Initialize the timer chips to measure time between the PPS pulses and the EVENT pulse
 // The PPS enters pin D2, the PPS is forwarded accross an isolating diode to pin D5
 // The event pulse is also connected to pin D5. So D5 sees the LOR of the PPS and the
@@ -309,7 +312,7 @@ void TimersStart() {
 		 TC_CMR_CPCTRG;				// Compare register C with count value
 
         TC_Configure(TC1, 0, config);                	// Configure channel 0 of TC1
-        TC_SetRC(TC1, 0, 42000000);			// One second approx initial PLL value
+        TC_SetRC(TC1, 0, FREQ);				// One second approx initial PLL value
 	TC_Start(TC1, 0);                            	// Start timer running
 
         TC1->TC_CHANNEL[0].TC_IER =  TC_IER_CPCS;	// Enable the C register compare interrupt
@@ -347,7 +350,7 @@ void TimersStart() {
 
 static uint32_t displ = 0;	// Display values in loop
 
-static uint32_t	rega0 = 0, 	// RA reg
+static uint32_t	rega0 = FREQ, 	// RA reg
 		stsr0 = 0,	// Interrupt status register
 		ppcnt = 0,	// PPS count
 		delcn = 0;	// Synthetic PPS ms
@@ -375,6 +378,9 @@ void TC0_Handler() {
 
 	rega0 = TC0->TC_CHANNEL[0].TC_RA;	// Read the RA reg (PPS period)
 	stsr0 = TC_GetStatus(TC0, 0); 		// Read status and clear load bits
+
+	if (rega0 < MFRQ)			// Sanity check against noise
+		rega0 = FREQ;			// Use nominal value
 	
         TC_SetRC(TC1, 0, rega0);		// Set the PLL count to what we just counted
 
@@ -656,6 +662,9 @@ boolean ReadGpsString() {
 
 	int i = 0;
 
+	if (!gps_ok) 
+		return false;
+
 	while (Serial1.available()) {
 		if (i < GPS_STRING_LEN) {
 			gps_string[i++] = (char) Serial1.read();
@@ -663,7 +672,9 @@ boolean ReadGpsString() {
 		} else i++;
 	}
 
-	if (i != 0) return true;
+	if (i != 0) 
+		return true;
+
 	return false;
 }
 

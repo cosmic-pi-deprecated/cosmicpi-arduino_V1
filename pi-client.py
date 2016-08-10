@@ -479,6 +479,7 @@ def main():
 					print "   GPRI, GPS read increment in seconds"
 					print "   NADC, Number of ADC sampes tor read per event"
 					print "   RBRK, Reset power on=1/off=0 for breakouts"
+					print "   CHNS, Channel mask 0=None, 1,2 3=Both"
 					print ""
 
 					if debug:

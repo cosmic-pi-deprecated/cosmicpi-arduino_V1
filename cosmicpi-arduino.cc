@@ -167,6 +167,7 @@ uint32_t magnot_display_rate = 12;	// Display magnotometer data x,y,z
 uint32_t gps_read_inc        = 0;	// How often to read the GPS (600 = every 10 minutes, 0 = always)
 uint32_t events_display_size = 1;	// Display events after recieving X events
 uint32_t adc_samples_per_evt = 8;	// Number of ADC samples per event
+uint32_t channel_mask        = 3;	// Channel 1 and 2
 
 // Siesmic event trigger parameters
 
@@ -193,6 +194,7 @@ typedef enum {
 	GPRI,	// GPS read increment
 	NADC,	// Number of ADC samples per event
 	RBRK,	// Reset breakouts
+	CHNS,	// Channels mask 0=none 1,2 or 3=both
 
 	CMDS };	// Command count
 
@@ -221,6 +223,7 @@ void aclt(int arg);
 void gpri(int arg);
 void nadc(int arg);
 void rbrk(int arg);
+void chns(int arg);
 
 // Command table
 
@@ -239,7 +242,8 @@ CmdStruct cmd_table[CMDS] = {
 	{ ACLT, aclt, "ACLT", "Accelerometer event trigger threshold", 1 },
 	{ GPRI, gpri, "GPRI", "GPS read increment in seconds", 1 },
 	{ NADC, nadc, "NADC", "Number of ADC sampes tor read per event", 1},
-	{ RBRK, rbrk, "RBRK", "Reset power on=1/off=0 for breakouts", 1}
+	{ RBRK, rbrk, "RBRK", "Reset power on=1/off=0 for breakouts", 1},
+	{ CHNS, chns, "CHNS", "Channel mask 0=none, 1,2 or 3=both", 1}
 };
 
 #define CMDLEN 32
@@ -613,10 +617,14 @@ uint8_t AdcPullData(struct Event *b) {
 	int i;
 
 	for (i=0; i<adc_samples_per_evt; i++) {		// For all in ADC pipeline
-		while((ADC->ADC_ISR & 0x01)==0);	// Wait for channel 0 (2.5us)
-		b->Ch0[i] = (uint16_t) ADC->ADC_CDR[0];	// Read ch 0
-		while((ADC->ADC_ISR & 0x02)==0);	// Wait for channel 1 (2.5us)
-		b->Ch1[i] = (uint16_t) ADC->ADC_CDR[1];	// Read ch 1
+		if (channel_mask & 0x01) {
+			while((ADC->ADC_ISR & 0x01)==0);	// Wait for channel 0 (2.5us)
+			b->Ch0[i] = (uint16_t) ADC->ADC_CDR[0];	// Read ch 0
+		}
+		if (channel_mask & 0x02) {
+			while((ADC->ADC_ISR & 0x02)==0);	// Wait for channel 1 (2.5us)
+			b->Ch1[i] = (uint16_t) ADC->ADC_CDR[1];	// Read ch 1
+		}
 	}
 }
 
@@ -1087,6 +1095,9 @@ void PushEvq(int flg, int *qsize, int *missed) {
 
 			adch0[strlen(adch0) -1] = '\0';
 			adch1[strlen(adch1) -1] = '\0';
+
+			if ((channel_mask & 0x01) == 0) sprintf(adch0,"0");
+			if ((channel_mask & 0x02) == 0) sprintf(adch1,"0"); 
  
 			sprintf(txt,
 				"{'EVT':{'Evt':%1d,'Frq':%8d,'Tks':%8d,'Etm':%s%s,'Adc':[[%s],[%s]]}}\n",
@@ -1193,6 +1204,14 @@ void rbrk(int arg) {
 		mag_ok = mag.begin();
 		dof_ok = dof.begin();
 	}
+}
+
+void chns(int arg) {
+
+	if (arg < 4)
+		channel_mask = arg;
+	else
+		channel_mask = 3;	// both
 }
 
 // Look up a command in the command table for the given command string

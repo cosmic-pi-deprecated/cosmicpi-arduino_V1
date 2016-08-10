@@ -82,7 +82,7 @@ class Event(object):
 		self.ACL = { "Acx":"0.0","Acy":"0.0","Acz":"0.0" }
 		self.LOC = { "Lat":"0.0","Lon":"0.0","Alt":"0.0" }
 		self.TIM = { "Upt":"0"  ,"Frq":"0"  ,"Sec":"0"   }
-		self.STS = { "Qsz":"0"  ,"Mis":"0"  ,"Ter":"0","Htu":"0"  ,"Bmp":"0","Acl":"0","Mag":"0","Gps":"0","Adn":"0","Gri":"0","Eqt":"0","Chm":"0" }
+		self.STS = { "Qsz":"0"  ,"Mis":"0"  ,"Ter":"0","Tmx":"0","Htu":"0","Bmp":"0","Acl":"0","Mag":"0","Gps":"0","Adn":"0","Gri":"0","Eqt":"0","Chm":"0" }
 		self.EVT = { "Evt":"0"  ,"Frq":"0"  ,"Tks":"0","Etm":"0.0","Adc":"[[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0]]" }
 
 		# Add ons
@@ -466,7 +466,6 @@ def main():
 					print "ARDUINO COMMANDS"
 					print "   NOOP, Do nothing"
 					print "   HELP, Display commands"
-					print "   HTUX, Reset the HTH chip"
 					print "   HTUD, HTU Temperature-Humidity display rate, <rate>"
 					print "   BMPD, BMP Temperature-Altitude display rate, <rate>"
 					print "   LOCD, Location latitude-longitude display rate, <rate>"

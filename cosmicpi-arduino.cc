@@ -210,7 +210,6 @@ typedef struct {
 
 void noop(int arg);
 void help(int arg);
-void htux(int arg);
 void htud(int arg);
 void bmpd(int arg);
 void locd(int arg);
@@ -230,7 +229,6 @@ void chns(int arg);
 CmdStruct cmd_table[CMDS] = {
 	{ NOOP, noop, "NOOP", "Do nothing", 0 },
 	{ HELP, help, "HELP", "Display commands", 0 },
-	{ HTUX, htux, "HTUX", "Reset the HTU chip", 0 },
 	{ HTUD, htud, "HTUD", "HTU Temperature-Humidity display rate", 1 },
 	{ BMPD, bmpd, "BMPD", "BMP Temperature-Altitude display rate", 1 },
 	{ LOCD, locd, "LOCD", "Location latitude-longitude display rate", 1 },
@@ -252,7 +250,8 @@ static int irdp=0, irdy=0, istp=0;	// Read, ready, stop
 
 static char txtb[TBLEN];		// Text ring buffer
 static uint32_t txtw = 0, txtr = 0, 	// Write and Read indexes
-		tsze = 0, terr = 0;	// Buffer size and error code
+		tsze = 0, terr = 0,	// Buffer size and error code
+		tmax = 0;		// The maximum size the buffer reached
 
 typedef enum { TXT_NOERR=0, TXT_TOOBIG=1, TXT_OVERFL=2 } TxtErr;
 
@@ -900,6 +899,7 @@ void PushTxt(char *txt) {
 		txtw = (txtw + 1) % TBLEN;	// get the next write pointer modulo TBLEN
 	}
 	tsze = (tsze + l) % TBLEN;		// new buffer size
+	if (tsze > tmax) tmax = tsze;		// track the max size
 }
 
 // Take the next character from the ring buffer and print it, called from the main loop
@@ -1040,8 +1040,8 @@ void PushSts(int flg, int qsize, int missed) {
 uint8_t res;
 
 	if ((flg) || ((ppcnt % status_display_rate) == 0)) {
-		sprintf(txt,"{'STS':{'Qsz':%2d,'Mis':%2d,'Ter':%d,'Htu':%d,'Bmp':%d,'Acl':%d,'Mag':%d,'Gps':%d,'Adn':%d,'Gri':%d,'Eqt':%d,'Chm':%d}}\n",
-			qsize,missed,terr,htu_ok,bmp_ok,acl_ok,mag_ok,gps_ok,adc_samples_per_evt,gps_read_inc,events_display_size,channel_mask);
+		sprintf(txt,"{'STS':{'Qsz':%2d,'Mis':%2d,'Ter':%d,'Tmx':%d,'Htu':%d,'Bmp':%d,'Acl':%d,'Mag':%d,'Gps':%d,'Adn':%d,'Gri':%d,'Eqt':%d,'Chm':%d}}\n",
+			qsize,missed,terr,tmax,htu_ok,bmp_ok,acl_ok,mag_ok,gps_ok,adc_samples_per_evt,gps_read_inc,events_display_size,channel_mask);
 		PushTxt(txt);
 		terr = 0;
 	}
@@ -1143,7 +1143,6 @@ void help(int arg) {	// Display the help
 	}
 }
 
-void htux(int arg) { htu_ok = htu.begin(); }
 void htud(int arg) { humtmp_display_rate = arg; }
 void bmpd(int arg) { alttmp_display_rate = arg; }
 void locd(int arg) { latlon_display_rate = arg; }

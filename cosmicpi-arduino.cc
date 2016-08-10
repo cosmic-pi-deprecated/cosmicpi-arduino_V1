@@ -40,17 +40,9 @@
 // {'MAG':{'Mgx':f,'Mgy':f,'Mgz':f}}
 // LSM303DLH magnatometer record containing Mgx:the x field strength Mgy:the y field Mgz:ther z field
 //
-// {'MOG':{'Mox':f,'Moy':f,'Moz':f}}
-// LSM303DLH magnatometer record containing Mox:x orientation Moy:y orientation Moz:z orientation
-// This record is optional, by default its turned off (it can always be calculated later - Python)
-//
 // {'ACL':{'Acx':f,'Acy':f,'Acz':f}}
 // LSM303DLH acclerometer record containing Acx:the x acceleration Acy:the y acceleration Acz:the z acceleration
 // If this record immediatly follows a VIB record the fields were hardware latched when the g threshold was exceeded
-//
-// {'AOL':{'Aox':f,'Aoy':f,'Aoz':f}}
-// LSM303DLH accelerometer record containing Aox:x orientation Aoy:y orientation Aoz:z orientation
-// This record is optional, by default its turned off (it can always be calculated later - Python)
 //
 // {'LOC':{'Lat':f,'Lon':f,'Alt':f}}
 // GPS location record containing Lat:latitude in degrees Lon:longitude in degrees Alt:altitude in meters
@@ -58,9 +50,10 @@
 // {'TIM':{'Upt':i,'Frq':i,'Sec':i}}
 // Time record containing Upt:up time seconds Frq:counter frequency Sec:time string
 //
-// {'STS':{'Qsz':i,'Mis':i,'Ter':i,'Htu':i,'Bmp':i,'Acl':i,'Mag':i, 'Gps':i}}
+// {'STS':{'Qsz':i,'Mis':i,'Ter':i,'Htu':i,'Bmp':i,'Acl':i,'Mag':i, 'Gps':i, 'Adc':i, 'Gri':i, 'Eqt':i}}
 // Status record containing Qsz:events on queue Mis:missed events Ter:buffer error 
-// Htu:status Bmp:status Acl:status Mag:status Gps:ststus
+// Htu:status Bmp:status Acl:status Mag:status Gps:ststus 
+// Adc:Number of samples per event Gri:Number of seconds between GPS reads Eqt:Event queue dump threshold 
 //
 // {'EVT':{'Evt':i,'Frq':i,'Tks':i,'Etm':f,'Adc':[[i,i,i,i,i,i,i,i][i,i,i,i,i,i,i,i]]}}
 // Event record containing Evt:event number in second Frq:timer frequency Tks:ticks since last event in second 
@@ -1039,8 +1032,8 @@ void PushSts(int flg, int qsize, int missed) {
 uint8_t res;
 
 	if ((flg) || ((ppcnt % status_display_rate) == 0)) {
-		sprintf(txt,"{'STS':{'Qsz':%2d,'Mis':%2d,'Ter':%d,'Htu':%d,'Bmp':%d,'Acl':%d,'Mag':%d,'Gps':%d}}\n",
-			qsize,missed,terr,htu_ok,bmp_ok,acl_ok,mag_ok,gps_ok);
+		sprintf(txt,"{'STS':{'Qsz':%2d,'Mis':%2d,'Ter':%d,'Htu':%d,'Bmp':%d,'Acl':%d,'Mag':%d,'Gps':%d,'Adc':%d,'Gri':%d,'Eqt':%d}}\n",
+			qsize,missed,terr,htu_ok,bmp_ok,acl_ok,mag_ok,gps_ok,adc_samples_per_evt,gps_read_inc,events_display_size);
 		PushTxt(txt);
 		terr = 0;
 	}

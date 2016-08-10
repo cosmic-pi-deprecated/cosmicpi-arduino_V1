@@ -84,7 +84,7 @@ class Event(object):
 		self.AOL = { "Aox":"0.0","Aoy":"0.0","Aoz":"0.0" }
 		self.LOC = { "Lat":"0.0","Lon":"0.0","Alt":"0.0" }
 		self.TIM = { "Upt":"0"  ,"Frq":"0"  ,"Sec":"0"   }
-		self.STS = { "Qsz":"0"  ,"Mis":"0"  ,"Ter":"0","Htu":"0"  ,"Bmp":"0","Acl":"0","Mag":"0","Gps":"0" }
+		self.STS = { "Qsz":"0"  ,"Mis":"0"  ,"Ter":"0","Htu":"0"  ,"Bmp":"0","Acl":"0","Mag":"0","Gps":"0","Adc":"0","Gri":"0","Eqt":"0" }
 		self.EVT = { "Evt":"0"  ,"Frq":"0"  ,"Tks":"0","Etm":"0.0","Adc":"[[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0]]" }
 
 		# Add ons
@@ -442,6 +442,7 @@ def main():
 
 					print "ARDUINO STATUS"
 					print "Status........: Upt:%s Frq:%s Qsz:%s Mis:%s" % (tim["Upt"],tim["Frq"],sts["Qsz"],sts["Mis"])
+					print "Parameters....: Adc:%s Gri:%s Eqt:%s" % (sts["Adc"],sts["Gri"],sts["Eqt"])
 					print "HardwareStatus: Htu:%s Bmp:%s Acl:%s Mag:%s Gps:%s" % (sts["Htu"],sts["Bmp"],sts["Acl"],sts["Mag"],sts["Gps"])
 					print "Location......: Lat:%s Lon:%s Alt:%s" % (loc["Lat"],loc["Lon"],loc["Alt"])
 					print "Accelarometer.: Acx:%s Acy:%s Acz:%s" % (acl["Acx"],acl["Acy"],acl["Acz"])

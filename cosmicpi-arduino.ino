@@ -383,6 +383,8 @@ void TC0_Handler() {
 	displ = 1;				// Display stuff in the loop
 	gps_ok = true;				// Its OK because we got a PPS	
 	pll_flag = true;			// Inhibit PLL, dont take over PPS arrived
+	
+	IncDateTime();				// Next second
 
 #if PPS_PIN		
 	digitalWrite(PPS_PIN,HIGH);
@@ -409,6 +411,8 @@ void TC3_Handler() {
 		ppcnt++;				// PPS count
 		displ = 1;				// Display stuff in the loop
 		gps_ok = false;				// PPS missing
+
+		IncDateTime();				// Next second
 	}
 	pll_flag = false;				// Take over until PPS comes back
 }
@@ -641,6 +645,28 @@ void IncDateTime() {
 #define GPS_STRING_LEN 256
 static char gps_string[GPS_STRING_LEN + 1];
 
+// WARNING: One up the spout !!
+// The GPS chip puts the next nmea string in its output buffer
+// only if its been read, IE its empty.
+// So if you read infrequently the string in the buffer is old and
+// has the WRONG time !!! The string lies around like a bullet in
+// the breach waiting for some mug.
+
+boolean ReadGpsString() {
+
+	int i = 0;
+
+	while (Serial1.available()) {
+		if (i < GPS_STRING_LEN) {
+			gps_string[i++] = (char) Serial1.read();
+			gps_string[i] = 0;
+		} else i++;
+	}
+
+	if (i != 0) return true;
+	return false;
+}
+
 // This function is dependent on the GPS chip implementation
 // It should return a date time string as described above
 // So you need to re-implements this for whichever chip you are using
@@ -648,14 +674,7 @@ static char gps_string[GPS_STRING_LEN + 1];
 
 boolean GpsDateTime() {
 
-	int i = 0;
-	while (Serial1.available()) {
-		if (i < GPS_STRING_LEN) {
-			gps_string[i++] = (char) Serial1.read();
-			gps_string[i] = 0;
-		} else i++;
-	}
-	if (gps.parse(gps_string)) {
+	if (ReadGpsString() && gps.parse(gps_string)) {
 
 		// I choose RMCGGA by default, and get the altitude but no date.
 		// Its easy to get the date once the records arrive at the Python end.
@@ -676,7 +695,7 @@ boolean GpsDateTime() {
 	return false;
 }
 
-// Get the date time either from GPS or calculate it
+// Get the date time either from GPS each gps_read_inc
 
 uint32_t nxtdtr = 0;	// Next DateTime read second number
 
@@ -689,7 +708,12 @@ void GetDateTime() {
 				return;
 			}
 		} else {
-			if (ppcnt >= nxtdtr) {			// Time to read GPS again ?
+			if (gps_read_inc) {			// Guaranteed to be 0 or greater than 2
+				if (ppcnt == nxtdtr) {		// Clean out buffer ?
+					ReadGpsString();	// One up the spout, get rid of it
+				}
+			}
+			if (ppcnt > nxtdtr) {			// Time to read GPS again ?
 				if (GpsDateTime()) {
 					nxtdtr = ppcnt + gps_read_inc;
 					return;
@@ -697,10 +721,6 @@ void GetDateTime() {
 			}
 		}
 	}
-	
-	// So if we are here then we didn't read the GPS, so just increment time
-
-	IncDateTime();
 }
 
 // Implement queue access mechanism for events, each second the user space (loop) copies
@@ -804,7 +824,7 @@ void setup() {
 	gps.begin(GPS_BAUD_RATE);	// Chip baud rate
 
 	gps.sendCommand(PMTK_SET_NMEA_OUTPUT_RMCGGA);	// With altitude but no yy/mm/dd
-	gps.sendCommand(PMTK_SET_NMEA_UPDATE_1HZ);	// each second
+	// gps.sendCommand(PMTK_SET_NMEA_UPDATE_1HZ);	// each second
 
 	InitQueue();			// Reset queue pointers, missed count, and size
 
@@ -1129,7 +1149,21 @@ void aclt(int arg) {
 	acl.write8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_INT1_THS_A, val);
 }
 
-void gpri(int arg) { gps_read_inc = arg; }
+// The minimum gps read increment is 3 because
+// 0 and 1 read ervery time
+// but there is one up the spout, so 2 is a waste of time
+
+#define MIN_GPS_READ_INC 3
+
+void gpri(int arg) { 
+
+
+	if (arg >= MIN_GPS_READ_INC)
+		gps_read_inc = arg;
+	else
+		gps_read_inc = 0; 
+}
+
 void nadc(int arg) { adc_samples_per_evt = arg % ADC_BUF_LEN; }
 
 void rbrk(int arg) {
@@ -1198,19 +1232,6 @@ void loop() {
 
 	int missed, qsize;	// Queue vars
 
-	// If the GPS is not locked yet (no PPS at startup) print status
-#if 0
-	if (time_ok == false) {
-		delay(1);
-		if (delcn++ >= 1000) {		// Wait for a second approw
-			delcn = 0;		// Reset delay
-			GetDateTime();		// Read the next date/time from the GPS chip
-			PushSts(0,qsize,missed);// Push status
-		}
-	}
-
-	else 
-#endif
 	if (displ) {			// Displ is set in the PPS ISR, we will reset it here
 		DoCmd();			// Execute any incomming commands
 		PushEvq(0,&qsize,&missed);	// Push any events

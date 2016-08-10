@@ -79,9 +79,7 @@ class Event(object):
 		self.BMP = { "Tmb":"0.0","Prs":"0.0","Alb":"0.0" }
 		self.VIB = { "Vax":"0"  ,"Vcn":"0"               }
 		self.MAG = { "Mgx":"0.0","Mgy":"0.0","Mgz":"0.0" }
-		self.MOG = { "Mox":"0.0","Moy":"0.0","Moz":"0.0" }
 		self.ACL = { "Acx":"0.0","Acy":"0.0","Acz":"0.0" }
-		self.AOL = { "Aox":"0.0","Aoy":"0.0","Aoz":"0.0" }
 		self.LOC = { "Lat":"0.0","Lon":"0.0","Alt":"0.0" }
 		self.TIM = { "Upt":"0"  ,"Frq":"0"  ,"Sec":"0"   }
 		self.STS = { "Qsz":"0"  ,"Mis":"0"  ,"Ter":"0","Htu":"0"  ,"Bmp":"0","Acl":"0","Mag":"0","Gps":"0","Adc":"0","Gri":"0","Eqt":"0" }
@@ -95,8 +93,8 @@ class Event(object):
 
 		# Now build the main dictionary with one entry for each json string we will process
 
-		self.recd = {	"HTU":self.HTU, "BMP":self.BMP, "VIB":self.VIB, "MAG":self.MAG, "MOG":self.MOG,
-				"ACL":self.ACL, "AOL":self.AOL, "LOC":self.LOC, "TIM":self.TIM, "STS":self.STS,
+		self.recd = {	"HTU":self.HTU, "BMP":self.BMP, "VIB":self.VIB, "MAG":self.MAG,
+				"ACL":self.ACL, "LOC":self.LOC, "TIM":self.TIM, "STS":self.STS,
 				"EVT":self.EVT, "DAT":self.DAT, "SQN":self.SQN, "PAT":self.PAT }
 
 		self.newvib = 0	# Vibration

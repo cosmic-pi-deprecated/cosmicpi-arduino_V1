@@ -50,8 +50,8 @@
 // {'TIM':{'Upt':i,'Frq':i,'Sec':i}}
 // Time record containing Upt:up time seconds Frq:counter frequency Sec:time string
 //
-// {'STS':{'Qsz':i,'Mis':i,'Ter':i,'Htu':i,'Bmp':i,'Acl':i,'Mag':i, 'Gps':i, 'Adn':i, 'Gri':i, 'Eqt':i, 'Chm':i}}
-// Status record containing Qsz:events on queue Mis:missed events Ter:buffer error 
+// {'STS':{'Qsz':i,'Mis':i,'Ter':i,'Tmx':i,'Htu':i,'Bmp':i,'Acl':i,'Mag':i, 'Gps':i, 'Adn':i, 'Gri':i, 'Eqt':i, 'Chm':i}}
+// Status record containing Qsz:events on queue Mis:missed events Ter:buffer error Tmx:max buffer size reached
 // Htu:status Bmp:status Acl:status Mag:status Gps:ststus 
 // Adn:Number of samples per event Gri:Number of seconds between GPS reads Eqt:Event queue dump threshold Chm:Channel mask
 //

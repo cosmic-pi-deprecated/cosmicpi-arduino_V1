@@ -1165,7 +1165,9 @@ void gpri(int arg) {
 	if (arg >= MIN_GPS_READ_INC)
 		gps_read_inc = arg;
 	else
-		gps_read_inc = 0; 
+		gps_read_inc = 0;
+
+	ReadGpsString();	// Empty GPS output buffer 
 }
 
 void nadc(int arg) { adc_samples_per_evt = arg % ADC_BUF_LEN; }

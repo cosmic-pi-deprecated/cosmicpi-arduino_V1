@@ -329,7 +329,7 @@ def main():
 					print
 					print "Cosmic Event..: Evt:%s Frq:%s Tks:%s Etm:%s" % (evd["Evt"],evd["Frq"],evd["Tks"],evd["Etm"])
 					print "Adc[[Ch0][Ch1]: Adc:%s" % (str(evd["Adc"]))
-					print "Time..........: Upt:%s Sec:%s" % (tim["Upt"],int(tim["Sec"]))
+					print "Time..........: Upt:%s Sec:%06d" % (tim["Upt"],int(tim["Sec"]))
 					print "Date..........: Dat:%s" % (dat["Dat"])
 
 				elif nstr[0].find("VIB") != -1:
@@ -341,7 +341,7 @@ def main():
 					sqn = evt.get_sqn()
 					print
 					print "Vibration.....: Vax:%s Vcn:%s Sqn:%d" % (vib["Vax"],vib["Vcn"],sqn["Sqn"])
-					print "Time..........: Sec:%s" % (int(tim["Sec"]))
+					print "Time..........: Sec:%06d" % (int(tim["Sec"]))
 					print "Accelarometer.: Acx:%s Acy:%s Acz:%s" % (acl["Acx"],acl["Acy"],acl["Acz"])
 					print "Magnatometer..: Mgx:%s Mgy:%s Mgz:%s" % (mag["Mgx"],mag["Mgy"],mag["Mgz"])
 
@@ -354,7 +354,7 @@ def main():
 					print
 					print "Barometer.....: Tmb:%s Prs:%s Alb:%s" % (bmp["Tmb"],bmp["Prs"],bmp["Alb"])
 					print "Humidity......: Tmh:%s Hum:%s Alt:%s" % (htu["Tmh"],htu["Hum"],loc["Alt"])
-					print "Time..........: Sec:%s\n" % (int(tim["Sec"]))
+					print "Time..........: Sec:%06d\n" % (int(tim["Sec"]))
 
 				elif nstr[0].find("PAT") != -1:
 					pat = evt.get_pat()

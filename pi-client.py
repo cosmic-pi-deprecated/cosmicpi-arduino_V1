@@ -75,6 +75,10 @@ class Event(object):
 
 		# These are the json strings we are expecting from the arduino
 
+		# N.B. Python interprets leading zeros as octal, so the Sec
+		# parameter Sec:hhmmss will screw up at midnight, hence always force
+		# base 10 via the int() function when using it: 000900 -> Run time error !!
+
 		self.HTU = { "Tmh":"0.0","Hum":"0.0"             }
 		self.BMP = { "Tmb":"0.0","Prs":"0.0","Alb":"0.0" }
 		self.VIB = { "Vax":"0"  ,"Vcn":"0"               }
@@ -536,7 +540,7 @@ def main():
 						print "Vibration.....: Cnt:%d Vax:%s Vcn:%s " % (vbrts,vib["Vax"],vib["Vcn"])
 						print "Accelarometer.: Acx:%s Acy:%s Acz:%s" % (acl["Acx"],acl["Acy"],acl["Acz"])
 						print "Magnatometer..: Mgx:%s Mgy:%s Mgz:%s" % (mag["Mgx"],mag["Mgy"],mag["Mgz"])
-						print "Time..........: Upt:%s Sec:%s Sqn:%s\n" % (tim["Upt"],tim["Sec"],sqn["Sqn"])
+						print "Time..........: Upt:%s Sec:%s Sqn:%s\n" % (tim["Upt"],int(tim["Sec"]),sqn["Sqn"])
 							
 						if udpflg:
 							sio.send_event_pkt(vbuf,ipaddr,ipport)
@@ -558,7 +562,7 @@ def main():
 						print ""
 						print "Barometer.....: Tmb:%s Prs:%s Alb:%s" % (bmp["Tmb"],bmp["Prs"],bmp["Alb"])
 						print "Humidity......: Tmh:%s Hum:%s Alt:%s" % (htu["Tmh"],htu["Hum"],loc["Alt"])
-						print "Time..........: Upt:%s Sec:%s Sqn:%s\n" % (tim["Upt"],tim["Sec"],sqn["Sqn"])
+						print "Time..........: Upt:%s Sec:%s Sqn:%s\n" % (tim["Upt"],int(tim["Sec"]),sqn["Sqn"])
 							
 						if udpflg:
 							sio.send_event_pkt(wbuf,ipaddr,ipport)
@@ -579,7 +583,7 @@ def main():
 							print ""
 							print "Cosmic Event..: Evt:%s Frq:%s Tks:%s Etm:%s" % (evd["Evt"],evd["Frq"],evd["Tks"],evd["Etm"])
 							print "Adc[[Ch0][Ch1]: Adc:%s" % (str(evd["Adc"]))
-							print "Time..........: Upt:%s Sec:%s Sqn:%s\n" % (tim["Upt"],tim["Sec"],sqn["Sqn"])
+							print "Time..........: Upt:%s Sec:%s Sqn:%s\n" % (tim["Upt"],int(tim["Sec"]),sqn["Sqn"])
         
 						if udpflg:
 							sio.send_event_pkt(ebuf,ipaddr,ipport)
@@ -593,7 +597,7 @@ def main():
 					ts = time.strftime("%d/%b/%Y %H:%M:%S",time.gmtime(time.time()))
 					tim = evt.get_tim();
 					sts = evt.get_sts();
-					s = "cosmic_pi:Upt:%s :Qsz:%s Tim:[%s] %s    \r" % (tim["Upt"],sts["Qsz"],ts,tim["Sec"])
+					s = "cosmic_pi:Upt:%s :Qsz:%s Tim:[%s] %s    \r" % (tim["Upt"],sts["Qsz"],ts,int(tim["Sec"]))
 					sys.stdout.write(s)
 					sys.stdout.flush()
 

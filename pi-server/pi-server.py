@@ -109,7 +109,7 @@ class Registrations(object):
 
 	def __init__(self):
 
-		self.reg = {"Ipa":"s","Sqn":0,"Pat":"s","Ntf":False,"Htu":"0","Bmp":"0","Acl":"0","Mag":"0"}
+		self.reg = {"Ipa":"s","Sqn":0,"Pat":"s","Ntf":False,"Htu":"0","Bmp":"0","Acl":"0","Mag":"0","Gps":"0"}
 		self.regs = []
 
 	def get_len(self):
@@ -160,19 +160,16 @@ class Event(object):
 
 		# These are the UDP packets containing json strings we are expecting
 
-		self.HTU = { "Tmh":"0.0","Hum":"0.0" }
-		self.BMP = { "Tmb":"0.0","Prs":"0.0","Alb":"0.0" }
-		self.VIB = { "Vax":"0","Vcn":"0" }
-		self.MAG = { "Mgx":"0.0","Mgy":"0.0","Mgz":"0.0" }
-		self.MOG = { "Mox":"0.0","Moy":"0.0","Moz":"0.0" }
-		self.ACL = { "Acx":"0.0","Acy":"0.0","Acz":"0.0" }
-		self.AOL = { "Aox":"0.0","Aoy":"0.0","Aoz":"0.0" }
-		self.LOC = { "Lat":"0.0","Lon":"0.0","Alt":"0.0" }
-		self.TIM = { "Upt":"0","Frq":"0","Sec":"0" }
-		self.STS = { "Qsz":"0","Mis":"0","Ter":"0","Htu":"0","Bmp":"0","Acl":"0","Mag":"0","Gps":"0" }
-		self.EVT = { "Evt":"0","Frq":"0","Tks":"0","Etm":"0.0","Adc":"[[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0]]" }
-		self.DAT = { "Dat":"s" }
-		
+                self.HTU = { "Tmh":"0.0","Hum":"0.0"             }
+                self.BMP = { "Tmb":"0.0","Prs":"0.0","Alb":"0.0" }
+                self.VIB = { "Vax":"0"  ,"Vcn":"0"               }
+                self.MAG = { "Mgx":"0.0","Mgy":"0.0","Mgz":"0.0" }
+                self.ACL = { "Acx":"0.0","Acy":"0.0","Acz":"0.0" }
+                self.LOC = { "Lat":"0.0","Lon":"0.0","Alt":"0.0" }
+                self.TIM = { "Upt":"0"  ,"Frq":"0"  ,"Sec":"0"   }
+                self.STS = { "Qsz":"0"  ,"Mis":"0"  ,"Ter":"0","Tmx":"0","Htu":"0","Bmp":"0","Acl":"0","Mag":"0","Gps":"0","Adn":"0","Gri":"0","Eqt":"0","Chm":"0" }
+                self.EVT = { "Evt":"0"  ,"Frq":"0"  ,"Tks":"0","Etm":"0.0","Adc":"[[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0]]" }
+	
 		# Add ons
 
 		self.DAT = { "Dat":"s" }		# Date
@@ -181,8 +178,8 @@ class Event(object):
 
 		# Now build the main dictionary with one entry for each json string we will process
 
-		self.recd = {	"HTU":self.HTU, "BMP":self.BMP, "VIB":self.VIB, "MAG":self.MAG, "MOG":self.MOG,
-				"ACL":self.ACL, "AOL":self.AOL, "LOC":self.LOC, "TIM":self.TIM, "STS":self.STS,
+		self.recd = {	"HTU":self.HTU, "BMP":self.BMP, "VIB":self.VIB, "MAG":self.MAG,
+				"ACL":self.ACL, "LOC":self.LOC, "TIM":self.TIM, "STS":self.STS,
 				"EVT":self.EVT, "DAT":self.DAT, "SQN":self.SQN, "PAT":self.PAT }
 
 		self.newpat = False
@@ -306,6 +303,7 @@ def main():
 
 	newsqn = False
 	badhard = False
+	display = True
 
 	try:
 		while(True):
@@ -313,7 +311,8 @@ def main():
 			recv = sio.recv_event_pkt()
 			if len(recv[0]):
 
-				print "FromIP:%s" % (str(recv[1]))
+				if display:
+					print "FromIP:%s" % (str(recv[1]))
 
 				nstr = recv[0].split('*')
 				for i in range(0,len(nstr)):
@@ -326,11 +325,12 @@ def main():
 					evd = evt.get_evt()
 					tim = evt.get_tim()
 					dat = evt.get_dat()
-					print
-					print "Cosmic Event..: Evt:%s Frq:%s Tks:%s Etm:%s" % (evd["Evt"],evd["Frq"],evd["Tks"],evd["Etm"])
-					print "Adc[[Ch0][Ch1]: Adc:%s" % (str(evd["Adc"]))
-					print "Time..........: Upt:%s Sec:%06d" % (tim["Upt"],int(tim["Sec"]))
-					print "Date..........: Dat:%s" % (dat["Dat"])
+					if display:
+						print
+						print "Cosmic Event..: Evt:%s Frq:%s Tks:%s Etm:%s" % (evd["Evt"],evd["Frq"],evd["Tks"],evd["Etm"])
+						print "Adc[[Ch0][Ch1]: Adc:%s" % (str(evd["Adc"]))
+						print "Time..........: Upt:%s Sec:%06d" % (tim["Upt"],int(tim["Sec"]))
+						print "Date..........: Dat:%s" % (dat["Dat"])
 
 				elif nstr[0].find("VIB") != -1:
 					newsqn = True
@@ -339,11 +339,12 @@ def main():
 					tim = evt.get_tim()
 					acl = evt.get_acl()
 					sqn = evt.get_sqn()
-					print
-					print "Vibration.....: Vax:%s Vcn:%s Sqn:%d" % (vib["Vax"],vib["Vcn"],sqn["Sqn"])
-					print "Time..........: Sec:%06d" % (int(tim["Sec"]))
-					print "Accelarometer.: Acx:%s Acy:%s Acz:%s" % (acl["Acx"],acl["Acy"],acl["Acz"])
-					print "Magnatometer..: Mgx:%s Mgy:%s Mgz:%s" % (mag["Mgx"],mag["Mgy"],mag["Mgz"])
+					if display:
+						print
+						print "Vibration.....: Vax:%s Vcn:%s Sqn:%d" % (vib["Vax"],vib["Vcn"],sqn["Sqn"])
+						print "Time..........: Sec:%06d" % (int(tim["Sec"]))
+						print "Accelarometer.: Acx:%s Acy:%s Acz:%s" % (acl["Acx"],acl["Acy"],acl["Acz"])
+						print "Magnatometer..: Mgx:%s Mgy:%s Mgz:%s" % (mag["Mgx"],mag["Mgy"],mag["Mgz"])
 
 				elif nstr[0].find("HTU") != -1:
 					newsqn = True
@@ -351,10 +352,11 @@ def main():
 					bmp = evt.get_bmp()
 					htu = evt.get_htu()
 					loc = evt.get_loc()
-					print
-					print "Barometer.....: Tmb:%s Prs:%s Alb:%s" % (bmp["Tmb"],bmp["Prs"],bmp["Alb"])
-					print "Humidity......: Tmh:%s Hum:%s Alt:%s" % (htu["Tmh"],htu["Hum"],loc["Alt"])
-					print "Time..........: Sec:%06d\n" % (int(tim["Sec"]))
+					if display:
+						print
+						print "Barometer.....: Tmb:%s Prs:%s Alb:%s" % (bmp["Tmb"],bmp["Prs"],bmp["Alb"])
+						print "Humidity......: Tmh:%s Hum:%s Alt:%s" % (htu["Tmh"],htu["Hum"],loc["Alt"])
+						print "Time..........: Sec:%06d\n" % (int(tim["Sec"]))
 
 				elif nstr[0].find("PAT") != -1:
 					pat = evt.get_pat()
@@ -450,7 +452,16 @@ def main():
 				cmd = raw_input(">")
 
 				if cmd.find("h") != -1:
-					print "Commands: h=help, r=registrations, s=status q=quit"
+					print "Commands: h=help, r=registrations, s=status q=quit, x=stop display"
+
+				if cmd.find("x") != -1:
+					if display:
+						display = False
+						print "Event display off"
+					else:
+						display = True
+						print "Event display on"
+
 
 				if cmd.find("q") != -1:
 					break
@@ -467,8 +478,6 @@ def main():
 						for i in range(0,k):
 							r = reg.get_reg_by_index(i)
 							print "Idx:%d Ipa:%s Pat:%s Sqn:%d Ntf:%d" % (i,r["Ipa"],r["Pat"],r["Sqn"],r["Ntf"])
-							print "Idx:%d Htu:%s Bmp:%s Acl:%s Mag:%s Gps:%s" % (i,r["Htu"],r["Bmp"],r["Acl"],r["Mag"],r["Gps"])
-							print ""
 				kbrd.echo_off()
 
 			ts = time.strftime("%d/%b/%Y %H:%M:%S",time.gmtime(time.time()))

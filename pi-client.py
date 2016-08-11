@@ -21,7 +21,7 @@ Typing the '>' character turns on command input
 It is important to keep the Python dictionary objects synchronised with the Arduino firmware
 otherwise this monitor will not understand the data being sent to it
 
-julian.lewis lewis.julian@gmail.com 7/Apr/2016
+julian.lewis lewis.julian@gmail.com Aug/2016
 
 """
 
@@ -66,7 +66,7 @@ class KeyBoard(object):
 		except IOError: pass
 		return res
 
-# This is the event object, it builds a dictionary from incomming jsom strings 
+# This is the event object, it builds a dictionary from incomming json strings 
 # and provides access to the dictionary entries containing the data for each field.
 
 class Event(object):
@@ -351,7 +351,7 @@ def main():
 		print "Log file is: %s" % lgf
 
   	try:
-		ser = serial.Serial(port=usbdev, baudrate=9600, timeout=60)
+		ser = serial.Serial(port=usbdev, baudrate=9600, timeout=5)
 		ser.flush()
 	except Exception, e:
 		msg = "Exception: Cant open USB device: %s" % (e)
@@ -473,7 +473,7 @@ def main():
 					print "   STSD, Status info display rate, <rate>"
 					print "   EVQT, Event queue dump threshold, <threshold 1..32>"
 					print "   ACLD, Accelerometer display rate, <rate>"
-					print "   MAGD, Magomagnatometer display rate, <rate>"
+					print "   MAGD, Magnatometer display rate, <rate>"
 					print "   ACLT, Accelerometer event trigger threshold, <threshold 0..127>"
 					print "   GPRI, GPS read increment in seconds"
 					print "   NADC, Number of ADC sampes tor read per event"
@@ -512,7 +512,7 @@ def main():
 				print "Serial input buffer empty"
 				ser.close()
 				time.sleep(1)
-				ser = serial.Serial(port=usbdev, baudrate=9600, timeout=60)
+				ser = serial.Serial(port=usbdev, baudrate=9600, timeout=5)
 				rc = ser.readline()
 				if len(rc) == 0:
 					break
@@ -536,7 +536,7 @@ def main():
 						print "Vibration.....: Cnt:%d Vax:%s Vcn:%s " % (vbrts,vib["Vax"],vib["Vcn"])
 						print "Accelarometer.: Acx:%s Acy:%s Acz:%s" % (acl["Acx"],acl["Acy"],acl["Acz"])
 						print "Magnatometer..: Mgx:%s Mgy:%s Mgz:%s" % (mag["Mgx"],mag["Mgy"],mag["Mgz"])
-						print "Time..........: Upt:%s Sec:%s Sqn:%d\n" % (tim["Upt"],tim["Sec"],sqn["Sqn"])
+						print "Time..........: Upt:%s Sec:%s Sqn:%s\n" % (tim["Upt"],tim["Sec"],sqn["Sqn"])
 							
 						if udpflg:
 							sio.send_event_pkt(vbuf,ipaddr,ipport)
@@ -558,7 +558,7 @@ def main():
 						print ""
 						print "Barometer.....: Tmb:%s Prs:%s Alb:%s" % (bmp["Tmb"],bmp["Prs"],bmp["Alb"])
 						print "Humidity......: Tmh:%s Hum:%s Alt:%s" % (htu["Tmh"],htu["Hum"],loc["Alt"])
-						print "Time..........: Upt:%s Sec:%s Sqn:%d\n" % (tim["Upt"],tim["Sec"],sqn["Sqn"])
+						print "Time..........: Upt:%s Sec:%s Sqn:%s\n" % (tim["Upt"],tim["Sec"],sqn["Sqn"])
 							
 						if udpflg:
 							sio.send_event_pkt(wbuf,ipaddr,ipport)
@@ -579,7 +579,7 @@ def main():
 							print ""
 							print "Cosmic Event..: Evt:%s Frq:%s Tks:%s Etm:%s" % (evd["Evt"],evd["Frq"],evd["Tks"],evd["Etm"])
 							print "Adc[[Ch0][Ch1]: Adc:%s" % (str(evd["Adc"]))
-							print "Time..........: Upt:%s Sec:%s Sqn:%d\n" % (tim["Upt"],tim["Sec"],sqn["Sqn"])
+							print "Time..........: Upt:%s Sec:%s Sqn:%s\n" % (tim["Upt"],tim["Sec"],sqn["Sqn"])
         
 						if udpflg:
 							sio.send_event_pkt(ebuf,ipaddr,ipport)

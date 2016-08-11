@@ -40,17 +40,9 @@
 // {'MAG':{'Mgx':f,'Mgy':f,'Mgz':f}}
 // LSM303DLH magnatometer record containing Mgx:the x field strength Mgy:the y field Mgz:ther z field
 //
-// {'MOG':{'Mox':f,'Moy':f,'Moz':f}}
-// LSM303DLH magnatometer record containing Mox:x orientation Moy:y orientation Moz:z orientation
-// This record is optional, by default its turned off (it can always be calculated later - Python)
-//
 // {'ACL':{'Acx':f,'Acy':f,'Acz':f}}
 // LSM303DLH acclerometer record containing Acx:the x acceleration Acy:the y acceleration Acz:the z acceleration
 // If this record immediatly follows a VIB record the fields were hardware latched when the g threshold was exceeded
-//
-// {'AOL':{'Aox':f,'Aoy':f,'Aoz':f}}
-// LSM303DLH accelerometer record containing Aox:x orientation Aoy:y orientation Aoz:z orientation
-// This record is optional, by default its turned off (it can always be calculated later - Python)
 //
 // {'LOC':{'Lat':f,'Lon':f,'Alt':f}}
 // GPS location record containing Lat:latitude in degrees Lon:longitude in degrees Alt:altitude in meters
@@ -58,9 +50,10 @@
 // {'TIM':{'Upt':i,'Frq':i,'Sec':i}}
 // Time record containing Upt:up time seconds Frq:counter frequency Sec:time string
 //
-// {'STS':{'Qsz':i,'Mis':i,'Ter':i,'Htu':i,'Bmp':i,'Acl':i,'Mag':i, 'Gps':i}}
-// Status record containing Qsz:events on queue Mis:missed events Ter:buffer error 
-// Htu:status Bmp:status Acl:status Mag:status Gps:ststus
+// {'STS':{'Qsz':i,'Mis':i,'Ter':i,'Tmx':i,'Htu':i,'Bmp':i,'Acl':i,'Mag':i, 'Gps':i, 'Adn':i, 'Gri':i, 'Eqt':i, 'Chm':i}}
+// Status record containing Qsz:events on queue Mis:missed events Ter:buffer error Tmx:max buffer size reached
+// Htu:status Bmp:status Acl:status Mag:status Gps:ststus 
+// Adn:Number of samples per event Gri:Number of seconds between GPS reads Eqt:Event queue dump threshold Chm:Channel mask
 //
 // {'EVT':{'Evt':i,'Frq':i,'Tks':i,'Etm':f,'Adc':[[i,i,i,i,i,i,i,i][i,i,i,i,i,i,i,i]]}}
 // Event record containing Evt:event number in second Frq:timer frequency Tks:ticks since last event in second 
@@ -99,7 +92,7 @@
 
 // The size of the one second event buffer
 #define PPS_EVENTS 8	// The maximum number of events stored per second
-#define ADC_BUF_LEN 50	// Maximum number of ADC values per event
+#define ADC_BUF_LEN 32	// Maximum number of ADC values per event
 
 // This is the event queue size
 #define EVENT_QSIZE 32	// The number of events that can be queued for serial output
@@ -110,7 +103,7 @@
 // #define HANDLE_OVERFLOW
 
 // This is the text ring buffer for real time output to serial line with interrupt on
-#define TBLEN 4096	// Serial line output ring buffer size
+#define TBLEN 8192	// Serial line output ring buffer size
 
 // Define some output debug pins to monitor whats going on via an oscilloscope
 #define PPS_PIN 13	// PPS (Pulse Per Second) and LED
@@ -174,6 +167,7 @@ uint32_t magnot_display_rate = 12;	// Display magnotometer data x,y,z
 uint32_t gps_read_inc        = 0;	// How often to read the GPS (600 = every 10 minutes, 0 = always)
 uint32_t events_display_size = 1;	// Display events after recieving X events
 uint32_t adc_samples_per_evt = 8;	// Number of ADC samples per event
+uint32_t channel_mask        = 3;	// Channel 1 and 2
 
 // Siesmic event trigger parameters
 
@@ -200,6 +194,7 @@ typedef enum {
 	GPRI,	// GPS read increment
 	NADC,	// Number of ADC samples per event
 	RBRK,	// Reset breakouts
+	CHNS,	// Channels mask 0=none 1,2 or 3=both
 
 	CMDS };	// Command count
 
@@ -215,7 +210,6 @@ typedef struct {
 
 void noop(int arg);
 void help(int arg);
-void htux(int arg);
 void htud(int arg);
 void bmpd(int arg);
 void locd(int arg);
@@ -228,13 +222,13 @@ void aclt(int arg);
 void gpri(int arg);
 void nadc(int arg);
 void rbrk(int arg);
+void chns(int arg);
 
 // Command table
 
 CmdStruct cmd_table[CMDS] = {
 	{ NOOP, noop, "NOOP", "Do nothing", 0 },
 	{ HELP, help, "HELP", "Display commands", 0 },
-	{ HTUX, htux, "HTUX", "Reset the HTU chip", 0 },
 	{ HTUD, htud, "HTUD", "HTU Temperature-Humidity display rate", 1 },
 	{ BMPD, bmpd, "BMPD", "BMP Temperature-Altitude display rate", 1 },
 	{ LOCD, locd, "LOCD", "Location latitude-longitude display rate", 1 },
@@ -246,7 +240,8 @@ CmdStruct cmd_table[CMDS] = {
 	{ ACLT, aclt, "ACLT", "Accelerometer event trigger threshold", 1 },
 	{ GPRI, gpri, "GPRI", "GPS read increment in seconds", 1 },
 	{ NADC, nadc, "NADC", "Number of ADC sampes tor read per event", 1},
-	{ RBRK, rbrk, "RBRK", "Reset power on=1/off=0 for breakouts", 1}
+	{ RBRK, rbrk, "RBRK", "Reset power on=1/off=0 for breakouts", 1},
+	{ CHNS, chns, "CHNS", "Channel mask 0=none, 1,2 or 3=both", 1}
 };
 
 #define CMDLEN 32
@@ -255,14 +250,15 @@ static int irdp=0, irdy=0, istp=0;	// Read, ready, stop
 
 static char txtb[TBLEN];		// Text ring buffer
 static uint32_t txtw = 0, txtr = 0, 	// Write and Read indexes
-		tsze = 0, terr = 0;	// Buffer size and error code
+		tsze = 0, terr = 0,	// Buffer size and error code
+		tmax = 0;		// The maximum size the buffer reached
 
 typedef enum { TXT_NOERR=0, TXT_TOOBIG=1, TXT_OVERFL=2 } TxtErr;
 
 #define TXTLEN 256
 static char txt[TXTLEN];		// For writing to serial	
 
-#define ADCHL 512	 
+#define ADCHL (ADC_BUF_LEN * 6)		// "dddd," is 5 chars	 
 static char adch0[ADCHL],adch1[ADCHL];	// ADC channel values strings
 
 #define FREQ 42000000			// Clock frequency
@@ -620,10 +616,14 @@ uint8_t AdcPullData(struct Event *b) {
 	int i;
 
 	for (i=0; i<adc_samples_per_evt; i++) {		// For all in ADC pipeline
-		while((ADC->ADC_ISR & 0x01)==0);	// Wait for channel 0 (2.5us)
-		b->Ch0[i] = (uint16_t) ADC->ADC_CDR[0];	// Read ch 0
-		while((ADC->ADC_ISR & 0x02)==0);	// Wait for channel 1 (2.5us)
-		b->Ch1[i] = (uint16_t) ADC->ADC_CDR[1];	// Read ch 1
+		if (channel_mask & 0x01) {
+			while((ADC->ADC_ISR & 0x01)==0);	// Wait for channel 0 (2.5us)
+			b->Ch0[i] = (uint16_t) ADC->ADC_CDR[0];	// Read ch 0
+		}
+		if (channel_mask & 0x02) {
+			while((ADC->ADC_ISR & 0x02)==0);	// Wait for channel 1 (2.5us)
+			b->Ch1[i] = (uint16_t) ADC->ADC_CDR[1];	// Read ch 1
+		}
 	}
 }
 
@@ -899,6 +899,7 @@ void PushTxt(char *txt) {
 		txtw = (txtw + 1) % TBLEN;	// get the next write pointer modulo TBLEN
 	}
 	tsze = (tsze + l) % TBLEN;		// new buffer size
+	if (tsze > tmax) tmax = tsze;		// track the max size
 }
 
 // Take the next character from the ring buffer and print it, called from the main loop
@@ -1039,8 +1040,8 @@ void PushSts(int flg, int qsize, int missed) {
 uint8_t res;
 
 	if ((flg) || ((ppcnt % status_display_rate) == 0)) {
-		sprintf(txt,"{'STS':{'Qsz':%2d,'Mis':%2d,'Ter':%d,'Htu':%d,'Bmp':%d,'Acl':%d,'Mag':%d,'Gps':%d}}\n",
-			qsize,missed,terr,htu_ok,bmp_ok,acl_ok,mag_ok,gps_ok);
+		sprintf(txt,"{'STS':{'Qsz':%2d,'Mis':%2d,'Ter':%d,'Tmx':%d,'Htu':%d,'Bmp':%d,'Acl':%d,'Mag':%d,'Gps':%d,'Adn':%d,'Gri':%d,'Eqt':%d,'Chm':%d}}\n",
+			qsize,missed,terr,tmax,htu_ok,bmp_ok,acl_ok,mag_ok,gps_ok,adc_samples_per_evt,gps_read_inc,events_display_size,channel_mask);
 		PushTxt(txt);
 		terr = 0;
 	}
@@ -1094,6 +1095,9 @@ void PushEvq(int flg, int *qsize, int *missed) {
 
 			adch0[strlen(adch0) -1] = '\0';
 			adch1[strlen(adch1) -1] = '\0';
+
+			if ((channel_mask & 0x01) == 0) sprintf(adch0,"0");
+			if ((channel_mask & 0x02) == 0) sprintf(adch1,"0"); 
  
 			sprintf(txt,
 				"{'EVT':{'Evt':%1d,'Frq':%8d,'Tks':%8d,'Etm':%s%s,'Adc':[[%s],[%s]]}}\n",
@@ -1139,7 +1143,6 @@ void help(int arg) {	// Display the help
 	}
 }
 
-void htux(int arg) { htu_ok = htu.begin(); }
 void htud(int arg) { humtmp_display_rate = arg; }
 void bmpd(int arg) { alttmp_display_rate = arg; }
 void locd(int arg) { latlon_display_rate = arg; }
@@ -1147,7 +1150,7 @@ void timd(int arg) { frqutc_display_rate = arg; }
 void stsd(int arg) { status_display_rate = arg; }
 
 void evqt(int arg) { 
-	events_display_size = arg % EVENT_QSIZE; 
+	events_display_size = arg % (EVENT_QSIZE + 1); 
 }
 
 void acld(int arg) { accelr_display_rate = arg; }
@@ -1172,10 +1175,17 @@ void gpri(int arg) {
 	if (arg >= MIN_GPS_READ_INC)
 		gps_read_inc = arg;
 	else
-		gps_read_inc = 0; 
+		gps_read_inc = 0;
+
+	ReadGpsString();	// Empty GPS output buffer 
 }
 
-void nadc(int arg) { adc_samples_per_evt = arg % ADC_BUF_LEN; }
+void nadc(int arg) { 
+	
+	adc_samples_per_evt = arg % (ADC_BUF_LEN + 1); 
+	if (channel_mask = 3)
+		adc_samples_per_evt >>= 1;
+}
 
 void rbrk(int arg) {
 
@@ -1198,6 +1208,15 @@ void rbrk(int arg) {
 		mag_ok = mag.begin();
 		dof_ok = dof.begin();
 	}
+}
+
+void chns(int arg) {
+	
+	adc_samples_per_evt = 8;
+	if (arg < 4)
+		channel_mask = arg;
+	else
+		channel_mask = 3;	// both
 }
 
 // Look up a command in the command table for the given command string

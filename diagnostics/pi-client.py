@@ -21,7 +21,7 @@ Typing the '>' character turns on command input
 It is important to keep the Python dictionary objects synchronised with the Arduino firmware
 otherwise this monitor will not understand the data being sent to it
 
-julian.lewis lewis.julian@gmail.com 7/Apr/2016
+julian.lewis lewis.julian@gmail.com Aug/2016
 
 """
 
@@ -66,7 +66,7 @@ class KeyBoard(object):
 		except IOError: pass
 		return res
 
-# This is the event object, it builds a dictionary from incomming jsom strings 
+# This is the event object, it builds a dictionary from incomming json strings 
 # and provides access to the dictionary entries containing the data for each field.
 
 class Event(object):
@@ -75,16 +75,18 @@ class Event(object):
 
 		# These are the json strings we are expecting from the arduino
 
+		# N.B. Python interprets leading zeros as octal, so the Sec
+		# parameter Sec:hhmmss will screw up at midnight, hence always force
+		# base 10 via the int() function when using it: 000900 -> Run time error !!
+
 		self.HTU = { "Tmh":"0.0","Hum":"0.0"             }
 		self.BMP = { "Tmb":"0.0","Prs":"0.0","Alb":"0.0" }
 		self.VIB = { "Vax":"0"  ,"Vcn":"0"               }
 		self.MAG = { "Mgx":"0.0","Mgy":"0.0","Mgz":"0.0" }
-		self.MOG = { "Mox":"0.0","Moy":"0.0","Moz":"0.0" }
 		self.ACL = { "Acx":"0.0","Acy":"0.0","Acz":"0.0" }
-		self.AOL = { "Aox":"0.0","Aoy":"0.0","Aoz":"0.0" }
 		self.LOC = { "Lat":"0.0","Lon":"0.0","Alt":"0.0" }
 		self.TIM = { "Upt":"0"  ,"Frq":"0"  ,"Sec":"0"   }
-		self.STS = { "Qsz":"0"  ,"Mis":"0"  ,"Ter":"0","Htu":"0"  ,"Bmp":"0","Acl":"0","Mag":"0","Gps":"0" }
+		self.STS = { "Qsz":"0"  ,"Mis":"0"  ,"Ter":"0","Tmx":"0","Htu":"0","Bmp":"0","Acl":"0","Mag":"0","Gps":"0","Adn":"0","Gri":"0","Eqt":"0","Chm":"0" }
 		self.EVT = { "Evt":"0"  ,"Frq":"0"  ,"Tks":"0","Etm":"0.0","Adc":"[[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0]]" }
 
 		# Add ons
@@ -95,8 +97,8 @@ class Event(object):
 
 		# Now build the main dictionary with one entry for each json string we will process
 
-		self.recd = {	"HTU":self.HTU, "BMP":self.BMP, "VIB":self.VIB, "MAG":self.MAG, "MOG":self.MOG,
-				"ACL":self.ACL, "AOL":self.AOL, "LOC":self.LOC, "TIM":self.TIM, "STS":self.STS,
+		self.recd = {	"HTU":self.HTU, "BMP":self.BMP, "VIB":self.VIB, "MAG":self.MAG,
+				"ACL":self.ACL, "LOC":self.LOC, "TIM":self.TIM, "STS":self.STS,
 				"EVT":self.EVT, "DAT":self.DAT, "SQN":self.SQN, "PAT":self.PAT }
 
 		self.newvib = 0	# Vibration
@@ -353,7 +355,7 @@ def main():
 		print "Log file is: %s" % lgf
 
   	try:
-		ser = serial.Serial(port=usbdev, baudrate=9600, timeout=60)
+		ser = serial.Serial(port=usbdev, baudrate=9600, timeout=5)
 		ser.flush()
 	except Exception, e:
 		msg = "Exception: Cant open USB device: %s" % (e)
@@ -442,6 +444,7 @@ def main():
 
 					print "ARDUINO STATUS"
 					print "Status........: Upt:%s Frq:%s Qsz:%s Mis:%s" % (tim["Upt"],tim["Frq"],sts["Qsz"],sts["Mis"])
+					print "Parameters....: Adn:%s Gri:%s Eqt:%s Chm:%s" % (sts["Adn"],sts["Gri"],sts["Eqt"],sts["Chm"])
 					print "HardwareStatus: Htu:%s Bmp:%s Acl:%s Mag:%s Gps:%s" % (sts["Htu"],sts["Bmp"],sts["Acl"],sts["Mag"],sts["Gps"])
 					print "Location......: Lat:%s Lon:%s Alt:%s" % (loc["Lat"],loc["Lon"],loc["Alt"])
 					print "Accelarometer.: Acx:%s Acy:%s Acz:%s" % (acl["Acx"],acl["Acy"],acl["Acz"])
@@ -467,7 +470,6 @@ def main():
 					print "ARDUINO COMMANDS"
 					print "   NOOP, Do nothing"
 					print "   HELP, Display commands"
-					print "   HTUX, Reset the HTH chip"
 					print "   HTUD, HTU Temperature-Humidity display rate, <rate>"
 					print "   BMPD, BMP Temperature-Altitude display rate, <rate>"
 					print "   LOCD, Location latitude-longitude display rate, <rate>"
@@ -475,11 +477,12 @@ def main():
 					print "   STSD, Status info display rate, <rate>"
 					print "   EVQT, Event queue dump threshold, <threshold 1..32>"
 					print "   ACLD, Accelerometer display rate, <rate>"
-					print "   MAGD, Magomagnatometer display rate, <rate>"
+					print "   MAGD, Magnatometer display rate, <rate>"
 					print "   ACLT, Accelerometer event trigger threshold, <threshold 0..127>"
 					print "   GPRI, GPS read increment in seconds"
 					print "   NADC, Number of ADC sampes tor read per event"
 					print "   RBRK, Reset power on=1/off=0 for breakouts"
+					print "   CHNS, Channel mask 0=None, 1,2 3=Both"
 					print ""
 
 					if debug:
@@ -513,7 +516,7 @@ def main():
 				print "Serial input buffer empty"
 				ser.close()
 				time.sleep(1)
-				ser = serial.Serial(port=usbdev, baudrate=9600, timeout=60)
+				ser = serial.Serial(port=usbdev, baudrate=9600, timeout=5)
 				rc = ser.readline()
 				if len(rc) == 0:
 					break
@@ -537,7 +540,7 @@ def main():
 						print "Vibration.....: Cnt:%d Vax:%s Vcn:%s " % (vbrts,vib["Vax"],vib["Vcn"])
 						print "Accelarometer.: Acx:%s Acy:%s Acz:%s" % (acl["Acx"],acl["Acy"],acl["Acz"])
 						print "Magnatometer..: Mgx:%s Mgy:%s Mgz:%s" % (mag["Mgx"],mag["Mgy"],mag["Mgz"])
-						print "Time..........: Upt:%s Sec:%s Sqn:%d\n" % (tim["Upt"],tim["Sec"],sqn["Sqn"])
+						print "Time..........: Upt:%s Sec:%06d Sqn:%s\n" % (tim["Upt"],int(tim["Sec"]),sqn["Sqn"])
 							
 						if udpflg:
 							sio.send_event_pkt(vbuf,ipaddr,ipport)
@@ -559,7 +562,7 @@ def main():
 						print ""
 						print "Barometer.....: Tmb:%s Prs:%s Alb:%s" % (bmp["Tmb"],bmp["Prs"],bmp["Alb"])
 						print "Humidity......: Tmh:%s Hum:%s Alt:%s" % (htu["Tmh"],htu["Hum"],loc["Alt"])
-						print "Time..........: Upt:%s Sec:%s Sqn:%d\n" % (tim["Upt"],tim["Sec"],sqn["Sqn"])
+						print "Time..........: Upt:%s Sec:%06d Sqn:%s\n" % (tim["Upt"],int(tim["Sec"]),sqn["Sqn"])
 							
 						if udpflg:
 							sio.send_event_pkt(wbuf,ipaddr,ipport)
@@ -580,7 +583,7 @@ def main():
 							print ""
 							print "Cosmic Event..: Evt:%s Frq:%s Tks:%s Etm:%s" % (evd["Evt"],evd["Frq"],evd["Tks"],evd["Etm"])
 							print "Adc[[Ch0][Ch1]: Adc:%s" % (str(evd["Adc"]))
-							print "Time..........: Upt:%s Sec:%s Sqn:%d\n" % (tim["Upt"],tim["Sec"],sqn["Sqn"])
+							print "Time..........: Upt:%s Sec:%06d Sqn:%s\n" % (tim["Upt"],int(tim["Sec"]),sqn["Sqn"])
         
 						if udpflg:
 							sio.send_event_pkt(ebuf,ipaddr,ipport)
@@ -594,7 +597,7 @@ def main():
 					ts = time.strftime("%d/%b/%Y %H:%M:%S",time.gmtime(time.time()))
 					tim = evt.get_tim();
 					sts = evt.get_sts();
-					s = "cosmic_pi:Upt:%s :Qsz:%s Tim:[%s] %s    \r" % (tim["Upt"],sts["Qsz"],ts,tim["Sec"])
+					s = "cosmic_pi:Upt:%s :Qsz:%s Tim:[%s] %06d    \r" % (tim["Upt"],sts["Qsz"],ts,int(tim["Sec"]))
 					sys.stdout.write(s)
 					sys.stdout.flush()
 

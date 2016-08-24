@@ -121,14 +121,14 @@ class Event(object):
 			if self.recd.has_key(kys[0]):		# Check we know about records with this key
 				self.recd[kys[0]] = dic[kys[0]]	# and put it in the dictionary at that address
 
-			if kys[0] == "VIB":
-				self.newvib = 1
-			
-			if kys[0] == "EVT":
-				self.newevt = 1
+				if kys[0] == "VIB":
+					self.newvib = 1
+					
+				if kys[0] == "EVT":
+					self.newevt = 1
 
-			if kys[0] == "HTU":
-				self.newhtu = 1
+				if kys[0] == "HTU":
+					self.newhtu = 1
 
 		except Exception, e:
 			#print e

@@ -305,6 +305,7 @@ def main():
 	parser.add_option("-w", "--ws",    help="Weather station", dest="wstflg", default=False, action="store_true")
 	parser.add_option("-c", "--cray",  help="Cosmic ray sending", dest="evtflg", default=True, action="store_false")
 	parser.add_option("-k", "--patk",  help="Server push notification token", dest="patok", default="")
+	parser.add_option("-b", "--back",  help="Run in background", dest="back", default=False, action="store_true")
 
 	options, args = parser.parse_args()
 
@@ -319,6 +320,7 @@ def main():
 	wstflg = options.wstflg
 	evtflg = options.evtflg
 	patok  = options.patok
+	back   = options.back
 	
 	display = True	
 	pushflg = False
@@ -335,6 +337,7 @@ def main():
 	print "options (Cosmic Ray Station)    cray : %s" % evtflg
 	print "options (Push notifications)    patk : %s" % patok
 	print "options (Debug Flag)            debug: %s" % debug
+	print "options (Background Flag)       back : %s" % back 
 
 	print "\ncosmic_pi monitor running, hit '>' for commands\n"
 
@@ -362,8 +365,9 @@ def main():
 		print "Fatal: %s" % msg
 		sys.exit(1)
 	
-	kbrd = KeyBoard()
-	kbrd.echo_off()
+	if back == False:
+		kbrd = KeyBoard()
+		kbrd.echo_off()
 
 	evt = Event()
 	events = 0
@@ -374,7 +378,7 @@ def main():
 
 	try:
 		while(True):
-			if kbrd.test_input():
+			if (back == False) and kbrd.test_input():
 				kbrd.echo_on()
 				print "\n"
 				cmd = raw_input(">")

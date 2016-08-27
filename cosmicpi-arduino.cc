@@ -1029,7 +1029,7 @@ void PushLoc(int flg) {
 void PushTim(int flg) {
 
 	if ((flg) || ((ppcnt % frqutc_display_rate) == 0)) {
-		sprintf(txt,"{'TIM':{'Upt':%4d,'Frq':%7d,'Sec':%s}}\n",ppcnt,rega0,rdtm);
+		sprintf(txt,"{'TIM':{'Upt':%4d,'Frq':%7d,'Sec':'%s'}}\n",ppcnt,rega0,rdtm);
 		PushTxt(txt);
 	}			
 }

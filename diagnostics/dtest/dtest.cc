@@ -85,8 +85,7 @@ void loop() {
 #if 1
 	if (count & 1) {
 		delay(250);
-		//p_out(1,255,1,20);
-		p_out(0,255,0,50);
+		p_out(1,255,1,20);
 	}
 #endif	
 #if 0

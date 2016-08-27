@@ -288,7 +288,37 @@ class Socket_io(object):
 
 
 	def close(self):
-		self.sok.close()		
+		self.sok.close()
+
+def Daemon():
+        """Detach a process from the controlling terminal and run it in the background as a daemon """
+
+        try:
+                pid = os.fork()
+        except Exception, e:
+                msg = "Exception: Background fork: %s" % (e)
+                print "Fatal: Can't detach process: %s" % msg
+                sys.exit(1)
+
+        if pid == 0:
+                os.setsid()
+
+                try:
+                        pid = os.fork()
+
+                except Exception, e:
+                        msg = "Exception: Background fork: %s" % (e)
+                        print "Fatal: Can't detach process: %s" % msg
+                        sys.exit(1)
+
+                if pid == 0:
+                        os.umask(0)
+                else:
+                        sys.exit(0)
+
+        else:
+                sys.exit(0)
+		
 
 def main():
 	use = "Usage: %prog [--ip=cosmicpi.ddns.net --port=4901 --usb=/dev/ttyACM0 --debug --dirnam=/tmp]"
@@ -305,6 +335,7 @@ def main():
 	parser.add_option("-w", "--ws",    help="Weather station", dest="wstflg", default=False, action="store_true")
 	parser.add_option("-c", "--cray",  help="Cosmic ray sending", dest="evtflg", default=True, action="store_false")
 	parser.add_option("-k", "--patk",  help="Server push notification token", dest="patok", default="")
+	parser.add_option("-b", "--back",  help="Run in background", dest="back", default=False, action="store_true")
 
 	options, args = parser.parse_args()
 
@@ -319,9 +350,13 @@ def main():
 	wstflg = options.wstflg
 	evtflg = options.evtflg
 	patok  = options.patok
+	back   = options.back
 	
 	display = True	
 	pushflg = False
+
+	if back:
+		Daemon()
 
 	print "\n"
 	print "options (Server IP address)     ip   : %s" % ipaddr
@@ -335,6 +370,7 @@ def main():
 	print "options (Cosmic Ray Station)    cray : %s" % evtflg
 	print "options (Push notifications)    patk : %s" % patok
 	print "options (Debug Flag)            debug: %s" % debug
+	print "options (Background Flag)       back : %s" % back 
 
 	print "\ncosmic_pi monitor running, hit '>' for commands\n"
 
@@ -362,8 +398,9 @@ def main():
 		print "Fatal: %s" % msg
 		sys.exit(1)
 	
-	kbrd = KeyBoard()
-	kbrd.echo_off()
+	if back == False:
+		kbrd = KeyBoard()
+		kbrd.echo_off()
 
 	evt = Event()
 	events = 0
@@ -374,7 +411,7 @@ def main():
 
 	try:
 		while(True):
-			if kbrd.test_input():
+			if (back == False) and kbrd.test_input():
 				kbrd.echo_on()
 				print "\n"
 				cmd = raw_input(">")
@@ -506,7 +543,8 @@ def main():
 					print "Arduino < %s\n" % cmd 
 					ser.write(cmd.upper())
 			
-				kbrd.echo_off()
+				if back == False:
+					kbrd.echo_off()
 			
 			# Process Arduino data json strings
 	 
@@ -540,7 +578,7 @@ def main():
 						print "Vibration.....: Cnt:%d Vax:%s Vcn:%s " % (vbrts,vib["Vax"],vib["Vcn"])
 						print "Accelarometer.: Acx:%s Acy:%s Acz:%s" % (acl["Acx"],acl["Acy"],acl["Acz"])
 						print "Magnatometer..: Mgx:%s Mgy:%s Mgz:%s" % (mag["Mgx"],mag["Mgy"],mag["Mgz"])
-						print "Time..........: Upt:%s Sec:%06d Sqn:%s\n" % (tim["Upt"],int(tim["Sec"]),sqn["Sqn"])
+						print "Time..........: Upt:%s Sec:%s Sqn:%s\n" % (tim["Upt"],tim["Sec"],sqn["Sqn"])
 							
 						if udpflg:
 							sio.send_event_pkt(vbuf,ipaddr,ipport)
@@ -562,7 +600,7 @@ def main():
 						print ""
 						print "Barometer.....: Tmb:%s Prs:%s Alb:%s" % (bmp["Tmb"],bmp["Prs"],bmp["Alb"])
 						print "Humidity......: Tmh:%s Hum:%s Alt:%s" % (htu["Tmh"],htu["Hum"],loc["Alt"])
-						print "Time..........: Upt:%s Sec:%06d Sqn:%s\n" % (tim["Upt"],int(tim["Sec"]),sqn["Sqn"])
+						print "Time..........: Upt:%s Sec:%s Sqn:%s\n" % (tim["Upt"],tim["Sec"],sqn["Sqn"])
 							
 						if udpflg:
 							sio.send_event_pkt(wbuf,ipaddr,ipport)
@@ -583,7 +621,7 @@ def main():
 							print ""
 							print "Cosmic Event..: Evt:%s Frq:%s Tks:%s Etm:%s" % (evd["Evt"],evd["Frq"],evd["Tks"],evd["Etm"])
 							print "Adc[[Ch0][Ch1]: Adc:%s" % (str(evd["Adc"]))
-							print "Time..........: Upt:%s Sec:%06d Sqn:%s\n" % (tim["Upt"],int(tim["Sec"]),sqn["Sqn"])
+							print "Time..........: Upt:%s Sec:%s Sqn:%s\n" % (tim["Upt"],tim["Sec"],sqn["Sqn"])
         
 						if udpflg:
 							sio.send_event_pkt(ebuf,ipaddr,ipport)
@@ -597,7 +635,7 @@ def main():
 					ts = time.strftime("%d/%b/%Y %H:%M:%S",time.gmtime(time.time()))
 					tim = evt.get_tim();
 					sts = evt.get_sts();
-					s = "cosmic_pi:Upt:%s :Qsz:%s Tim:[%s] %06d    \r" % (tim["Upt"],sts["Qsz"],ts,int(tim["Sec"]))
+					s = "cosmic_pi:Upt:%s :Qsz:%s Tim:[%s] %s    \r" % (tim["Upt"],sts["Qsz"],ts,tim["Sec"])
 					sys.stdout.write(s)
 					sys.stdout.flush()
 
@@ -608,7 +646,8 @@ def main():
 
 
 	finally:
-		kbrd.echo_on()
+		if back == False:
+			kbrd.echo_on()
 		tim = evt.get_tim()
 		print "\nUp time:%s Quitting ..." % tim["Upt"]
 		ser.close()

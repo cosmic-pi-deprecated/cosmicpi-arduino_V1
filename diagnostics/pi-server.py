@@ -242,6 +242,34 @@ class Event(object):
 	def get_pat(self):
 		return self.recd["PAT"]
 
+def Daemon():
+	"""Detach a process from the controlling terminal and run it in the background as a daemon """
+
+	try:
+		pid = os.fork()
+	except Exception, e:
+		msg = "Exception: Background fork: %s" % (e)
+		print "Fatal: Can't detach process: %s" % msg
+		sys.exit(1)
+
+	if pid == 0:
+		os.setsid()
+		
+		try:
+			pid = os.fork()
+
+		except Exception, e:
+			msg = "Exception: Background fork: %s" % (e)
+			print "Fatal: Can't detach process: %s" % msg
+			sys.exit(1)
+
+		if pid == 0:
+			os.umask(0)
+		else:
+			sys.exit(0)
+	
+	else:
+		sys.exit(0)
 
 def main():
 	use = "Usage: %prog [--port=4901 --odir=/tmp]"
@@ -251,6 +279,7 @@ def main():
 	parser.add_option("-o", "--odir",  help="Path to log directory", dest="logdir", default="/tmp")
 	parser.add_option("-n", "--nolog", help="Event Logging", dest="logflg", default=True, action="store_false")
 	parser.add_option("-c", "--csv",   help="Comma seperated value logging", dest="csv", default=False, action="store_true")
+	parser.add_option("-b", "--back",  help="Run in background", dest="back", default=False, action="store_true")
 
 	options, args = parser.parse_args()
 
@@ -259,6 +288,10 @@ def main():
 	debug  = options.debug
 	logflg = options.logflg
 	csv    = options.csv
+	back   = options.back
+
+	if back:
+		Daemon()		
 
 	print ""
 	print "cosmic_pi server running, hit '>' for commands\n"
@@ -267,6 +300,7 @@ def main():
 	print "options (Logging directory)	odir:%s" % logdir
 	print "options (Event logging)		log: %s" % logflg
 	print "options (Comma Seperated Values) csv: %s" % csv
+	print "options (Background Flag)       back: %s" % back
 
 	file_name = "/tmp/pi-server-lock"
 	fp = open(file_name, 'w')
@@ -277,7 +311,7 @@ def main():
 		print "Only one instance of the server can run at any one time"
 		print "Please kill the other instance or remove the lock file"
 		sys.exit(1)
-
+	
 	ts = time.strftime("%d-%b-%Y-%H-%M-%S",time.gmtime(time.time()))
 	lgf = "%s/cosmicpi-logs/%s.srv" % (logdir,ts)
 	dir = os.path.dirname(lgf)
@@ -290,8 +324,9 @@ def main():
 		print "Fatal: %s" % msg
 		sys.exit(1)
 
-	kbrd = KeyBoard()
-	kbrd.echo_off()
+	if back == False:
+		kbrd = KeyBoard()
+		kbrd.echo_off()
 
 	sio = Socket_io(ipport)
 
@@ -329,7 +364,7 @@ def main():
 						print
 						print "Cosmic Event..: Evt:%s Frq:%s Tks:%s Etm:%s" % (evd["Evt"],evd["Frq"],evd["Tks"],evd["Etm"])
 						print "Adc[[Ch0][Ch1]: Adc:%s" % (str(evd["Adc"]))
-						print "Time..........: Upt:%s Sec:%06d" % (tim["Upt"],int(tim["Sec"]))
+						print "Time..........: Upt:%s Sec:%s" % (tim["Upt"],tim["Sec"])
 						print "Date..........: Dat:%s" % (dat["Dat"])
 
 				elif nstr[0].find("VIB") != -1:
@@ -342,7 +377,7 @@ def main():
 					if display:
 						print
 						print "Vibration.....: Vax:%s Vcn:%s Sqn:%d" % (vib["Vax"],vib["Vcn"],sqn["Sqn"])
-						print "Time..........: Sec:%06d" % (int(tim["Sec"]))
+						print "Time..........: Sec:%s" % tim["Sec"]
 						print "Accelarometer.: Acx:%s Acy:%s Acz:%s" % (acl["Acx"],acl["Acy"],acl["Acz"])
 						print "Magnatometer..: Mgx:%s Mgy:%s Mgz:%s" % (mag["Mgx"],mag["Mgy"],mag["Mgz"])
 
@@ -356,7 +391,7 @@ def main():
 						print
 						print "Barometer.....: Tmb:%s Prs:%s Alb:%s" % (bmp["Tmb"],bmp["Prs"],bmp["Alb"])
 						print "Humidity......: Tmh:%s Hum:%s Alt:%s" % (htu["Tmh"],htu["Hum"],loc["Alt"])
-						print "Time..........: Sec:%06d\n" % (int(tim["Sec"]))
+						print "Time..........: Sec:%s\n" % tim["Sec"]
 
 				elif nstr[0].find("PAT") != -1:
 					pat = evt.get_pat()
@@ -446,7 +481,7 @@ def main():
 					log.write(line)
 					log.write("\n\n")
 
-			if kbrd.test_input():
+			if (back == False) and kbrd.test_input():
 				kbrd.echo_on()
 				print "\n"
 				cmd = raw_input(">")
@@ -478,7 +513,8 @@ def main():
 						for i in range(0,k):
 							r = reg.get_reg_by_index(i)
 							print "Idx:%d Ipa:%s Pat:%s Sqn:%d Ntf:%d" % (i,r["Ipa"],r["Pat"],r["Sqn"],r["Ntf"])
-				kbrd.echo_off()
+				if back == False:
+					kbrd.echo_off()
 
 			ts = time.strftime("%d/%b/%Y %H:%M:%S",time.gmtime(time.time()))
 			s = "cosmic_pi_server:[%s]\r" % (ts)
@@ -491,7 +527,8 @@ def main():
 		traceback.print_exc(file=sys.stdout)
 		
 	finally:
-		kbrd.echo_on()
+		if back == False:
+			kbrd.echo_on()
 		print "Quitting ..."
 		log.close()
 		sio.close()

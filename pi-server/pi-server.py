@@ -251,6 +251,7 @@ def main():
 	parser.add_option("-o", "--odir",  help="Path to log directory", dest="logdir", default="/tmp")
 	parser.add_option("-n", "--nolog", help="Event Logging", dest="logflg", default=True, action="store_false")
 	parser.add_option("-c", "--csv",   help="Comma seperated value logging", dest="csv", default=False, action="store_true")
+	parser.add_option("-b", "--back",  help="Run in background", dest="back", default=False, action="store_true")
 
 	options, args = parser.parse_args()
 
@@ -259,14 +260,16 @@ def main():
 	debug  = options.debug
 	logflg = options.logflg
 	csv    = options.csv
+	back   = options.back
 
 	print ""
 	print "cosmic_pi server running, hit '>' for commands\n"
 
-	print "options (Server Port number)	port:%d" % ipport
-	print "options (Logging directory)	odir:%s" % logdir
-	print "options (Event logging)		log: %s" % logflg
-	print "options (Comma Seperated Values) csv: %s" % csv
+	print "options (Server Port number)	port:%d"  % ipport
+	print "options (Logging directory)	odir:%s"  % logdir
+	print "options (Event logging)		log: %s"  % logflg
+	print "options (Comma Seperated Values) csv: %s"  % csv
+	print "options (Background Flag)       back : %s" % back
 
 	file_name = "/tmp/pi-server-lock"
 	fp = open(file_name, 'w')
@@ -446,7 +449,7 @@ def main():
 					log.write(line)
 					log.write("\n\n")
 
-			if kbrd.test_input():
+			if (back == False) and kbrd.test_input():
 				kbrd.echo_on()
 				print "\n"
 				cmd = raw_input(">")

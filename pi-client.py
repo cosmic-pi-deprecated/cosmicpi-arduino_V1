@@ -288,7 +288,37 @@ class Socket_io(object):
 
 
 	def close(self):
-		self.sok.close()		
+		self.sok.close()
+
+def Daemon():
+        """Detach a process from the controlling terminal and run it in the background as a daemon """
+
+        try:
+                pid = os.fork()
+        except Exception, e:
+                msg = "Exception: Background fork: %s" % (e)
+                print "Fatal: Can't detach process: %s" % msg
+                sys.exit(1)
+
+        if pid == 0:
+                os.setsid()
+
+                try:
+                        pid = os.fork()
+
+                except Exception, e:
+                        msg = "Exception: Background fork: %s" % (e)
+                        print "Fatal: Can't detach process: %s" % msg
+                        sys.exit(1)
+
+                if pid == 0:
+                        os.umask(0)
+                else:
+                        sys.exit(0)
+
+        else:
+                sys.exit(0)
+		
 
 def main():
 	use = "Usage: %prog [--ip=cosmicpi.ddns.net --port=4901 --usb=/dev/ttyACM0 --debug --dirnam=/tmp]"
@@ -324,6 +354,9 @@ def main():
 	
 	display = True	
 	pushflg = False
+
+	if back:
+		Daemon()
 
 	print "\n"
 	print "options (Server IP address)     ip   : %s" % ipaddr
@@ -510,7 +543,8 @@ def main():
 					print "Arduino < %s\n" % cmd 
 					ser.write(cmd.upper())
 			
-				kbrd.echo_off()
+				if back == False:
+					kbrd.echo_off()
 			
 			# Process Arduino data json strings
 	 
@@ -612,7 +646,8 @@ def main():
 
 
 	finally:
-		kbrd.echo_on()
+		if back == False:
+			kbrd.echo_on()
 		tim = evt.get_tim()
 		print "\nUp time:%s Quitting ..." % tim["Upt"]
 		ser.close()

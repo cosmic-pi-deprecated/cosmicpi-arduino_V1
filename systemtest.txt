@@ -38,3 +38,24 @@ Testing requirements for PTS
 10) Amplifiers (both stages tested together)
   with jumper set to test mode, inject via DAC into one channel first, then both channels with second DAC
   verify output at ADC.
+  
+  Analogue PCB dedicated test (LED not used)
+  Note: VBias cannot be applied to the PCB when it is connected directly to the Arduino as it will cause an overvoltage condition in the voltage regulator on the Arduino. External, voltage controlled power supply is required for this test. 
+  1) Power up 5V and check quiescent output from Ch 1 and Ch 2 amplifiers (should be circa 2.5V), if 0 board considered failed.
+  2) Measure temperature and set HV PSU to appropriate value.
+  3) Using analogue soft trigger (DUE ADC) set a threshold on Ch 1 and measure event rate, adjust single channel trigger value to 0.4-1Hz rate.
+  4) Vary the threshold on Ch 2 until the coincidence rate is in the 0.4 - 0.6 Hz range; if this cannot be measured before timeout (100s) then increase the bias voltage by 1 bit and start again from 3. Bias voltage to have a maximum constrained value, if reached board is considered failed. 
+  5) When voltage and thresholds are set, measure 100 events with 12 samples each and put these in a log file for future QA.
+  6) Output the voltage and threshold values for hand-marking on to PCB before assembly.
+
+  Analogue PCB dedicated test (LED used)
+  Note: VBias cannot be applied to the PCB when it is connected directly to the Arduino as it will cause an overvoltage condition in the voltage regulator on the Arduino. External, voltage controlled power supply is required for this test. 
+  1) Power up 5V and check quiescent output from Ch 1 and Ch 2 amplifiers (should be circa 2.5V), if 0 board considered failed.
+  2) Measure temperature and set HV PSU to appropriate value.
+  3) Set LED (BLUE or RED, BLUE is prefered) to output short pulses, 100 uS long, frequency 10Hz.
+  4) Using analogue soft trigger (DUE ADC) set a threshold on Ch 1 and measure event rate, adjust single channel trigger value to 10Hz rate.
+  5) Vary the threshold on Ch 2 until the coincidence rate is in the 9.5-10.5 Hz range; if this cannot be measured before timeout (100s) then increase the bias voltage by 1 bit and start again from 3. Bias voltage to have a maximum constrained value, if reached board is considered failed. 
+  6) When voltage and thresholds are set, measure 100 events with 12 samples each and put these in a log file for future QA.
+  7) Turn off LED, re-adjust Ch 1 threshold for a single channel event rate of 0.4 - 1 Hz using analogue trigger.
+  8) Adjust Ch 2 threshold until 0.4-0.6 Hz rate acheived on coincidence. 
+  9) Output the voltage and threshold values for hand-marking on to PCB before assembly.

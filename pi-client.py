@@ -547,20 +547,29 @@ def main():
 					kbrd.echo_off()
 			
 			# Process Arduino data json strings
-	 
-			rc = ser.readline()
+			
+			try: 
+				rc = ser.readline()
+				if len(rc) == 0:
+					raise Exception("Empty buffer") 
 
-			if len(rc) == 0:
-				print "Serial input buffer empty"
+			except Exception, e:
+				msg = "Exception: Serial input: %s" % (e)
+				print "%s\n"  % msg
 				ser.close()
 				time.sleep(1)
 				ser = serial.Serial(port=usbdev, baudrate=9600, timeout=5)
 				rc = ser.readline()
 				if len(rc) == 0:
 					break
+				
+				ser.flush()
+				rc = ""
+
 				print "Serial Reopened OK"
-				continue
-			else:
+				pass
+
+			if len(rc):
 				evt.parse(rc)
 
 				if vibflg:

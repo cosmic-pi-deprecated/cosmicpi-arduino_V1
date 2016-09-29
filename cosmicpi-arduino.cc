@@ -12,7 +12,7 @@
 
 // Julian Lewis lewis.julian@gmail.com
 
-#define VERS "2016/August"
+#define VERS "2016/September"
 
 // In this sketch I am using an Adafruite ultimate GPS breakout which exposes the PPS output
 // The Addafruite Rx is connected to the DUE TX1 (Pin 18) and its Tx to DUE RX1 (Pin 19)
@@ -205,6 +205,13 @@ typedef struct {
 	char *Help;		// Command help text
 	int   Par;		// Command parameter flag
 } CmdStruct;
+
+#define CMD_MAX_LEN 8
+#define CMD_MAX_MSG 128
+
+uint32_t cmd_result = 0;	// Last commands completion code
+char     cmd_name[CMD_MAX_LEN];	// Last command name
+char	 cmd_mesg[CMD_MAX_MSG]; // Last command message
 
 // Function forward references 
 
@@ -1135,31 +1142,62 @@ void noop(int arg) { };	// That was easy
 void help(int arg) {	// Display the help
 	int i;
 	CmdStruct *cms;
-
+	
+	sprintf(cmd_mesg,"");
 	for (i=0; i<CMDS; i++) {
 		cms = &cmd_table[i];
+		strcat(cmd_mesg,cms->Name);
+		strcat(cmd_mesg," ");
 		sprintf(txt,"%s(%d) - %s\n",cms->Name,cms->Par,cms->Help);
 		PushTxt(txt);
 	}
 }
 
-void htud(int arg) { humtmp_display_rate = arg; }
-void bmpd(int arg) { alttmp_display_rate = arg; }
-void locd(int arg) { latlon_display_rate = arg; }
-void timd(int arg) { frqutc_display_rate = arg; }
-void stsd(int arg) { status_display_rate = arg; }
+void htud(int arg) { 
+	humtmp_display_rate = arg;
+	sprintf(cmd_mesg,"HTU display rate:%d",humtmp_display_rate); 
+}
+
+void bmpd(int arg) { 
+	alttmp_display_rate = arg; 
+	sprintf(cmd_mesg,"BMP display rate:%d",alttmp_display_rate);
+}
+
+void locd(int arg) { 
+	latlon_display_rate = arg; 
+	sprintf(cmd_mesg,"LAT/LON display rate:%d",latlon_display_rate);
+}
+
+void timd(int arg) { 
+	frqutc_display_rate = arg; 
+	sprintf(cmd_mesg,"TIM display rate:%d",frqutc_display_rate);
+}
+
+void stsd(int arg) { 
+	status_display_rate = arg; 
+	sprintf(cmd_mesg,"STS display rate:%d",status_display_rate);
+}
 
 void evqt(int arg) { 
 	events_display_size = arg % (EVENT_QSIZE + 1); 
+	sprintf(cmd_mesg,"EVT threshold:%d",events_display_size);
 }
 
-void acld(int arg) { accelr_display_rate = arg; }
-void magd(int arg) { magnot_display_rate = arg; }
+void acld(int arg) { 
+	accelr_display_rate = arg; 
+	sprintf(cmd_mesg,"ACL display rate:%d",accelr_display_rate);
+}
+
+void magd(int arg) { 
+	magnot_display_rate = arg; 
+	sprintf(cmd_mesg,"MAG display rate:%d",magnot_display_rate);
+}
 
 void aclt(int arg) { 
 	uint8_t val = 0;
 	accelr_event_threshold = arg & 0x7F; 
 	val = accelr_event_threshold;
+	sprintf(cmd_mesg,"ACL sensitivity threshold:%d",accelr_event_threshold);
 	acl.write8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_INT1_THS_A, val);
 }
 
@@ -1170,21 +1208,25 @@ void aclt(int arg) {
 #define MIN_GPS_READ_INC 3
 
 void gpri(int arg) { 
-
-
-	if (arg >= MIN_GPS_READ_INC)
+	if (arg >= MIN_GPS_READ_INC) {
 		gps_read_inc = arg;
-	else
+		sprintf(cmd_mesg,"GPS read increment:%d seconds",gps_read_inc);
+	} else { 
 		gps_read_inc = 0;
+		sprintf(cmd_mesg,"GPS read every second");
+	}
 
 	ReadGpsString();	// Empty GPS output buffer 
 }
 
 void nadc(int arg) { 
-	
 	adc_samples_per_evt = arg % (ADC_BUF_LEN + 1); 
-	if (channel_mask = 3)
+	if (channel_mask == 3) {
 		adc_samples_per_evt >>= 1;
+		sprintf(cmd_mesg,"ADC both channels ON, samples per channel:%d",adc_samples_per_evt);
+	} else {
+		sprintf(cmd_mesg,"ADC one channel ON, samples per channel:%d",adc_samples_per_evt);
+	}
 }
 
 void rbrk(int arg) {
@@ -1198,8 +1240,9 @@ void rbrk(int arg) {
 		digitalWrite(POW_ONE,LOW);	// Power off to breakouts
 		digitalWrite(POW_TWO,LOW);
 		delay(100);	
+		sprintf(cmd_mesg,"BRK power OFF");
 	} else {
-		digitalWrite(POW_ONE,HIGH);	// Power off
+		digitalWrite(POW_ONE,HIGH);	// Power on
 		digitalWrite(POW_TWO,HIGH);	
 		delay(100);
 		htu_ok = htu.begin();
@@ -1207,6 +1250,8 @@ void rbrk(int arg) {
 		acl_ok = acl.begin();
 		mag_ok = mag.begin();
 		dof_ok = dof.begin();
+		sprintf(cmd_mesg,"BRK power ON, htu_ok:%d bmp_ok:%d acl_ok:%d mag_ok:%d dof_ok:%d",
+			htu_ok,bmp_ok,acl_ok,mag_ok,dof_ok);
 	}
 }
 
@@ -1217,8 +1262,18 @@ void chns(int arg) {
 		channel_mask = arg;
 	else
 		channel_mask = 3;	// both
+	sprintf(cmd_mesg,"CHN channel mask:%d ADC samples set to default:%d",channel_mask,adc_samples_per_evt);
 }
 
+// Push result of the last command
+
+void PushCoCo(int flg) {
+
+	if (flg) {		
+		sprintf(txt,"{'CMD':{'Cmd':'%s','Res':%d,'Msg':'%s'}}\n",cmd_name,cmd_result,cmd_mesg);
+		PushTxt(txt);
+	}
+}
 // Look up a command in the command table for the given command string
 // and call it with its single integer parameter
 
@@ -1227,6 +1282,9 @@ void ParseCmd() {
 	char *cp, *ep;
 	CmdStruct *cms;
 
+	sprintf(cmd_name,"%s",cmd_table[NOOP].Name);
+	sprintf(cmd_mesg,"%s","No message");
+	cmd_result = 0;
 	for (i=0; i<CMDS; i++) {
 		cms = &cmd_table[i];
 		cl = strlen(cms->Name);
@@ -1235,7 +1293,9 @@ void ParseCmd() {
 				cp = &cmd[cl];
 				p = (int) strtoul(cp,&ep,0);
 			}
+			sprintf(cmd_name,"%s",cms->Name);
 			cms->proc(p);
+			PushCoCo(1);
 			break;
 		}
 	}
@@ -1246,11 +1306,7 @@ void ParseCmd() {
 
 void DoCmd() {
 	if (irdy) {
-		if (irdp) {
-			sprintf(txt,"{'CMD':%s}\n",cmd);
-			PushTxt(txt);
-			ParseCmd();
-		}
+		if (irdp) ParseCmd();
 		bzero((void *) cmd, CMDLEN);
 		irdp = 0; irdy = 0; istp = 0;
 	}

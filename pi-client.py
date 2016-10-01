@@ -663,7 +663,13 @@ def main():
 					ts = time.strftime("%d/%b/%Y %H:%M:%S",time.gmtime(time.time()))
 					tim = evt.get_tim();
 					sts = evt.get_sts();
-					s = "cosmic_pi:Upt:%s :Qsz:%s Tim:[%s] %s    \r" % (tim["Upt"],sts["Qsz"],ts,tim["Sec"])
+					try:
+						s = "cosmic_pi:Upt:%s :Qsz:%s Tim:[%s] %s    \r" % (tim["Upt"],sts["Qsz"],ts,tim["Sec"])
+					except Exception, e:
+						print "\nData error:%s\n" % (e)
+						s = ""
+						pass
+
 					sys.stdout.write(s)
 					sys.stdout.flush()
 

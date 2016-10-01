@@ -88,6 +88,7 @@ class Event(object):
 		self.TIM = { "Upt":"0"  ,"Frq":"0"  ,"Sec":"0"   }
 		self.STS = { "Qsz":"0"  ,"Mis":"0"  ,"Ter":"0","Tmx":"0","Htu":"0","Bmp":"0","Acl":"0","Mag":"0","Gps":"0","Adn":"0","Gri":"0","Eqt":"0","Chm":"0" }
 		self.EVT = { "Evt":"0"  ,"Frq":"0"  ,"Tks":"0","Etm":"0.0","Adc":"[[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0]]" }
+		self.CMD = { "Cmd":"0"  ,"Res":"0"  ,"Msg":"0" }
 
 		# Add ons
 
@@ -99,11 +100,12 @@ class Event(object):
 
 		self.recd = {	"HTU":self.HTU, "BMP":self.BMP, "VIB":self.VIB, "MAG":self.MAG,
 				"ACL":self.ACL, "LOC":self.LOC, "TIM":self.TIM, "STS":self.STS,
-				"EVT":self.EVT, "DAT":self.DAT, "SQN":self.SQN, "PAT":self.PAT }
+				"EVT":self.EVT, "DAT":self.DAT, "SQN":self.SQN, "PAT":self.PAT, "CMD":self.CMD }
 
 		self.newvib = 0	# Vibration
 		self.newevt = 0	# Cosmic ray
 		self.newhtu = 0	# Weather report
+		self.newcmd = 0 # Command completion available
 	
 		self.sqn = 0	# Packet sequenc number
 
@@ -129,6 +131,9 @@ class Event(object):
 
 				if kys[0] == "HTU":
 					self.newhtu = 1
+
+				if kys[0] == "CMD":
+					self.newcmd = 1
 
 		except Exception, e:
 			#print e
@@ -261,7 +266,16 @@ class Event(object):
 	def set_pat(self,token,flag):
 		self.recd["PAT"]["Pat"] = token
 		self.recd["PAT"]["Ntf"] = flag
-	
+
+	def get_cmd(self):
+		return self.recd["CMD"]
+
+	def new_cmd(self):
+		if self.newcmd:
+			self.newcmd = 0
+			return 1
+		return 0
+
 # Send UDP packets to the remote server
 
 class Socket_io(object):
@@ -542,26 +556,40 @@ def main():
 				else:
 					print "Arduino < %s\n" % cmd 
 					ser.write(cmd.upper())
-			
+
 				if back == False:
 					kbrd.echo_off()
 			
 			# Process Arduino data json strings
-	 
-			rc = ser.readline()
+			
+			try: 
+				rc = ser.readline()
+				if len(rc) == 0:
+					raise Exception("Empty buffer") 
 
-			if len(rc) == 0:
-				print "Serial input buffer empty"
+			except Exception, e:
+				msg = "Exception: Serial input: %s" % (e)
+				print "%s\n"  % msg
 				ser.close()
 				time.sleep(1)
 				ser = serial.Serial(port=usbdev, baudrate=9600, timeout=5)
 				rc = ser.readline()
 				if len(rc) == 0:
 					break
+				
+				ser.flush()
+				rc = ""
+
 				print "Serial Reopened OK"
-				continue
-			else:
+				pass
+
+			if len(rc):
 				evt.parse(rc)
+				
+				if evt.new_cmd():
+					acm = evt.get_cmd()
+					print ""
+					print "Cmd:%s->%s %s\n" % (acm["Cmd"],acm["Res"],acm["Msg"])
 
 				if vibflg:
 					vbuf = evt.get_vibration()
@@ -635,7 +663,13 @@ def main():
 					ts = time.strftime("%d/%b/%Y %H:%M:%S",time.gmtime(time.time()))
 					tim = evt.get_tim();
 					sts = evt.get_sts();
-					s = "cosmic_pi:Upt:%s :Qsz:%s Tim:[%s] %s    \r" % (tim["Upt"],sts["Qsz"],ts,tim["Sec"])
+					try:
+						s = "cosmic_pi:Upt:%s :Qsz:%s Tim:[%s] %s    \r" % (tim["Upt"],sts["Qsz"],ts,tim["Sec"])
+					except Exception, e:
+						print "\nData error:%s\n" % (e)
+						s = ""
+						pass
+
 					sys.stdout.write(s)
 					sys.stdout.flush()
 

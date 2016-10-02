@@ -641,11 +641,11 @@ float latitude = 0.0, longitude = 0.0, altitude = 0.0;
 
 void IncDateTime() {
 
-	if (second++ >= 60) {
+	if (++second >= 60) {
 		second = 0;
-		if (minute++ >= 60) {
+		if (++minute >= 60) {
 			minute = 0;
-			if (hour++ >= 24) {
+			if (++hour >= 24) {
 				hour = 0;
 			}
 		}

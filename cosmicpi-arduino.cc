@@ -1388,10 +1388,13 @@ void loop() {
 #define ADC_MIN_OFFSET 2800
 #define ADC_MAX_OFFSET 3350
 
-#define PTS_CHBUF_LEN 128
+#define CHUNK 32
+#define CHUNKS 32
+#define PTS_CHBUF_LEN (CHUNKS*CHUNK)
 uint16_t ch0[PTS_CHBUF_LEN], ch1[PTS_CHBUF_LEN];
 
-#define PTS_LOG (PTS_CHBUF_LEN * 8)
+#define LOG_ENTRY 8
+#define PTS_LOG (CHUNK*LOG_ENTRY)
 char pts_log[PTS_LOG];
 
 void ClearAdcBuf() {
@@ -1413,7 +1416,7 @@ uint8_t ReadAdcBuf(int pnts) {
 		}
 		if (channel_mask & 0x02) {
 			while((ADC->ADC_ISR & 0x02)==0);	// Wait for channel 1 (2.5us)
-			ch1[1] = (uint16_t) ADC->ADC_CDR[1];	// Read ch 1
+			ch1[i] = (uint16_t) ADC->ADC_CDR[1];	// Read ch 1
 		}
 	}
 }
@@ -1474,42 +1477,41 @@ int CheckPoints(uint16_t *fp, int pnts, int min, int max) {
 
 // Helper for abts commands
 
-#define OFFSET_POINTS 32
-
 void abts_helper(int arg, int min, int max, int er0, int er1) {
 	int av0 = 0;
 	int av1 = 0;
 	float vl0, vl1;
 
-	av0 = AveragePoints(ch0,OFFSET_POINTS);
+	av0 = AveragePoints(ch0,CHUNK);
 	vl0 = VoltsPoint(av0);
-	if (CheckPoints(ch0,OFFSET_POINTS,min,max)) cmd_result = er0;
+	if (CheckPoints(ch0,CHUNK,min,max)) cmd_result = er0;
 
-	LogPoints(ch0,OFFSET_POINTS);
-	sprintf(txt,"\nCH0:%s\n",pts_log);
+	LogPoints(ch0,CHUNK);
+	sprintf(txt,"\nCH0:%s Err:%d\n",pts_log,cmd_result);
 	PushTxt(txt);
 
-	av1 = AveragePoints(ch1,OFFSET_POINTS);
+	av1 = AveragePoints(ch1,CHUNK);
 	vl0 = VoltsPoint(av1);
-	if (CheckPoints(ch1,OFFSET_POINTS,min,max)) cmd_result = er1;
+	if (CheckPoints(ch1,CHUNK,min,max)) cmd_result = er1;
 
-	LogPoints(ch1,OFFSET_POINTS);
-	sprintf(txt,"\nCH1:%s\n",pts_log);
+	LogPoints(ch1,CHUNK);
+	sprintf(txt,"\nCH1:%s Err:%d\n",pts_log,cmd_result);
 	PushTxt(txt);
 
 	sprintf(cmd_mesg,"ADC: Tst:%d Err:%d Avr CH0:%d %3.2f Vlt Avr CH1:%d %3.2fVlt Smp:%d",
-		arg,cmd_result,av0,vl0,av1,vl1,OFFSET_POINTS);
+		arg,cmd_result,av0,vl0,av1,vl1,CHUNK);
 }
+
+float get_peak_freq(int threshold);
+void clear_peaks();
 
 // Test the Analogue board
 
 void abts(int arg) {
 
-	int av0 = 0;
-	int av1 = 0;
-	double temph = 0.0; 
-	double humid = 0.0;
-	float vl0, vl1;
+	int av0, av1, threshold;
+	float vl0, vl1, freq;
+	double temph = 0.0, humid = 0.0;
 
 	if (arg == TEST_HTU) {
 		if (!htu_ok) {
@@ -1526,7 +1528,7 @@ void abts(int arg) {
 		
 	if (arg == TEST_ADC_OFFSETS) {
 		ClearAdcBuf();
-		ReadAdcBuf(OFFSET_POINTS);
+		ReadAdcBuf(CHUNK);
 		abts_helper(arg,ADC_MIN_OFFSET,ADC_MAX_OFFSET,AMP2A_RANGE,AMP2B_RANGE);
 		return;
 	}
@@ -1534,7 +1536,7 @@ void abts(int arg) {
 	if (arg == TEST_SIPMS_BLUE) {
 		digitalWrite(BLUE_LED_PIN,HIGH);
 		ClearAdcBuf();
- 		ReadAdcBuf(OFFSET_POINTS);
+ 		ReadAdcBuf(CHUNK);
 		digitalWrite(BLUE_LED_PIN,LOW);
 		abts_helper(arg,ADC_BLUE_MIN,ADC_BLUE_MAX,AMP2A_NO_SIGNAL_BLUE,AMP2B_NO_SIGNAL_BLUE);
 		return;
@@ -1543,14 +1545,28 @@ void abts(int arg) {
 	if (arg == TEST_SIPMS_RED) {
 		digitalWrite(RED_LED_PIN,HIGH);
  		ClearAdcBuf();
-		ReadAdcBuf(OFFSET_POINTS);
+		ReadAdcBuf(CHUNK);
 		digitalWrite(RED_LED_PIN,LOW);
 		abts_helper(arg,ADC_RED_MIN,ADC_RED_MAX,AMP2A_NO_SIGNAL_RED,AMP2B_NO_SIGNAL_RED);
 		return;
 	}
 
 	if (arg == TEST_THRESHOLD) {
-		sprintf(cmd_mesg,"ADC THRESHOLD test, not implemented");
+		
+		// The threshold is above the background, so the test range 100..2000 seems reasonable
+
+		for (threshold=100; threshold<=2000; threshold+=100) {
+			clear_peaks();
+			freq = get_peak_freq(threshold);
+			sprintf(txt,"\nADC: Tst%d Threshold:%d Freq:%3.2f\n",arg,threshold,freq);
+			PushTxt(txt);
+			if (freq <= 10.0) {
+				sprintf(cmd_mesg,"ADC: Tst:%d PASS Threshold:%d Freq:%32.f",arg,threshold,freq);
+				return;
+			}
+		}
+		cmd_result = NO_THRESHOLD;
+		sprintf(cmd_mesg,"ADC: Tst:%d FAILED, no threshold could be found");
 		return;
 	}
 
@@ -1560,3 +1576,136 @@ void abts(int arg) {
 	return;
 }
 
+// Peaks corresponding to events
+
+struct Peak {
+	int Start;
+	int Width;
+	int Etime;
+};
+	
+#define PEAKS 1000
+static struct Peak peaks[PEAKS];	// Event ticks buffer
+int peak_index = 0;			// Points to free peak in buffer
+
+void clear_peaks() {
+	int i;
+	struct Peak *pp;	// Points to current peak
+	
+	peak_index = 0;
+
+	for (i=0; i<PEAKS; i++) {
+		pp = &peaks[i];
+		pp->Start = 0;
+		pp->Width = 0;
+		pp->Etime = 0;
+	}
+}
+
+// Find the threshold for event rate lower than 10Hz
+// Frequency is returned for given threshold
+
+float get_peak_freq(int threshold) {	// Threshold to test
+
+	int i;
+	uint16_t pnt;
+	int av0,av1;		// Background value is the running average
+
+	int etime = 0;		// Each loop adds 32*32 ADC acquisition times
+	int start = 0;		// Start of event index
+	int width = 0;		// Width of the event
+
+	struct Peak *pp;	// Points to current peak
+
+	int ewid = 0;		// Sum of times between events
+	int ectm = 0;		// Event current time
+	int estr = 0;		// First event start time in a pair
+
+	int loops = 0;		// Quit if we find nothing
+
+	float freq;		// Peak occurence frequency
+
+	// Try to find the next 1000=PEAKS peaks
+
+	while (true) {	// Collect PEAKS peaks
+		
+		ClearAdcBuf();
+		ReadAdcBuf(PTS_CHBUF_LEN); // Read 4096 point chunk
+		
+		// Calculate the background levels
+
+		av0 = AveragePoints(ch0,PTS_CHBUF_LEN);
+		av1 = AveragePoints(ch1,PTS_CHBUF_LEN);
+
+		// Look for points above the background and set the rest zero
+
+		for (i=0; i<PTS_CHBUF_LEN; i++) {
+			pnt = ch0[i];
+			if (pnt < av0 + threshold) 
+				ch0[i] = 0;
+
+			pnt = ch1[i];
+			if (pnt < av1 + threshold)
+				ch1[i] = 0;
+		}
+			
+		// The events should occur at the same time, if not set them zero
+
+		for (i=0; i<PTS_CHBUF_LEN; i++) {
+			if ((ch0[i] == 0) || (ch1[i] == 0)) {
+				ch0[i] = 0;
+				ch1[i] = 0;
+			}
+		}
+
+		// Whats left are simultaneous peaks, put them in the peak array till its full
+
+		width = 0;
+		start = 0;
+
+		for (i=0; i<PTS_CHBUF_LEN; i++) {
+			if (ch0[i]) {
+				if (start == 0) start = i;		
+				width++;
+			}
+
+			if (!ch0[i]) {
+				if (start) {
+					if (peak_index < (PEAKS -1)) {
+						pp = &peaks[peak_index++];
+						pp->Start = start;
+						pp->Width = width;
+						pp->Etime = etime;
+						sprintf(txt,"Peak:%d S:%d W:%d E:%d\n",peak_index,start,width,etime);
+						PushTxt(txt); 
+					} else 
+						break;
+
+					start = 0;
+					width = 0;
+				}
+			}
+		}
+		
+		if (++loops > 1000) break;	// Over 4 million ADC reads ?
+
+		etime = loops * PTS_CHBUF_LEN;
+	}
+
+	// Calculate the average time between peaks
+	
+	estr = 0;
+	for (i=peak_index; i>=0; i--) {
+		pp = &peaks[i];
+		ectm = pp->Etime + pp->Start;
+		if (estr == 0) estr = ectm;
+		ewid += estr - ectm;
+		estr = ectm;
+	}
+	
+	freq = ((float) peak_index / ((float) ewid * 0.000001));
+	sprintf(txt,"Peaks:%d Sum:%d Freq:%3.2f ==================\n",peak_index,ewid,freq);
+	PushTxt(txt);
+
+	return freq;
+}

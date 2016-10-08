@@ -405,7 +405,7 @@ def main():
 		print "Log file is: %s" % lgf
 
   	try:
-		ser = serial.Serial(port=usbdev, baudrate=9600, timeout=5)
+		ser = serial.Serial(port=usbdev, baudrate=9600, timeout=40)
 		ser.flush()
 	except Exception, e:
 		msg = "Exception: Cant open USB device: %s" % (e)

@@ -12,7 +12,7 @@
 
 // Julian Lewis lewis.julian@gmail.com
 
-#define VERS "2016/September"
+#define VERS "2016/October"
 
 // In this sketch I am using an Adafruite ultimate GPS breakout which exposes the PPS output
 // The Addafruite Rx is connected to the DUE TX1 (Pin 18) and its Tx to DUE RX1 (Pin 19)
@@ -125,6 +125,9 @@
 #define SERIAL_BAUD_RATE 9600	// Serial line 
 #define GPS_BAUD_RATE 9600	// GPS and Serial1 line
 
+#define BLUE_LED_PIN 46
+#define RED_LED_PIN 48
+
 // Instantiate external hardware breakouts
 
 Adafruit_GPS		gps(&Serial1);			// GPS Serial1 on pins RX1 and TX1
@@ -196,6 +199,8 @@ typedef enum {
 	RBRK,	// Reset breakouts
 	CHNS,	// Channels mask 0=none 1,2 or 3=both
 
+	ABTS,	// Analogue board test
+
 	CMDS };	// Command count
 
 typedef struct {
@@ -230,6 +235,7 @@ void gpri(int arg);
 void nadc(int arg);
 void rbrk(int arg);
 void chns(int arg);
+void abts(int arg);
 
 // Command table
 
@@ -248,7 +254,8 @@ CmdStruct cmd_table[CMDS] = {
 	{ GPRI, gpri, "GPRI", "GPS read increment in seconds", 1 },
 	{ NADC, nadc, "NADC", "Number of ADC sampes tor read per event", 1},
 	{ RBRK, rbrk, "RBRK", "Reset power on=1/off=0 for breakouts", 1},
-	{ CHNS, chns, "CHNS", "Channel mask 0=none, 1,2 or 3=both", 1}
+	{ CHNS, chns, "CHNS", "Channel mask 0=none, 1,2 or 3=both", 1},
+	{ ABTS, abts, "ABTS", "Analogue Board test, 1=ADC Offsets, 2=SIPMs, 3=Vbias Threshold", 1}
 };
 
 #define CMDLEN 32
@@ -614,6 +621,7 @@ uint8_t AclReadStatus() {
 void AdcSetup() {
 	REG_ADC_MR = 0x10380080;	// Free run as fast as you can
 	REG_ADC_CHER = 3;		// Channels 0 and 1
+	REG_ADC_CR = 2;			// Start
 }
 
 // Pull all data (16 values) from the ADC into a buffer
@@ -641,11 +649,11 @@ float latitude = 0.0, longitude = 0.0, altitude = 0.0;
 
 void IncDateTime() {
 
-	if (second++ >= 60) {
+	if (++second >= 60) {
 		second = 0;
-		if (minute++ >= 60) {
+		if (++minute >= 60) {
 			minute = 0;
-			if (hour++ >= 24) {
+			if (++hour >= 24) {
 				hour = 0;
 			}
 		}
@@ -835,6 +843,9 @@ void setup() {
 
 	pinMode(POW_ONE, OUTPUT);	// Breakout power pin
 	pinMode(POW_TWO, OUTPUT);	// ditto
+
+	pinMode(BLUE_LED_PIN, OUTPUT);	
+	pinMode(RED_LED_PIN, OUTPUT);
 
 	Serial.begin(SERIAL_BAUD_RATE);	// Start the serial line
 	Serial1.begin(GPS_BAUD_RATE);	// and the second
@@ -1277,15 +1288,18 @@ void PushCoCo(int flg) {
 // Look up a command in the command table for the given command string
 // and call it with its single integer parameter
 
+#define NO_SUCH_COMMAND 1
+
 void ParseCmd() {
 	int i, p=0, cl=0;
 	char *cp, *ep;
 	CmdStruct *cms;
 
-	sprintf(cmd_name,"%s",cmd_table[NOOP].Name);
-	sprintf(cmd_mesg,"%s","No message");
+	sprintf(cmd_mesg,"");
+	sprintf(cmd_name,"%s",cmd);
 	cmd_result = 0;
-	for (i=0; i<CMDS; i++) {
+
+	for (i=0; i<CMDS-1; i++) {
 		cms = &cmd_table[i];
 		cl = strlen(cms->Name);
 		if (strncmp(cms->Name,cmd,cl) == 0) {
@@ -1296,9 +1310,13 @@ void ParseCmd() {
 			sprintf(cmd_name,"%s",cms->Name);
 			cms->proc(p);
 			PushCoCo(1);
-			break;
+			return;
 		}
 	}
+	cmd_result = NO_SUCH_COMMAND;
+	sprintf(cmd_mesg,"%s Err:%d No such command",cmd_name,cmd_result);
+	PushCoCo(1);
+	return;
 }
 
 // This waits for a ready buffer from ReadOneChar. Once ready the buffer is
@@ -1334,4 +1352,344 @@ void loop() {
 	
 	PutChar();	// Print one character per loop !!!
 	ReadOneChar();	// Get next input command char
+}
+
+// Production tests suit commands and self test features
+// =====================================================
+
+// Error Codes are 3 digits "Tnn" as follows
+// <Test suit number T>,<Error number nn>
+// See the PTS Doc
+
+#define NO_HTU 100
+#define AMP2A_RANGE 101
+#define AMP2B_RANGE 102
+#define AMP2A_NO_SIGNAL_BLUE 103
+#define AMP2B_NO_SIGNAL_BLUE 104
+#define AMP2A_NO_SIGNAL_RED 105
+#define AMP2B_NO_SIGNAL_RED 106
+#define NO_THRESHOLD 107
+#define ASSERTION_FAIL 108
+
+// Test numbers are 3 digits "TSP" as follows  
+// <Test suit number T>,<Test in suit S>,<Test sub part P>
+// See the PTS Doc
+
+#define TEST_ADC_OFFSETS 110
+#define TEST_SIPMS_BLUE 120
+#define TEST_SIPMS_RED 121
+#define TEST_THRESHOLD 130
+#define TEST_HTU 140
+
+#define ADC_BLUE_MIN 0
+#define ADC_BLUE_MAX 0xFFFF
+#define ADC_RED_MIN 0
+#define ADC_RED_MAX 0xFFFF
+#define ADC_MIN_OFFSET 2800
+#define ADC_MAX_OFFSET 3350
+
+#define CHUNK 32
+#define CHUNKS 32
+#define PTS_CHBUF_LEN (CHUNKS*CHUNK)
+uint16_t ch0[PTS_CHBUF_LEN], ch1[PTS_CHBUF_LEN];
+
+#define LOG_ENTRY 8
+#define PTS_LOG (CHUNK*LOG_ENTRY)
+char pts_log[PTS_LOG];
+
+void ClearAdcBuf() {
+	int i;
+
+	for (i=0; i<PTS_CHBUF_LEN; i++) {
+		ch0[i] = 0;
+		ch1[i] = 0;
+	}
+} 
+		
+uint8_t ReadAdcBuf(int pnts) {
+	int i;
+
+	for (i=0; i<pnts; i++) {
+		if (channel_mask & 0x01) {
+			while((ADC->ADC_ISR & 0x01)==0);	// Wait for channel 0 (2.5us)
+			ch0[i] = (uint16_t) ADC->ADC_CDR[0];	// Read ch 0
+		}
+		if (channel_mask & 0x02) {
+			while((ADC->ADC_ISR & 0x02)==0);	// Wait for channel 1 (2.5us)
+			ch1[i] = (uint16_t) ADC->ADC_CDR[1];	// Read ch 1
+		}
+	}
+}
+
+// Moving Average
+
+int AveragePoints(uint16_t *fp, int pnts) {
+	int i, average;
+	uint16_t pnt;
+
+	average = 0;
+	for (i=0; i<pnts; i++) {
+		pnt = fp[i];
+		average += pnt;
+	}
+	average = average/pnts;
+	return average;
+}
+
+// Log points
+
+void LogPoints(uint16_t *fp, int pnts) {
+	int i;
+	uint16_t pnt;
+	char *cp;
+
+	sprintf(pts_log,"[");	
+	cp = &pts_log[strlen(pts_log)];
+	for (i=0; i<pnts; i++) {
+		pnt = fp[i];
+		sprintf(cp," %d",pnt);
+		cp = &pts_log[strlen(pts_log)];
+	}
+	sprintf(cp," ]");
+}
+
+// VoltsPoint
+
+float VoltsPoint(uint16_t pnt) {
+	float volts;
+
+	volts = pnt * 3.3 / 4095.0;
+	return volts;
+}
+
+// Process the ADC values
+
+int CheckPoints(uint16_t *fp, int pnts, int min, int max) {
+	int i;
+	uint16_t pnt;
+	
+	for (i=0; i<pnts; i++) {
+		pnt = fp[i];
+		if ((pnt<=min) || (pnt>=max)) return i+1;
+	}
+	return 0;
+}
+
+// Helper for abts commands
+
+void abts_helper(int arg, int min, int max, int er0, int er1) {
+	int av0 = 0;
+	int av1 = 0;
+	float vl0, vl1;
+
+	av0 = AveragePoints(ch0,CHUNK);
+	vl0 = VoltsPoint(av0);
+	if (CheckPoints(ch0,CHUNK,min,max)) cmd_result = er0;
+
+	LogPoints(ch0,CHUNK);
+	sprintf(txt,"\nCH0:%s Err:%d\n",pts_log,cmd_result);
+	PushTxt(txt);
+
+	av1 = AveragePoints(ch1,CHUNK);
+	vl0 = VoltsPoint(av1);
+	if (CheckPoints(ch1,CHUNK,min,max)) cmd_result = er1;
+
+	LogPoints(ch1,CHUNK);
+	sprintf(txt,"\nCH1:%s Err:%d\n",pts_log,cmd_result);
+	PushTxt(txt);
+
+	sprintf(cmd_mesg,"ADC: Tst:%d Err:%d Avr CH0:%d %3.2f Vlt Avr CH1:%d %3.2fVlt Smp:%d",
+		arg,cmd_result,av0,vl0,av1,vl1,CHUNK);
+}
+
+float get_peak_freq(int threshold);
+void clear_peaks();
+
+// Test the Analogue board
+
+void abts(int arg) {
+
+	int av0, av1, threshold;
+	float vl0, vl1, freq;
+	double temph = 0.0, humid = 0.0;
+
+	if (arg == TEST_HTU) {
+		if (!htu_ok) {
+			cmd_result = NO_HTU;
+			sprintf(cmd_mesg,"HTU: Err:%d No breakout available",cmd_result);
+			return;
+		}
+
+		temph = htu.readTemperature();
+		humid = htu.readHumidity();
+		sprintf(cmd_mesg,"HTU: Err:%d :Temp:%5.3f Hum:%4.1f",cmd_result,temph,humid);
+		return;
+	}
+		
+	if (arg == TEST_ADC_OFFSETS) {
+		ClearAdcBuf();
+		ReadAdcBuf(CHUNK);
+		abts_helper(arg,ADC_MIN_OFFSET,ADC_MAX_OFFSET,AMP2A_RANGE,AMP2B_RANGE);
+		return;
+	}
+
+	if (arg == TEST_SIPMS_BLUE) {
+		digitalWrite(BLUE_LED_PIN,HIGH);
+		ClearAdcBuf();
+ 		ReadAdcBuf(CHUNK);
+		digitalWrite(BLUE_LED_PIN,LOW);
+		abts_helper(arg,ADC_BLUE_MIN,ADC_BLUE_MAX,AMP2A_NO_SIGNAL_BLUE,AMP2B_NO_SIGNAL_BLUE);
+		return;
+	}
+
+	if (arg == TEST_SIPMS_RED) {
+		digitalWrite(RED_LED_PIN,HIGH);
+ 		ClearAdcBuf();
+		ReadAdcBuf(CHUNK);
+		digitalWrite(RED_LED_PIN,LOW);
+		abts_helper(arg,ADC_RED_MIN,ADC_RED_MAX,AMP2A_NO_SIGNAL_RED,AMP2B_NO_SIGNAL_RED);
+		return;
+	}
+
+	if (arg == TEST_THRESHOLD) {
+		
+		// The threshold is above the background, so the test range 100..2000 seems reasonable
+
+		for (threshold=100; threshold<=2000; threshold+=100) {
+			clear_peaks();
+			freq = get_peak_freq(threshold);
+			sprintf(txt,"\nADC: Tst%d Threshold:%d Freq:%3.2f\n",arg,threshold,freq);
+			PushTxt(txt);
+			if (freq <= 10.0) {
+				sprintf(cmd_mesg,"ADC: Tst:%d PASS Threshold:%d Freq:%32.f",arg,threshold,freq);
+				return;
+			}
+		}
+		cmd_result = NO_THRESHOLD;
+		sprintf(cmd_mesg,"ADC: Tst:%d FAILED, no threshold could be found");
+		return;
+	}
+
+	sprintf(cmd_mesg,"Illegal test number:%d",arg);
+	
+	cmd_result = ASSERTION_FAIL;
+	return;
+}
+
+// Peaks corresponding to events
+
+struct Peak {
+	int Start;
+	int Width;
+	int Loops;
+};
+	
+#define PEAKS 1000
+static struct Peak peaks[PEAKS];	// Event ticks buffer
+int peak_index = 0;			// Points to free peak in buffer
+
+void clear_peaks() {
+	int i;
+	struct Peak *pp;	// Points to current peak
+	
+	peak_index = 0;
+
+	for (i=0; i<PEAKS; i++) {
+		pp = &peaks[i];
+		pp->Start = 0;
+		pp->Width = 0;
+		pp->Loops = 0;
+	}
+}
+
+// Find the threshold for event rate lower than 10Hz
+// Frequency is returned for given threshold
+
+float get_peak_freq(int threshold) {	// Threshold to test
+
+	int i;
+	int av0,av1;		// Background value is the running average
+
+	int start = 0;		// Start of event index
+	int width = 0;		// Width of the event
+	int loops = 0;		// Loops correspond to time
+
+	struct Peak *pp;	// Points to current peak
+
+	unsigned long ewid = 0;	// Sum of times between events
+	int ectm = 0;		// Event current time
+	int estr = 0;		// First event start time in a pair
+
+
+	float freq;		// Peak occurence frequency
+
+	ClearAdcBuf();
+	ReadAdcBuf(PTS_CHBUF_LEN); // Read 4096 point chunk
+		
+	// Calculate the background levels
+
+	av0 = AveragePoints(ch0,PTS_CHBUF_LEN);
+	av1 = AveragePoints(ch1,PTS_CHBUF_LEN);
+
+	// Try to find the next 1000=PEAKS peaks
+
+	while (true) {	// Collect PEAKS peaks
+		
+		ClearAdcBuf();
+		ReadAdcBuf(PTS_CHBUF_LEN); // Read 4096 point chunk
+		
+		// Look for simultaneous points above the background and save them
+
+		for (i=0; i<PTS_CHBUF_LEN; i++) {
+			if ((ch0[i] > av0 + threshold) 
+			&&  (ch1[i] > av1 + threshold)) {
+				if (!start) {
+					start = i+1;
+					if (peak_index < (PEAKS -1)) {
+						pp = &peaks[peak_index++];
+						pp->Start = start;
+						pp->Loops = loops;
+					} else
+						break;
+				}
+				width++;
+			 } else {
+				if (start) {
+					pp->Width = width;
+
+					sprintf(txt,"Peak:%d S:%d W:%d L:%d\n",
+						peak_index,pp->Start,pp->Width,pp->Loops);
+					PushTxt(txt);
+ 
+					start = 0;
+					width = 0;
+				}
+			}
+
+			PutChar();
+		}
+		
+		if (++loops > 1000) break;
+	}
+
+	// Calculate the average time between peaks
+	
+	estr = 0;
+	for (i=peak_index; i>=0; i--) {
+		pp = &peaks[i];
+		ectm = (pp->Loops * PTS_CHBUF_LEN) + pp->Start -1;	// Corresponds to time
+		if (estr == 0) estr = ectm;
+		ewid += abs(estr - ectm);
+		estr = ectm;
+	}
+	
+	if (ewid < 1) 
+		freq = 1000.0;
+	else
+		freq = ((float) peak_index * 1385000.0) / (float) ewid;
+
+	sprintf(txt,"Peaks:%d Sum:%d Freq:%3.2f\n",peak_index,ewid,freq);
+	PushTxt(txt);
+
+	return freq;
 }

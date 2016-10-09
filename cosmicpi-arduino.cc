@@ -1581,7 +1581,7 @@ void abts(int arg) {
 struct Peak {
 	int Start;
 	int Width;
-	int Etime;
+	int Loops;
 };
 	
 #define PEAKS 1000
@@ -1598,7 +1598,7 @@ void clear_peaks() {
 		pp = &peaks[i];
 		pp->Start = 0;
 		pp->Width = 0;
-		pp->Etime = 0;
+		pp->Loops = 0;
 	}
 }
 
@@ -1608,22 +1608,28 @@ void clear_peaks() {
 float get_peak_freq(int threshold) {	// Threshold to test
 
 	int i;
-	uint16_t pnt;
 	int av0,av1;		// Background value is the running average
 
-	int etime = 0;		// Each loop adds 32*32 ADC acquisition times
 	int start = 0;		// Start of event index
 	int width = 0;		// Width of the event
+	int loops = 0;		// Loops correspond to time
 
 	struct Peak *pp;	// Points to current peak
 
-	int ewid = 0;		// Sum of times between events
+	unsigned long ewid = 0;	// Sum of times between events
 	int ectm = 0;		// Event current time
 	int estr = 0;		// First event start time in a pair
 
-	int loops = 0;		// Quit if we find nothing
 
 	float freq;		// Peak occurence frequency
+
+	ClearAdcBuf();
+	ReadAdcBuf(PTS_CHBUF_LEN); // Read 4096 point chunk
+		
+	// Calculate the background levels
+
+	av0 = AveragePoints(ch0,PTS_CHBUF_LEN);
+	av1 = AveragePoints(ch1,PTS_CHBUF_LEN);
 
 	// Try to find the next 1000=PEAKS peaks
 
@@ -1632,64 +1638,38 @@ float get_peak_freq(int threshold) {	// Threshold to test
 		ClearAdcBuf();
 		ReadAdcBuf(PTS_CHBUF_LEN); // Read 4096 point chunk
 		
-		// Calculate the background levels
-
-		av0 = AveragePoints(ch0,PTS_CHBUF_LEN);
-		av1 = AveragePoints(ch1,PTS_CHBUF_LEN);
-
-		// Look for points above the background and set the rest zero
+		// Look for simultaneous points above the background and save them
 
 		for (i=0; i<PTS_CHBUF_LEN; i++) {
-			pnt = ch0[i];
-			if (pnt < av0 + threshold) 
-				ch0[i] = 0;
-
-			pnt = ch1[i];
-			if (pnt < av1 + threshold)
-				ch1[i] = 0;
-		}
-			
-		// The events should occur at the same time, if not set them zero
-
-		for (i=0; i<PTS_CHBUF_LEN; i++) {
-			if ((ch0[i] == 0) || (ch1[i] == 0)) {
-				ch0[i] = 0;
-				ch1[i] = 0;
-			}
-		}
-
-		// Whats left are simultaneous peaks, put them in the peak array till its full
-
-		width = 0;
-		start = 0;
-
-		for (i=0; i<PTS_CHBUF_LEN; i++) {
-			if (ch0[i]) {
-				if (start == 0) start = i;		
-				width++;
-			}
-
-			if (!ch0[i]) {
-				if (start) {
+			if ((ch0[i] > av0 + threshold) 
+			&&  (ch1[i] > av1 + threshold)) {
+				if (!start) {
+					start = i+1;
 					if (peak_index < (PEAKS -1)) {
 						pp = &peaks[peak_index++];
 						pp->Start = start;
-						pp->Width = width;
-						pp->Etime = etime;
-						sprintf(txt,"Peak:%d S:%d W:%d E:%d\n",peak_index,start,width,etime);
-						PushTxt(txt); 
-					} else 
+						pp->Loops = loops;
+					} else
 						break;
+				}
+				width++;
+			 } else {
+				if (start) {
+					pp->Width = width;
 
+					sprintf(txt,"Peak:%d S:%d W:%d L:%d\n",
+						peak_index,pp->Start,pp->Width,pp->Loops);
+					PushTxt(txt);
+ 
 					start = 0;
 					width = 0;
 				}
 			}
+
+			PutChar();
 		}
 		
-		if (++loops > 1000) break;	// Over 4 million ADC reads ?
-
-		etime = loops * PTS_CHBUF_LEN;
+		if (++loops > 1000) break;
 	}
 
 	// Calculate the average time between peaks
@@ -1697,14 +1677,18 @@ float get_peak_freq(int threshold) {	// Threshold to test
 	estr = 0;
 	for (i=peak_index; i>=0; i--) {
 		pp = &peaks[i];
-		ectm = pp->Etime + pp->Start;
+		ectm = (pp->Loops * PTS_CHBUF_LEN) + pp->Start -1;	// Corresponds to time
 		if (estr == 0) estr = ectm;
-		ewid += estr - ectm;
+		ewid += abs(estr - ectm);
 		estr = ectm;
 	}
 	
-	freq = ((float) peak_index / ((float) ewid * 0.000001));
-	sprintf(txt,"Peaks:%d Sum:%d Freq:%3.2f ==================\n",peak_index,ewid,freq);
+	if (ewid < 1) 
+		freq = 1000.0;
+	else
+		freq = ((float) peak_index * 1385000.0) / (float) ewid;
+
+	sprintf(txt,"Peaks:%d Sum:%d Freq:%3.2f\n",peak_index,ewid,freq);
 	PushTxt(txt);
 
 	return freq;

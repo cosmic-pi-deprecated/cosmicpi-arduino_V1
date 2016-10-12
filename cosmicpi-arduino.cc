@@ -200,6 +200,7 @@ typedef enum {
 	CHNS,	// Channels mask 0=none 1,2 or 3=both
 
 	ABTS,	// Analogue board test
+	GPTS,	// GPS Test
 
 	CMDS };	// Command count
 
@@ -236,6 +237,7 @@ void nadc(int arg);
 void rbrk(int arg);
 void chns(int arg);
 void abts(int arg);
+void gpts(int arg);
 
 // Command table
 
@@ -255,7 +257,8 @@ CmdStruct cmd_table[CMDS] = {
 	{ NADC, nadc, "NADC", "Number of ADC sampes tor read per event", 1},
 	{ RBRK, rbrk, "RBRK", "Reset power on=1/off=0 for breakouts", 1},
 	{ CHNS, chns, "CHNS", "Channel mask 0=none, 1,2 or 3=both", 1},
-	{ ABTS, abts, "ABTS", "Analogue Board test, 1=ADC Offsets, 2=SIPMs, 3=Vbias Threshold", 1}
+	{ ABTS, abts, "ABTS", "Analogue Board test, 1=ADC Offsets, 2=SIPMs, 3=Vbias Threshold", 1},
+	{ GPTS, gpts, "GPTS", "GPS self test", 1}
 };
 
 #define CMDLEN 32
@@ -666,6 +669,18 @@ void IncDateTime() {
 #define GPS_STRING_LEN 256
 static char gps_string[GPS_STRING_LEN + 1];
 
+#define QUECTEL76_GPS 76
+#define ADAFRUIT_GPS 60
+
+static int gps_id = 0;
+void GetGpsId() {
+
+	if (strstr(gps_string,"Quectel-L76"))
+		gps_id = QUECTEL76_GPS;
+	else if (strstr(gps_string,"PA6H"))
+		gps_id = ADAFRUIT_GPS;
+}
+
 // WARNING: One up the spout !!
 // The GPS chip puts the next nmea string in its output buffer
 // only if its been read, IE its empty.
@@ -687,9 +702,10 @@ boolean ReadGpsString() {
 		} else i++;
 	}
 
-	if (i != 0) 
+	if (i != 0) {
+		if (!gps_id) GetGpsId();
 		return true;
-
+	}
 	return false;
 }
 
@@ -826,6 +842,21 @@ void InitQueue() {
 	q->Missed = 0;
 }
 
+// GPS setup
+
+void GpsSetup() {
+
+#define RMCGGA		"$PMTK314,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0*28"	// PMTK_SET_NMEA_OUTPUT_RMCGGA
+#define VERSION 	"$PMTK605*31"  						// PMTK_Q_RELEASE
+#define NORMAL  	"$PMTK220,1000*1F"					// PMTK_SET_NMEA_UPDATE_1HZ
+#define NOANTENNA	"$PGCMD,33,0*6D" 					// PGCMD_NOAN
+
+	Serial1.begin(9600);
+	Serial1.println(NOANTENNA);
+	Serial1.println(RMCGGA);
+	Serial1.println(NORMAL);
+}
+
 // Arduino setup function, initialize hardware and software
 // This is the first function to be called when the sketch is started
 
@@ -852,7 +883,9 @@ void setup() {
 
 	gps.begin(GPS_BAUD_RATE);	// Chip baud rate
 
-	gps.sendCommand(PMTK_SET_NMEA_OUTPUT_RMCGGA);	// With altitude but no yy/mm/dd
+	GpsSetup();
+
+	// gps.sendCommand(PMTK_SET_NMEA_OUTPUT_RMCGGA);	// With altitude but no yy/mm/dd
 	// gps.sendCommand(PMTK_SET_NMEA_UPDATE_1HZ);	// each second
 
 	InitQueue();			// Reset queue pointers, missed count, and size
@@ -1336,7 +1369,7 @@ void loop() {
 
 	int missed, qsize;	// Queue vars
 
-	if (displ) {			// Displ is set in the PPS ISR, we will reset it here
+	if (displ) {				// Displ is set in the PPS ISR, we will reset it here
 		DoCmd();			// Execute any incomming commands
 		PushEvq(0,&qsize,&missed);	// Push any events
 		PushHtu(0);			// Push HTU temperature and humidity
@@ -1346,8 +1379,11 @@ void loop() {
 		PushMag(0);			// Push mago data
 		PushAcl(0);			// Push accelarometer data
 		PushSts(0,qsize,missed);	// Push status
-		GetDateTime();		// Read the next date/time from the GPS chip
-		displ = 0;			// Clear flag for next PPS			
+		GetDateTime();			// Read the next date/time from the GPS chip
+		displ = 0;			// Clear flag for next PPS
+
+		if (!gps_id) 
+			Serial1.println("$PMTK605*31");
 	}
 	
 	PutChar();	// Print one character per loop !!!
@@ -1692,4 +1728,51 @@ float get_peak_freq(int threshold) {	// Threshold to test
 	PushTxt(txt);
 
 	return freq;
+}
+
+// =============================================
+// Test for GPS reciever
+// Basically if the GPS ID is OK it means the chip can be configured
+// and read back. Then if the PPS arrives its locked and it arrives.
+// The global gps_ok is set in the ISR when a PPS arrives, else the PLL takes over
+// The global gps_id is set when the GPS NMEA string is read
+
+#define NOT_IMPLEMENTED 500
+#define NO_GPS_FOUND 503
+#define NO_PPS 504
+
+#define TEST_NMEA 510
+#define TEST_GPSID 520
+#define TEST_PPS 550
+
+void gpts(int arg) {
+	cmd_result = 0;
+
+	if (arg == TEST_GPSID) {
+		if (gps_id == ADAFRUIT_GPS) {
+			sprintf(cmd_mesg,"GPS: Tst:%d PASS Id:%d Adafruit Ultimate GPS found",arg,gps_id);
+			return;
+		}
+		if (gps_id == QUECTEL76_GPS) {
+			sprintf(cmd_mesg,"GPS: Tst:%d PASS Id:%d QUECTL L76 chip GPS found",arg,gps_id);
+			return;
+		}
+		sprintf(cmd_mesg,"GPS: Tst:%d FAIL No GPS found",arg);
+		cmd_result = NO_GPS_FOUND;
+		return;
+	}
+	
+	if (arg == TEST_PPS) {
+		if (gps_ok)
+			sprintf(cmd_mesg,"GPS: Tst:%d PASS PPS Arriving",arg);
+		else {
+			sprintf(cmd_mesg,"GPS: Tst:%d FAIL No PPS detected",arg);
+			cmd_result = NO_PPS;
+		} return;
+	}
+
+	sprintf(cmd_mesg,"Illegal test number:%d",arg);
+	
+	cmd_result = ASSERTION_FAIL;
+	return;
 }

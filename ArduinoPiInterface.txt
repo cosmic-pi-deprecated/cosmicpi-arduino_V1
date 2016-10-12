@@ -4,21 +4,21 @@ sent back from the Arduino over the serial link in ASCII format
 Cheers Julian
 
 
-The version number starts at 1.0 represented by the value 10
+The version number starts at 1.0 represented by the value 1.0
 
-VER 10
+VER 1.0
 
 The data item lables sent back from the Arduino to th RPi 
 
-HTU 1000	Humidity and temperature sensor chip
-BMP 1001	Barrometric pressure chip
-VIB 1002	Siesmic vibration event
-MAG 1003	Magnatometer chip
-ACL 1004	Accelerometer chip
-LOC 1005	GPS Location
-TIM 1006	Time stamp
-STS 1007	Firmware/Hardware status
-EVT 1008	Cosmic ray event
+HTU 	Humidity and temperature sensor chip
+BMP 	Barrometric pressure chip
+VIB 	Siesmic vibration event
+MAG 	Magnatometer chip
+ACL 	Accelerometer chip
+LOC 	GPS Location
+TIM 	Time stamp
+STS 	Firmware/Hardware status
+EVT 	Cosmic ray event
 
 		VER,HTU,<TEMPERATURE %5.3f>,<HUMIDITY %4.1f>
 

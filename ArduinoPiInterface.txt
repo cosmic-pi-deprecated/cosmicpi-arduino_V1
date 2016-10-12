@@ -1,0 +1,82 @@
+As per our discussion from this today please find the encoding of the data stream
+sent back from the Arduino over the serial link in ASCII format
+
+Cheers Julian
+
+
+The version number starts at 1.0 represented by the value 10
+
+VER 10
+
+The data item lables sent back from the Arduino to th RPi 
+
+HTU 1000	Humidity and temperature sensor chip
+BMP 1001	Barrometric pressure chip
+VIB 1002	Siesmic vibration event
+MAG 1003	Magnatometer chip
+ACL 1004	Accelerometer chip
+LOC 1005	GPS Location
+TIM 1006	Time stamp
+STS 1007	Firmware/Hardware status
+EVT 1008	Cosmic ray event
+
+		VER,HTU,<TEMPERATURE %5.3f>,<HUMIDITY %4.1f>
+
+		VER,BMP,<TEMPERATURE %5.3f>,<BARROMETRIC PRESSURE %5.3f>
+
+		VER,VIB,<AXIS %d>,<COUNT %d>
+
+		VER,MAG,<X MAGNETIC FIELD GAUSS %5.3f>,<Y MAGNETIC FIELD GAUSS %5.3f>,<Z MAGNETIC FIELD GAUSS %5.3f>
+
+		VER,ACL,<X ACCELERATION M/S/S %3.2f>,<Y ACCELERATION M/S/S %3.2f>,<Z ACCELERATION M/S/S %3.2f>
+
+		VER,LOC,<LATTITUDE DEGREES %5.3f>,<LONGITUDE DEGREES %5.3f>,<ALTITUDE METERS %3.2f>
+
+		VER,TIM,<TIME IN SECONDS SINCE BOOT %4d>,<MASTER CLOCK FREQUENCY HERTZ %7d>,<TIME OF DAY HHMMSS %6s>
+N.B
+The time of day field is a 6 digit number, eg 093010 is 9AM and 30 minutes 10 seconds
+Beware Python would interpret the leading zero to mean Octal and the 9 is an illegal Octal number
+Hence the value is actually sent as a string '093010'
+
+		VER,STS,<EVENT QUEUE SIZE %2d>,<MISSED EVENT COUNT %2d>,<TERMINAL IO ERROR %2d>,<TERMINAL MAX BUFFER SIZE %4d>
+			<HTU OK FLAG %1d>,<BMP OK FLAG %1d>,<ACL OK FLAG %1d>,<MAG OK FLAG %1d>,<GPS OK FLAG %1d>
+			<ADC SAMPLES PER CHANNEL %2d>,<GPS READ INCREMENT %2d>,<EVENT DUMP THRESHOLD %2d>,<ACTIVE CHANNEL MASK>
+
+		VER,EVT,<MASTER CLOCK FREQUENCY HERTZ %7d>,<CLOCK TICKS SINCE LAST EVENT %7d>,<TIME OF DAY HHMMSS %6s>
+			<ADC CHANNEL VALUE COUNT %2d>,<AD CHANNEL 0 VALUES %xxxxxxxxx....>,,<AD CHANNEL 1 VALUES %xxxxxxxxx....>
+
+N.B
+Channel values are encoded as follows, say <ADC CHANNEL VALUE COUNT %2d> = 8 
+then the following CHANNEL VALUES would contain 3 x 8 = 24 Hex digits
+Each Hex digit triplet representsd one ADC 12 bit value
+Example: 8,ABCABCABCABCABCABCABCABC,123123123123123123123123
+
+==================================
+
+Packet Groupings
+
+On a cosmic ray event the package sent to the server shall contain
+
+EVT,TIM,LOC,HTU,BMP
+
+On a vibration event the package sent to the server shall contain
+
+VIB,TIM,LOC,MAG,ACL
+
+If a weather station is asked for the package sent to the server at intervals of 10 minutes shall contain
+
+TIM,LOC,HTU,BMP
+
+The status shoud be sent every 10 minutes
+
+STS
+
+===================================
+
+Data items will be stored in an SQL data base which will accumilate data items when the internet is not available
+When connection to the server is reestablished the items stored in the data base will be sent and the data base emptied
+
+===================================
+
+It might be interesting to implement the concept of subgroups at some higher level
+

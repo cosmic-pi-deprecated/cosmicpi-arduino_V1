@@ -171,6 +171,7 @@ uint32_t gps_read_inc        = 0;	// How often to read the GPS (600 = every 10 m
 uint32_t events_display_size = 1;	// Display events after recieving X events
 uint32_t adc_samples_per_evt = 8;	// Number of ADC samples per event
 uint32_t channel_mask        = 3;	// Channel 1 and 2
+uint32_t debug_gps           = 0;	// Debug print of GPS NMEA strings
 
 // Siesmic event trigger parameters
 
@@ -201,6 +202,7 @@ typedef enum {
 
 	ABTS,	// Analogue board test
 	GPTS,	// GPS Test
+	DGPS,	// Debug GPS NMEA strings
 
 	CMDS };	// Command count
 
@@ -238,6 +240,7 @@ void rbrk(int arg);
 void chns(int arg);
 void abts(int arg);
 void gpts(int arg);
+void dgps(int arg);
 
 // Command table
 
@@ -258,7 +261,8 @@ CmdStruct cmd_table[CMDS] = {
 	{ RBRK, rbrk, "RBRK", "Reset power on=1/off=0 for breakouts", 1},
 	{ CHNS, chns, "CHNS", "Channel mask 0=none, 1,2 or 3=both", 1},
 	{ ABTS, abts, "ABTS", "Analogue Board test, 1=ADC Offsets, 2=SIPMs, 3=Vbias Threshold", 1},
-	{ GPTS, gpts, "GPTS", "GPS self test", 1}
+	{ GPTS, gpts, "GPTS", "GPS self test", 1},
+	{ DGPS, dgps, "DGPS", "Debug printing of GPS NMEA strings 0=off 1=on",1}
 };
 
 #define CMDLEN 32
@@ -672,7 +676,12 @@ static char gps_string[GPS_STRING_LEN + 1];
 #define QUECTEL76_GPS 76
 #define ADAFRUIT_GPS 60
 
-static int gps_id = 0;
+static int gps_id = ADAFRUIT_GPS;
+
+// The adafruit GPS only sends its ID at powerup time 
+// So we just assume its the addafruit unless the
+// quectel answers. 
+
 void GetGpsId() {
 
 	if (strstr(gps_string,"Quectel-L76"))
@@ -704,34 +713,82 @@ boolean ReadGpsString() {
 
 	if (i != 0) {
 		if (!gps_id) GetGpsId();
+		if (debug_gps) {
+			sprintf(txt,"%s\n",gps_string);
+			PushTxt(txt);
+		}
 		return true;
 	}
 	return false;
 }
 
-// This function is dependent on the GPS chip implementation
-// It should return a date time string as described above
-// So you need to re-implements this for whichever chip you are using
-// Here I am using the addafruit GPS chip
+// Get sub string par
+
+int GetSubPar(char *cp, int len) {
+	char tbuf[16], *ep;
+	strncpy(tbuf,cp,len);
+	tbuf[len] = 0;
+	return strtoul(tbuf,&ep,0);
+}
+
+// Parse the GPS NMEA string
+
+#define PARS 9
+boolean ParsGpsString() {
+	char *pars[PARS], *cp, *ep;
+	int i;
+
+	if ((cp=strstr(gps_string,"$GPGGA"))) {
+		for (i=0; i<PARS; i++) {
+			cp = index(cp,','); 
+			if (cp) {
+				*cp = 0;
+				pars[i] = ++cp;
+			} else  pars[i] = NULL;
+		}
+		
+		// pars[0] contains "hhmmss"
+
+		cp = pars[0];
+		hour = GetSubPar(cp,2);
+
+		cp = &pars[0][2];
+		minute = GetSubPar(cp,2);
+
+		cp = &pars[0][4];
+		second = GetSubPar(cp,2);
+		
+		// lat, lon, alt are all floats at indexes 1,3,8
+
+		cp = pars[1];
+		latitude = strtof(cp,&ep);
+		
+		cp = pars[3];
+		longitude = strtof(cp,&ep);
+
+		cp = pars[8];
+		altitude = strtof(cp,&ep);
+
+		if (debug_gps) {
+			for (i=0; i<PARS; i++) {
+				sprintf(txt,"%d:%s ",i,pars[i]);
+				PushTxt(txt);
+			}
+			sprintf(txt,"\n");
+		}
+		return true;
+	}
+	return false;
+}
+
+// Get the date time from GPS
 
 boolean GpsDateTime() {
 
-	if (ReadGpsString() && gps.parse(gps_string)) {
+	if ((ReadGpsString()) && (ParsGpsString())) {
 
-		// I choose RMCGGA by default, and get the altitude but no date.
-		// Its easy to get the date once the records arrive at the Python end.
-		// The GPS altitude is far more accurate than the barrometric altitude.
-		// Warning: The syntax can not be changed, we need an integer hhmmss
-
-		altitude  = gps.altitude;	
-		latitude  = gps.latitudeDegrees;	// Easy place to get location
-		longitude = gps.longitudeDegrees;	// Works well in Google maps
-		hour      = gps.hour;
-		minute    = gps.minute;
-		second	  = gps.seconds;
 		sprintf(wdtm,"%02d%02d%02d",hour,minute,second);
-
-		time_ok	  = true;
+		time_ok = true;
 		return true;
 	}
 	return false;
@@ -1382,8 +1439,11 @@ void loop() {
 		GetDateTime();			// Read the next date/time from the GPS chip
 		displ = 0;			// Clear flag for next PPS
 
-		if (!gps_id) 
+		if ((!gps_id) || (debug_gps)) {	// Get firmware version ?
 			Serial1.println("$PMTK605*31");
+			// sprintf(txt,"Sent $PMTK605*31\n");
+			// PushTxt(txt);
+		}
 	}
 	
 	PutChar();	// Print one character per loop !!!
@@ -1744,6 +1804,10 @@ float get_peak_freq(int threshold) {	// Threshold to test
 #define TEST_NMEA 510
 #define TEST_GPSID 520
 #define TEST_PPS 550
+
+void dgps(int arg) {
+	debug_gps = arg; // Controls printing GPS NMEA strings for debugging
+}
 
 void gpts(int arg) {
 	cmd_result = 0;

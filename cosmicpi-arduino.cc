@@ -130,7 +130,6 @@
 
 // Instantiate external hardware breakouts
 
-Adafruit_GPS		gps(&Serial1);			// GPS Serial1 on pins RX1 and TX1
 boolean			gps_ok = false;			// Chip OK flag
 boolean			time_ok = false;		// Time read from GPS OK
 
@@ -937,8 +936,6 @@ void setup() {
 
 	Serial.begin(SERIAL_BAUD_RATE);	// Start the serial line
 	Serial1.begin(GPS_BAUD_RATE);	// and the second
-
-	gps.begin(GPS_BAUD_RATE);	// Chip baud rate
 
 	GpsSetup();
 

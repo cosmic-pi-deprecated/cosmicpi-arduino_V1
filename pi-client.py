@@ -534,6 +534,9 @@ def main():
 					print "   NADC, Number of ADC sampes tor read per event"
 					print "   RBRK, Reset power on=1/off=0 for breakouts"
 					print "   CHNS, Channel mask 0=None, 1,2 3=Both"
+        				print "   ABTS, Analogue Board test, 110=ADC Offsets, 120/121=SIPMs, 130=Vbias Threshold"
+        				print "   GPTS, GPS self test, 510=NMEA, 520=GPS ID, 550=PPS"
+        				print "   DGPS, Debug printing of GPS NMEA strings 0=off 1=on"
 					print ""
 
 					if debug:

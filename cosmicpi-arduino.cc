@@ -259,8 +259,8 @@ CmdStruct cmd_table[CMDS] = {
 	{ NADC, nadc, "NADC", "Number of ADC sampes tor read per event", 1},
 	{ RBRK, rbrk, "RBRK", "Reset power on=1/off=0 for breakouts", 1},
 	{ CHNS, chns, "CHNS", "Channel mask 0=none, 1,2 or 3=both", 1},
-	{ ABTS, abts, "ABTS", "Analogue Board test, 1=ADC Offsets, 2=SIPMs, 3=Vbias Threshold", 1},
-	{ GPTS, gpts, "GPTS", "GPS self test", 1},
+	{ ABTS, abts, "ABTS", "Analogue Board test, 110=ADC Offsets, 120/121=SIPMs, 130=Vbias Threshold", 1},
+	{ GPTS, gpts, "GPTS", "GPS self test, 510=NMEA, 520=GPS ID, 550=PPS", 1},
 	{ DGPS, dgps, "DGPS", "Debug printing of GPS NMEA strings 0=off 1=on",1}
 };
 

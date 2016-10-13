@@ -676,18 +676,18 @@ static char gps_string[GPS_STRING_LEN + 1];
 #define QUECTEL76_GPS 76
 #define ADAFRUIT_GPS 60
 
-static int gps_id = ADAFRUIT_GPS;
-
-// The adafruit GPS only sends its ID at powerup time 
-// So we just assume its the addafruit unless the
-// quectel answers. 
-
+static int gps_id = 0;
 void GetGpsId() {
 
 	if (strstr(gps_string,"Quectel-L76"))
 		gps_id = QUECTEL76_GPS;
 	else if (strstr(gps_string,"PA6H"))
 		gps_id = ADAFRUIT_GPS;
+
+	// The adafruit only send its id once at powerup
+
+	if ((gps_ok) && (ppcnt > 10) && (!gps_id))
+		gps_id = ADAFRUIT_GPS;		
 }
 
 // WARNING: One up the spout !!

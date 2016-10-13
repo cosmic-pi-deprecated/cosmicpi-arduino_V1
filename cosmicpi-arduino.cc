@@ -727,7 +727,7 @@ int GetSubPar(char *cp, int len) {
 	char tbuf[16], *ep;
 	strncpy(tbuf,cp,len);
 	tbuf[len] = 0;
-	return strtoul(tbuf,&ep,0);
+	return strtoul(tbuf,&ep,10);
 }
 
 // Parse the GPS NMEA string
@@ -1392,7 +1392,7 @@ void ParseCmd() {
 		if (strncmp(cms->Name,cmd,cl) == 0) {
 			if ((cms->Par) && (strlen(cmd) > cl)) {
 				cp = &cmd[cl];
-				p = (int) strtoul(cp,&ep,0);
+				p = (int) strtoul(cp,&ep,10);
 			}
 			sprintf(cmd_name,"%s",cms->Name);
 			cms->proc(p);

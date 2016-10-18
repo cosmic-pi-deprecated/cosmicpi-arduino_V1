@@ -73,14 +73,6 @@
 
 #include "Adafruit_HTU21DF.h"	// Humidity and temperature sensor
 
-// GPS chips typically return NMEA strings over a serial line.
-// They can be programmed to send different NMEA strings according to what you configure.
-// The string RMCGGA has the altitude but misses the yy/mm/dd from the date, it only has hh/mm/ss.
-// This is easilly made up for in the Python monitor which gets this information from it system time.
-
-#include "Adafruit_GPS.h"	// GPS chip
-#define GPSECHO true
-
 #include "Adafruit_L3GD20_U.h"	// Magoscope
 
 // WARNING: I had to modify this library, its no longer standard 

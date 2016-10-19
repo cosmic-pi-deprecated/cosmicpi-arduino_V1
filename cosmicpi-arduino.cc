@@ -193,7 +193,8 @@ typedef enum {
 
 	ABTS,	// Analogue board test
 	GPTS,	// GPS Test
-	DGPS,	// Debug GPS NMEA strings
+	DGPS,	// Debug GPS NMEA stringsi
+	ACTS,	// Accelerometer test
 
 	CMDS };	// Command count
 
@@ -232,6 +233,7 @@ void chns(int arg);
 void abts(int arg);
 void gpts(int arg);
 void dgps(int arg);
+void acts(int arg);
 
 // Command table
 
@@ -253,7 +255,8 @@ CmdStruct cmd_table[CMDS] = {
 	{ CHNS, chns, "CHNS", "Channel mask 0=none, 1,2 or 3=both", 1},
 	{ ABTS, abts, "ABTS", "Analogue Board test, 110=ADC Offsets, 120/121=SIPMs, 130=Vbias Threshold", 1},
 	{ GPTS, gpts, "GPTS", "GPS self test, 510=NMEA, 520=GPS ID, 550=PPS", 1},
-	{ DGPS, dgps, "DGPS", "Debug printing of GPS NMEA strings 0=off 1=on",1}
+	{ DGPS, dgps, "DGPS", "Debug printing of GPS NMEA strings 0=off 1=on",1},
+	{ ACTS, acts, "ACTS", "Accelerometer self test, 710=ACL ID, 720=Interrupt test",1}
 };
 
 #define CMDLEN 32
@@ -1825,7 +1828,107 @@ void gpts(int arg) {
 	}
 
 	sprintf(cmd_mesg,"Illegal test number:%d",arg);
-	
 	cmd_result = ASSERTION_FAIL;
 	return;
 }
+
+// =============================================
+// Test for accelerometer
+
+int i2c_bus = 0;
+
+void LMWrite8(uint8_t address, uint8_t reg, uint8_t value) {
+	if (i2c_bus) {
+		Wire1.beginTransmission(address);
+        	Wire1.write((uint8_t)reg);
+		Wire1.write((uint8_t)value);
+		Wire1.endTransmission();
+	} else {
+		Wire.beginTransmission(address);
+		Wire.write((uint8_t)reg);
+		Wire.write((uint8_t)value);
+		Wire.endTransmission();
+	}
+}
+
+uint8_t LMRead8(uint8_t address, uint8_t reg) {
+	uint8_t value;
+
+	if (i2c_bus) {
+		Wire1.beginTransmission(address);
+		Wire1.write((uint8_t) reg);
+		Wire1.endTransmission();
+
+		Wire1.requestFrom(address, (uint8_t) 1);
+		value = Wire1.read();
+		Wire1.endTransmission();
+	} else {
+		Wire.beginTransmission(address);
+		Wire.write((uint8_t) reg);
+		Wire.endTransmission();
+
+		Wire.requestFrom(address, (uint8_t) 1);
+		value = Wire.read();
+		Wire.endTransmission();
+	}
+	return value;
+}
+
+#define ACL_BUS_1_ADDR 0x1D
+#define ACL_BUS_0_ADDR 0x19
+#define ACL_ID 0x49
+#define ACL_ID_REG 0x0F
+
+#define ACL_CTRL_REG1_A 0x20
+
+#define ACL_ADAFRUIT 701
+#define ACL_ON_MB 702
+
+#define TEST_ACL_ID 720
+#define TEST_ACL_INTERRUPT 730
+
+#define NO_ACL_FOUND 700
+
+int acl_id = 0;
+
+void GetAclId() {
+	uint8_t id;
+
+	i2c_bus = 0;
+	LMWrite8(ACL_BUS_0_ADDR, ACL_CTRL_REG1_A, 0x57);
+        id = LMRead8(ACL_BUS_0_ADDR, ACL_CTRL_REG1_A);
+        if (id == 0x57) {
+		acl_id = ACL_ADAFRUIT; 
+		return;
+	}
+
+	i2c_bus = 1;
+	id = LMRead8(ACL_BUS_1_ADDR,ACL_ID_REG);	
+	if (id == ACL_ID) { 
+		acl_id = ACL_ON_MB;
+		return;
+	}
+
+	i2c_bus = 0;
+	acl_id = 0;
+}
+
+void acts(int arg) {
+
+	if (!acl_id) GetAclId();
+
+	if (arg == TEST_ACL_ID) {
+		if (acl_id == ACL_ADAFRUIT) {
+			sprintf(cmd_mesg,"ACL: Tst:%d PASS Bus:%d Adr:0x%02X Adafruite breakout",arg,i2c_bus,ACL_BUS_0_ADDR);
+			return;
+		}
+		if (acl_id == ACL_ON_MB) {
+			sprintf(cmd_mesg,"ACL: Tst:%d PASS Bus:%d Adr:0x%02X LMS303 on MB",arg,i2c_bus,ACL_BUS_1_ADDR);
+			return;
+		}
+		sprintf(cmd_mesg,"ACL: Tst:%d FAIL No Accelerometer found",arg);
+		cmd_result = NO_ACL_FOUND;
+		return;
+	}
+}
+

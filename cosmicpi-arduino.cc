@@ -120,6 +120,23 @@
 #define BLUE_LED_PIN 46
 #define RED_LED_PIN 48
 
+// Accelerometer/Magnatometer definitions for LMS303D and LSM303DLHC chips
+
+#define ACL_BUS_1_ADDR 0x1D	// LMS303D on the main board on i2c bus 1
+#define ACL_BUS_0_ADDR 0x19	// LSM303DLHC on the Adafruit breakout on i2c bus 0
+#define MAG_BUS_1_ADDR 0x40	// LMS303D magnatometer
+#define	MAG_BUS_0_ADDR 0x1E	// LSM303DLHC magnatometer
+#define ACL_ID 0x49		// LMS303D ID register value
+#define ACL_ID_REG 0x0F		// LMS303D ID register address
+#define ACL_ADAFRUIT 1		// Used to say an Adafruite board detected
+#define ACL_ON_MB 2		// Used to say LMS303D found on MB
+#define ACL_CTRL_REG1_A 0x20	// Used to test for LSM303DLHC presence
+
+int i2c_bus = 0;		// Which I2C bus to use 0/1
+int acl_id = 0;			// Which chip LSM303DLHC or LMS303D
+int acl_ad = 0;			// Accelerometer address on the bus
+int mag_ad = 0;			// Magnatometer address on the bus
+
 // Instantiate external hardware breakouts
 
 boolean			gps_ok = false;			// Chip OK flag
@@ -136,10 +153,6 @@ boolean			bmp_ok = false;
 
 Adafruit_10DOF		dof = Adafruit_10DOF();		// The 10 Degrees-Of-Freedom DOF breakout
 boolean			dof_ok = false;			// board driver, scales units to SI
-
-#define ACLID 30301
-Adafruit_LSM303_Accel_Unified acl = Adafruit_LSM303_Accel_Unified(ACLID);	// Accelerometer Compass
-			boolean acl_ok = false;
 
 #define MAGID 30302
 Adafruit_LSM303_Mag_Unified mag = Adafruit_LSM303_Mag_Unified(MAGID);		// Magoscope
@@ -278,6 +291,50 @@ static char adch0[ADCHL],adch1[ADCHL];	// ADC channel values strings
 
 #define FREQ 42000000			// Clock frequency
 #define MFRQ 40000000			// Sanity check frequency value
+
+// I2C Bus IO routines for Bus 0 or 1
+
+void LMWrite8(uint8_t address, uint8_t reg, uint8_t value) {
+	
+	if (!address) return;
+
+	if (i2c_bus) {
+		Wire1.beginTransmission(address);
+        	Wire1.write((uint8_t)reg);
+		Wire1.write((uint8_t)value);
+		Wire1.endTransmission();
+	} else {
+		Wire.beginTransmission(address);
+		Wire.write((uint8_t)reg);
+		Wire.write((uint8_t)value);
+		Wire.endTransmission();
+	}
+}
+
+uint8_t LMRead8(uint8_t address, uint8_t reg) {
+	uint8_t value;
+
+	if (!address) return 0;
+
+	if (i2c_bus) {
+		Wire1.beginTransmission(address);
+		Wire1.write((uint8_t) reg);
+		Wire1.endTransmission();
+
+		Wire1.requestFrom(address, (uint8_t) 1);
+		value = Wire1.read();
+		Wire1.endTransmission();
+	} else {
+		Wire.beginTransmission(address);
+		Wire.write((uint8_t) reg);
+		Wire.endTransmission();
+
+		Wire.requestFrom(address, (uint8_t) 1);
+		value = Wire.read();
+		Wire.endTransmission();
+	}
+	return value;
+}
 
 // Initialize the timer chips to measure time between the PPS pulses and the EVENT pulse
 // The PPS enters pin D2, the PPS is forwarded accross an isolating diode to pin D5
@@ -493,37 +550,84 @@ void TC6_Handler() {
 #endif
 }
 
-// Accelerometer setup
-// These settings come from reading the LSM303DLH doccumentation, which is more than the
-// author of the Adda_fruit library did. It is a badly written load of rubbish, I have
-// been forced to correct some bugs and export some private methods. It was a touch and go
-// descision wether to just not use the library at all and do it all here. For now I will
-// use it with the bug corrections.
+// Discover the hardware configuration 
+
+void GetAclId() {
+	uint8_t id;
+
+	if (acl_id) return;
+
+	i2c_bus = 1;
+	id = LMRead8(ACL_BUS_1_ADDR,ACL_ID_REG);	
+	if (id == ACL_ID) { 
+		LMWrite8(ACL_BUS_1_ADDR, ACL_CTRL_REG1_A, 0x57);
+		acl_id = ACL_ON_MB;
+		acl_ad = ACL_BUS_1_ADDR;
+		mag_ad = MAG_BUS_1_ADDR;
+		return;
+	}
+
+	i2c_bus = 0;
+	LMWrite8(ACL_BUS_0_ADDR, ACL_CTRL_REG1_A, 0x57);
+        id = LMRead8(ACL_BUS_0_ADDR, ACL_CTRL_REG1_A);
+        if (id == 0x57) {
+		acl_id = ACL_ADAFRUIT;
+		acl_ad = ACL_BUS_0_ADDR;
+		mag_ad = MAG_BUS_0_ADDR;
+		return;
+	}
+
+	i2c_bus = 0;
+	acl_id = 0;
+	acl_ad = 0;
+	mag_ad = 0;
+}
 
 // The following setup makes the accelarometer compare G-forces against a threshold value, and
 // latch the output registers until they are read. To avoid excessive interrupt rates the high
 // pass filter has been configured to keep the frequency low. 
 
+void AclSetup() {
+
+	GetAclId();
+
+	if (acl_id == ACL_ADAFRUIT) {
+		AclAdaSetup();
+		return;
+	}
+	if (acl_id = ACL_ON_MB) {
+		AclMbSetup();
+		return;
+	}
+}
+// Mainboard accelerator setup
+
+void AclMbSetup() {
+}
+
+// Adafruit accelerometer setup
 // N.B. It took me a day to find out that I needed to use Active low and Open drain on the INT1
 // signal, otherwise the Adda_fruit module wont pass it on. Beware !!!
- 
-void AclSetup() {
+
+void AclAdaSetup() {
+
 	uint8_t tmp, val;
 
-	if (!acl_ok) return;
+	GetAclId();
+	if (!acl_id) return;
 
 #define PMD 0x20	// Normal power mode (PM0=1,PM1=0:Normal)
 #define DRT 0x00	// Data rate 50 Hz (0x08 = 100Hz)
 #define AEN 0x07	// XYZ Enabled
 
 	val = PMD | DRT | AEN;
-	acl.write8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_CTRL_REG1_A, val);
+	LMWrite8(acl_ad, LSM303_REGISTER_ACCEL_CTRL_REG1_A, val);
 
 #define HPE1 0x04	// High pass filter Int 1 on
 #define HPCF 0x03       // High pass cut off frequency
 
 	val = HPE1 | HPCF;
-	acl.write8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_CTRL_REG2_A, val);
+	LMWrite8(acl_ad, LSM303_REGISTER_ACCEL_CTRL_REG2_A, val);
 
 #define LIR1 0x06	// Latch Int1 bit Data ready
 #define LIR2 0x00	// Latch Int2 bit Data ready (0x20 Latch On)
@@ -531,21 +635,21 @@ void AclSetup() {
 #define IHL_OD 0xC0	// Interrupt active low, open drain (Argh !!!)
 
 	val = LIR1 | LIR2 | IHL_OD;
-	acl.write8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_CTRL_REG3_A, val);
+	LMWrite8(acl_ad, LSM303_REGISTER_ACCEL_CTRL_REG3_A, val);
 
 #define BDU_FS 0x80	// Block data and scale +-2g
 
 	val = BDU_FS;
-	acl.write8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_CTRL_REG4_A, val);
+	LMWrite8(acl_ad, LSM303_REGISTER_ACCEL_CTRL_REG4_A, val);
 
 #define XYZ_HI 0x2A	// Hi values ZHIE YHIE XHIE
 #define AOI_6D 0x00	// 0xC0 would enable 6 directions
 	
 	val = XYZ_HI | AOI_6D;
-	acl.write8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_INT1_CFG_A, val);
+	LMWrite8(acl_ad, LSM303_REGISTER_ACCEL_INT1_CFG_A, val);
 
 	val = accelr_event_threshold & 0x7F;
-	acl.write8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_INT1_THS_A, val);
+	LMWrite8(acl_ad, LSM303_REGISTER_ACCEL_INT1_THS_A, val);
 
 	// The chip make very wide pulses (100ms), the values on the rising and
 	// falling edges are different !
@@ -558,20 +662,20 @@ void AclSetup() {
 void MagSetup() {
 	uint8_t val;
 
-	if (!mag_ok) return;
+	if (!acl_id) return;
 
 	val = 0;
-	mag.write8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_CRA_REG_M, val);
+	LMWrite8(mag_ad, LSM303_REGISTER_MAG_CRA_REG_M, val);
 
 #define GAIN 0x80	// +- 4.0 Gauss
 
 	val = GAIN;
-	mag.write8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_CRB_REG_M, val);
+	LMWrite8(mag_ad, LSM303_REGISTER_MAG_CRB_REG_M, val);
 
 #define MODE 0x0	// 01=Single conversion mode
 
 	val = MODE;
-	mag.write8(LSM303_ADDRESS_MAG, LSM303_REGISTER_MAG_MR_REG_M, val);
+	LMWrite8(mag_ad, LSM303_REGISTER_MAG_MR_REG_M, val);
 }
 
 // This Accelerometer ISR
@@ -598,9 +702,9 @@ static uint8_t acl_src = 0;
 uint8_t AclReadStatus() {
 	uint8_t rval;
 
-	if (!acl_ok) return 0;
+	if (!acl_id) return 0;
 
-	acl_src = acl.read8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_INT1_SOURCE_A);
+	acl_src = LMRead8(acl_ad, LSM303_REGISTER_ACCEL_INT1_SOURCE_A);
 
 #define ZH 0x20	// Z High
 #define YH 0x08 // Y High
@@ -613,8 +717,35 @@ uint8_t AclReadStatus() {
 		if (acl_src & XH) rval |= 1;
 	}
 	if (rval)	
-		acl_sts = acl.read8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_STATUS_REG_A);
+		acl_sts = LMRead8(acl_ad, LSM303_REGISTER_ACCEL_STATUS_REG_A);
 	return rval;
+}
+
+// Read accelerometer 
+
+int acl_x=0, acl_y=0, acl_z=0;
+float acl_fx=0.0, acl_fy=0.0, acl_fz=0.0;
+
+#define Gg (9.80665 * 0.001)
+
+void AclReadAccel() {
+	uint8_t xlo,xhi,ylo,yhi,zlo,zhi;
+
+	xlo=LMRead8(acl_ad, LSM303_REGISTER_ACCEL_OUT_X_L_A);
+	xhi=LMRead8(acl_ad, LSM303_REGISTER_ACCEL_OUT_X_H_A);
+	ylo=LMRead8(acl_ad, LSM303_REGISTER_ACCEL_OUT_Y_L_A);
+	yhi=LMRead8(acl_ad, LSM303_REGISTER_ACCEL_OUT_Y_H_A);
+	zlo=LMRead8(acl_ad, LSM303_REGISTER_ACCEL_OUT_Z_L_A);
+	zhi=LMRead8(acl_ad, LSM303_REGISTER_ACCEL_OUT_Z_H_A);
+
+	acl_x = (xhi<<8 | xlo) >> 4;
+	acl_y = (yhi<<8 | ylo) >> 4;
+	acl_z = (zhi<<8 | zlo) >> 4;
+	
+	acl_fx = (float) acl_x * Gg;
+	acl_fy = (float) acl_y * Gg;
+	acl_fz = (float) acl_z * Gg;
+
 }
 
 // Set up the ADC channels
@@ -933,9 +1064,7 @@ void setup() {
 	Serial1.begin(GPS_BAUD_RATE);	// and the second
 
 	GpsSetup();
-
-	// gps.sendCommand(PMTK_SET_NMEA_OUTPUT_RMCGGA);	// With altitude but no yy/mm/dd
-	// gps.sendCommand(PMTK_SET_NMEA_UPDATE_1HZ);	// each second
+	GetAclId();
 
 	InitQueue();			// Reset queue pointers, missed count, and size
 
@@ -951,7 +1080,6 @@ void setup() {
 
 	htu_ok = htu.begin();
 	bmp_ok = bmp.begin();
-	acl_ok = acl.begin();
 	mag_ok = mag.begin();
 	dof_ok = dof.begin();
 
@@ -1098,18 +1226,12 @@ void PushMag(int flg) {	// Push the mago stuff
 // Push the acceleration values in xyz in meters per sec squared
 
 void PushAcl(int flg) { // Push the accelerometer and compass stuff
-	sensors_event_t acl_event;
-	sensors_vec_t xyz; 
 
-	if ((flg) || ((acl_ok) && ((ppcnt % accelr_display_rate) == 0))) {
-		acl.getEvent(&acl_event);
-
-		// Meters per second squared
-
+	if ((flg) || ((acl_id) && ((ppcnt % accelr_display_rate) == 0))) {
+		AclReadAccel();
 		sprintf(txt,"{'ACL':{'Acx':%f,'Acy':%f,'Acz':%f}}\n",
-			acl_event.acceleration.x,
-			acl_event.acceleration.y,
-			acl_event.acceleration.z);
+			acl_fx, acl_fy, acl_fz);
+
 		PushTxt(txt);
 	}
 }
@@ -1141,7 +1263,7 @@ uint8_t res;
 
 	if ((flg) || ((ppcnt % status_display_rate) == 0)) {
 		sprintf(txt,"{'STS':{'Qsz':%2d,'Mis':%2d,'Ter':%d,'Tmx':%d,'Htu':%d,'Bmp':%d,'Acl':%d,'Mag':%d,'Gps':%d,'Adn':%d,'Gri':%d,'Eqt':%d,'Chm':%d}}\n",
-			qsize,missed,terr,tmax,htu_ok,bmp_ok,acl_ok,mag_ok,gps_ok,adc_samples_per_evt,gps_read_inc,events_display_size,channel_mask);
+			qsize,missed,terr,tmax,htu_ok,bmp_ok,acl_id,mag_ok,gps_ok,adc_samples_per_evt,gps_read_inc,events_display_size,channel_mask);
 		PushTxt(txt);
 		terr = 0;
 	}
@@ -1291,7 +1413,7 @@ void aclt(int arg) {
 	accelr_event_threshold = arg & 0x7F; 
 	val = accelr_event_threshold;
 	sprintf(cmd_mesg,"ACL sensitivity threshold:%d",accelr_event_threshold);
-	acl.write8(LSM303_ADDRESS_ACCEL, LSM303_REGISTER_ACCEL_INT1_THS_A, val);
+	LMWrite8(acl_ad, LSM303_REGISTER_ACCEL_INT1_THS_A, val);
 }
 
 // The minimum gps read increment is 3 because
@@ -1327,9 +1449,9 @@ void rbrk(int arg) {
 	if (arg == 0) {
 		htu_ok = false;
 		bmp_ok = false;
-		acl_ok = false;
 		mag_ok = false;
 		dof_ok = false;	
+		acl_id = 0;
 		digitalWrite(POW_ONE,LOW);	// Power off to breakouts
 		digitalWrite(POW_TWO,LOW);
 		delay(100);	
@@ -1340,11 +1462,11 @@ void rbrk(int arg) {
 		delay(100);
 		htu_ok = htu.begin();
 		bmp_ok = bmp.begin();
-		acl_ok = acl.begin();
 		mag_ok = mag.begin();
 		dof_ok = dof.begin();
+		GetAclId();
 		sprintf(cmd_mesg,"BRK power ON, htu_ok:%d bmp_ok:%d acl_ok:%d mag_ok:%d dof_ok:%d",
-			htu_ok,bmp_ok,acl_ok,mag_ok,dof_ok);
+			htu_ok,bmp_ok,acl_id,mag_ok,dof_ok);
 	}
 }
 
@@ -1835,83 +1957,9 @@ void gpts(int arg) {
 // =============================================
 // Test for accelerometer
 
-int i2c_bus = 0;
-
-void LMWrite8(uint8_t address, uint8_t reg, uint8_t value) {
-	if (i2c_bus) {
-		Wire1.beginTransmission(address);
-        	Wire1.write((uint8_t)reg);
-		Wire1.write((uint8_t)value);
-		Wire1.endTransmission();
-	} else {
-		Wire.beginTransmission(address);
-		Wire.write((uint8_t)reg);
-		Wire.write((uint8_t)value);
-		Wire.endTransmission();
-	}
-}
-
-uint8_t LMRead8(uint8_t address, uint8_t reg) {
-	uint8_t value;
-
-	if (i2c_bus) {
-		Wire1.beginTransmission(address);
-		Wire1.write((uint8_t) reg);
-		Wire1.endTransmission();
-
-		Wire1.requestFrom(address, (uint8_t) 1);
-		value = Wire1.read();
-		Wire1.endTransmission();
-	} else {
-		Wire.beginTransmission(address);
-		Wire.write((uint8_t) reg);
-		Wire.endTransmission();
-
-		Wire.requestFrom(address, (uint8_t) 1);
-		value = Wire.read();
-		Wire.endTransmission();
-	}
-	return value;
-}
-
-#define ACL_BUS_1_ADDR 0x1D
-#define ACL_BUS_0_ADDR 0x19
-#define ACL_ID 0x49
-#define ACL_ID_REG 0x0F
-
-#define ACL_CTRL_REG1_A 0x20
-
-#define ACL_ADAFRUIT 701
-#define ACL_ON_MB 702
-
 #define TEST_ACL_ID 720
 #define TEST_ACL_INTERRUPT 730
-
 #define NO_ACL_FOUND 700
-
-int acl_id = 0;
-
-void GetAclId() {
-	uint8_t id;
-
-	i2c_bus = 0;
-	LMWrite8(ACL_BUS_0_ADDR, ACL_CTRL_REG1_A, 0x57);
-        id = LMRead8(ACL_BUS_0_ADDR, ACL_CTRL_REG1_A);
-        if (id == 0x57) {
-		acl_id = ACL_ADAFRUIT; 
-		return;
-	}
-
-	i2c_bus = 1;
-	id = LMRead8(ACL_BUS_1_ADDR,ACL_ID_REG);	
-	if (id == ACL_ID) { 
-		acl_id = ACL_ON_MB;
-		return;
-	}
-
-	i2c_bus = 0;
-	acl_id = 0;
-}
 
 void acts(int arg) {
 
@@ -1931,4 +1979,3 @@ void acts(int arg) {
 		return;
 	}
 }
-

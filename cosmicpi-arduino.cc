@@ -209,6 +209,9 @@ typedef enum {
 	DGPS,	// Debug GPS NMEA stringsi
 	ACTS,	// Accelerometer test
 
+	I2CS,	// I2C Bus scan 0,1
+	D303,	// Dump LSM303 registers
+
 	CMDS };	// Command count
 
 typedef struct {
@@ -247,6 +250,8 @@ void abts(int arg);
 void gpts(int arg);
 void dgps(int arg);
 void acts(int arg);
+void i2cs(int arg);
+void d303(int arg);
 
 // Command table
 
@@ -263,13 +268,15 @@ CmdStruct cmd_table[CMDS] = {
 	{ MAGD, magd, "MAGD", "Magnatometer display rate", 1 },
 	{ ACLT, aclt, "ACLT", "Accelerometer event trigger threshold", 1 },
 	{ GPRI, gpri, "GPRI", "GPS read increment in seconds", 1 },
-	{ NADC, nadc, "NADC", "Number of ADC sampes tor read per event", 1},
-	{ RBRK, rbrk, "RBRK", "Reset power on=1/off=0 for breakouts", 1},
-	{ CHNS, chns, "CHNS", "Channel mask 0=none, 1,2 or 3=both", 1},
-	{ ABTS, abts, "ABTS", "Analogue Board test, 110=ADC Offsets, 120/121=SIPMs, 130=Vbias Threshold", 1},
-	{ GPTS, gpts, "GPTS", "GPS self test, 510=NMEA, 520=GPS ID, 550=PPS", 1},
-	{ DGPS, dgps, "DGPS", "Debug printing of GPS NMEA strings 0=off 1=on",1},
-	{ ACTS, acts, "ACTS", "Accelerometer self test, 710=ACL ID, 720=Interrupt test",1}
+	{ NADC, nadc, "NADC", "Number of ADC sampes tor read per event", 1 },
+	{ RBRK, rbrk, "RBRK", "Reset power on=1/off=0 for breakouts", 1 },
+	{ CHNS, chns, "CHNS", "Channel mask 0=none, 1,2 or 3=both", 1 },
+	{ ABTS, abts, "ABTS", "Analogue Board test, 110=ADC Offsets, 120/121=SIPMs, 130=Vbias Threshold", 1 },
+	{ GPTS, gpts, "GPTS", "GPS self test, 510=NMEA, 520=GPS ID, 550=PPS", 1 },
+	{ DGPS, dgps, "DGPS", "Debug printing of GPS NMEA strings 0=off 1=on", 1 },
+	{ ACTS, acts, "ACTS", "Accelerometer self test, 710=ACL ID, 720=Interrupt test", 1 },
+	{ I2CS, i2cs, "I2CS", "I2C Bus scan 0,1", 1 },
+	{ D303, d303, "D303", "Dump LSM303 registers", 1 }
 };
 
 #define CMDLEN 32
@@ -314,7 +321,7 @@ void LMWrite8(uint8_t address, uint8_t reg, uint8_t value) {
 uint8_t LMRead8(uint8_t address, uint8_t reg) {
 	uint8_t value;
 
-	if (!address) return 0;
+	if (!address) return 0xFF;
 
 	if (i2c_bus) {
 		Wire1.beginTransmission(address);
@@ -600,9 +607,53 @@ void AclSetup() {
 		return;
 	}
 }
+
 // Mainboard accelerator setup
 
 void AclMbSetup() {
+	uint8_t tmp, val;
+
+#define AXYXEN 0x7
+#define A50Hz (0x5 << 4)
+
+	val = AXYXEN | A50Hz;		// x,y,z enable and 50 Hz
+	LMWrite8(acl_ad, 0x20, val);	// CTRL1
+
+#define GRANGE 2.0
+#define AFS2G (0x00 << 3)
+
+	val = AFS2G;			// +/- 2g Full scale
+	LMWrite8(acl_ad,0x21,val);	// CTRL2
+
+#define INT1_DRDY_A 0x4
+#define INT1_IG1 0x20
+
+	val = INT1_IG1;			// Inertial interrupts on INT1 enabled
+	LMWrite8(acl_ad, 0x22, val);	// CTRL3
+
+#define LIR1 0x1
+#define TEMPEN 0x80
+
+	val = LIR1 | TEMPEN;		// Latch interrupt INT1 and Temperature enable
+	LMWrite8(acl_ad, 0x24, val);	// CTRL5
+
+#define AI6D 0x80
+#define ZHIE 0x20
+#define YHIE 0x08
+#define XHIE 0x02
+
+	val = AI6D | XHIE | YHIE | ZHIE;	// Interrupt on high x,y,z
+	LMWrite8(acl_ad, 0x30, val);	// IG_CFG1
+
+	val = accelr_event_threshold & 0x7F;
+	LMWrite8(acl_ad, 0x32, val);	// Ineterial threshold
+
+	val = 1;			// Interrupt duration
+	LMWrite8(acl_ad, 0x33, val);	// IG1_DUR1
+	 
+	val = LMRead8(acl_ad, 0x31);	// IG_SRC1 read and clear interrupts
+
+	attachInterrupt(digitalPinToInterrupt(30),Acl_ISR,RISING);
 }
 
 // Adafruit accelerometer setup
@@ -612,9 +663,6 @@ void AclMbSetup() {
 void AclAdaSetup() {
 
 	uint8_t tmp, val;
-
-	GetAclId();
-	if (!acl_id) return;
 
 #define PMD 0x20	// Normal power mode (PM0=1,PM1=0:Normal)
 #define DRT 0x00	// Data rate 50 Hz (0x08 = 100Hz)
@@ -657,9 +705,30 @@ void AclAdaSetup() {
 	attachInterrupt(digitalPinToInterrupt(ACL_PIN),Acl_ISR,RISING);
 }
 
-// Magnatometer setup, again the Adda_fruit library was inadequate. 
+// The following setup makes the accelarometer compare G-forces against a threshold value, and
+// latch the output registers until they are read. To avoid excessive interrupt rates the high
+// pass filter has been configured to keep the frequency low. 
 
 void MagSetup() {
+
+	GetAclId();
+
+	if (acl_id == ACL_ADAFRUIT) {
+		MagAdaSetup();
+		return;
+	}
+	if (acl_id = ACL_ON_MB) {
+		//MagMbSetup();
+		return;
+	}
+}
+
+void MagMbSetup() {
+}
+
+// Magnatometer setup, again the Adda_fruit library was inadequate. 
+
+void MagAdaSetup() {
 	uint8_t val;
 
 	if (!acl_id) return;
@@ -684,11 +753,10 @@ static uint32_t accl_icount = 0, accl_flag = 0;
 
 void Acl_ISR() {
 
-#define IA 0x40
-
-	accl_icount++;
-	accl_flag = AclReadStatus();
-	PushVib();
+	if ( (accl_flag=AclReadStatus()) ) {
+		accl_icount++;
+		PushVib();
+	}
 }
 
 // Read accelerometer status
@@ -702,9 +770,9 @@ static uint8_t acl_src = 0;
 uint8_t AclReadStatus() {
 	uint8_t rval;
 
-	if (!acl_id) return 0;
+	acl_src = LMRead8(acl_ad, 0x31);	// IG_SRC1 read and clear interrupts
 
-	acl_src = LMRead8(acl_ad, LSM303_REGISTER_ACCEL_INT1_SOURCE_A);
+#define IA 0x40
 
 #define ZH 0x20	// Z High
 #define YH 0x08 // Y High
@@ -716,16 +784,15 @@ uint8_t AclReadStatus() {
 		if (acl_src & YH) rval |= 2;
 		if (acl_src & XH) rval |= 1;
 	}
-	if (rval)	
-		acl_sts = LMRead8(acl_ad, LSM303_REGISTER_ACCEL_STATUS_REG_A);
 	return rval;
 }
 
 // Read accelerometer 
 
-int acl_x=0, acl_y=0, acl_z=0;
+short acl_x=0, acl_y=0, acl_z=0;
 float acl_fx=0.0, acl_fy=0.0, acl_fz=0.0;
 
+#define GEARTH 9.80665
 #define Gg (9.80665 * 0.001)
 
 void AclReadAccel() {
@@ -738,14 +805,23 @@ void AclReadAccel() {
 	zlo=LMRead8(acl_ad, LSM303_REGISTER_ACCEL_OUT_Z_L_A);
 	zhi=LMRead8(acl_ad, LSM303_REGISTER_ACCEL_OUT_Z_H_A);
 
-	acl_x = (xhi<<8 | xlo) >> 4;
-	acl_y = (yhi<<8 | ylo) >> 4;
-	acl_z = (zhi<<8 | zlo) >> 4;
+	if (acl_id == ACL_ADAFRUIT) { 
+		acl_x = (xhi<<8 | xlo) >> 4;
+		acl_y = (yhi<<8 | ylo) >> 4;
+		acl_z = (zhi<<8 | zlo) >> 4;
 	
-	acl_fx = (float) acl_x * Gg;
-	acl_fy = (float) acl_y * Gg;
-	acl_fz = (float) acl_z * Gg;
+		acl_fx = (float) acl_x * Gg;
+		acl_fy = (float) acl_y * Gg;
+		acl_fz = (float) acl_z * Gg;
+	} else {
+		acl_x = (xhi<<8 | xlo);
+		acl_y = (yhi<<8 | ylo);
+		acl_z = (zhi<<8 | zlo);
 
+		acl_fx = (2.0 * GEARTH) * ((float) acl_x / (float) 0x7FFF);
+		acl_fy = (2.0 * GEARTH) * ((float) acl_y / (float) 0x7FFF);
+		acl_fz = (2.0 * GEARTH) * ((float) acl_z / (float) 0x7FFF);
+	}
 }
 
 // Set up the ADC channels
@@ -1188,16 +1264,16 @@ void PushBmp(int flg) {	// If flg is true always push
 // strengths in all three axis. From all this information the Python monitor will be able
 // to work out whats going on, sustained vibration or whatever. 
 
-void PushVib() { // Push an event when shake detected => Earth Quake 
-
 uint32_t old_icount = 0;
+
+void PushVib() { // Push an event when shake detected => Earth Quake 
 
 	if (accl_flag) {
 		if (accl_icount != old_icount) {
 			old_icount = accl_icount;
 			PushTim(1);		// Push these first, and then vib
 			PushAcl(1);		// This is the real latched value
-			PushMag(1);
+			//PushMag(1);
 			sprintf(txt,"{'VIB':{'Vax':%d,'Vcn':%d}}\n",accl_flag,accl_icount);
 			PushTxt(txt);
 		}
@@ -1559,7 +1635,7 @@ void loop() {
 			// PushTxt(txt);
 		}
 	}
-	
+
 	PutChar();	// Print one character per loop !!!
 	ReadOneChar();	// Get next input command char
 }
@@ -1977,5 +2053,73 @@ void acts(int arg) {
 		sprintf(cmd_mesg,"ACL: Tst:%d FAIL No Accelerometer found",arg);
 		cmd_result = NO_ACL_FOUND;
 		return;
+	}
+}
+
+// ==========================================
+// I2C Bus scan
+
+void i2cs(int arg) {
+	
+	int adr, err, cnt;
+
+	if ((arg < 0) || (arg > 1)) {
+		sprintf(cmd_mesg,"No such bus:%d [0-1]",arg);
+		cmd_result = ASSERTION_FAIL;
+		return;
+	}
+	sprintf(cmd_mesg,"Bus:%d ",arg);
+
+	cnt = 0;	
+	for (adr=1; adr<127; adr++) {
+		if (arg==1) {
+    			Wire1.beginTransmission(adr);
+    			err = Wire1.endTransmission();
+		} else {
+	    		Wire.beginTransmission(adr);
+    			err = Wire.endTransmission();
+		}
+		if (!err) {
+			sprintf(txt,"0x%02X ",adr);
+			strcat(cmd_mesg,txt);
+			cnt++;
+		}
+	}
+	sprintf(txt,"Found:%d Devices",cnt);
+	strcat(cmd_mesg,txt);
+}
+
+// =============================================
+// Dump LSM303
+
+void d303(int arg) {
+	int i;
+	uint8_t val, reg;
+
+	if ((arg<1) || (arg>10))
+		arg = 1;
+
+	for (i=0; i<arg; i++) {
+                sprintf(txt,"\nAclRegs: ");
+                PushTxt(txt);
+                for (reg=0x00; reg<=0x3F; reg++) {
+			val = LMRead8(acl_ad, reg);
+                        sprintf(txt,"%02X:%02X ",reg,val);
+                        PushTxt(txt);
+                }
+
+                sprintf(txt,"\nMagRegs: ");
+                PushTxt(txt);
+                for (reg=0x00; reg<=0x32; reg++) {
+
+                        if ((reg==0x3E) || (reg==0x3F)) continue;
+                        if ((reg>=0x0D) && (reg<=0x30)) continue;
+			val = LMRead8(mag_ad, reg);
+                        sprintf(txt,"%02X:%02X ",reg,val);
+			PushTxt(txt);
+                }
+		
+		sprintf(txt,"\nLoop:%02d\n",i+1);
+		PushTxt(txt);
 	}
 }

@@ -12,7 +12,7 @@
 
 // Julian Lewis lewis.julian@gmail.com
 
-#define VERS "2016/October"
+#define VERS "2016/November"
 
 // In this sketch I am using an Adafruite ultimate GPS breakout which exposes the PPS output
 // The Addafruite Rx is connected to the DUE TX1 (Pin 18) and its Tx to DUE RX1 (Pin 19)
@@ -76,7 +76,7 @@
 #include "Adafruit_L3GD20_U.h"	// Magoscope
 
 // WARNING: I had to modify this library, its no longer standard 
-#include "Adafruit_LSM303_U.h"	// Accelerometer and magnentometer/compass
+//#include "Adafruit_LSM303_U.h"	// Accelerometer and magnentometer/compass
 
 #include "Adafruit_10DOF.h"	// 10DOF breakout driver - scale to SI units
 
@@ -154,9 +154,9 @@ boolean			bmp_ok = false;
 Adafruit_10DOF		dof = Adafruit_10DOF();		// The 10 Degrees-Of-Freedom DOF breakout
 boolean			dof_ok = false;			// board driver, scales units to SI
 
-#define MAGID 30302
-Adafruit_LSM303_Mag_Unified mag = Adafruit_LSM303_Mag_Unified(MAGID);		// Magoscope
-boolean			mag_ok = false;
+//#define MAGID 30302
+//Adafruit_LSM303_Mag_Unified mag = Adafruit_LSM303_Mag_Unified(MAGID);		// Magoscope
+//boolean			mag_ok = false;
 
 // Control the output data rates by setting defaults, these values can be modified at run time
 // via commands from the serial interface. Some output like position isn't supposed to be changing
@@ -567,10 +567,9 @@ void GetAclId() {
 	i2c_bus = 1;
 	id = LMRead8(ACL_BUS_1_ADDR,ACL_ID_REG);	
 	if (id == ACL_ID) { 
-		LMWrite8(ACL_BUS_1_ADDR, ACL_CTRL_REG1_A, 0x57);
 		acl_id = ACL_ON_MB;
 		acl_ad = ACL_BUS_1_ADDR;
-		mag_ad = MAG_BUS_1_ADDR;
+		mag_ad = ACL_BUS_1_ADDR;
 		return;
 	}
 
@@ -602,13 +601,14 @@ void AclSetup() {
 		AclAdaSetup();
 		return;
 	}
-	if (acl_id = ACL_ON_MB) {
+	if (acl_id == ACL_ON_MB) {
 		AclMbSetup();
 		return;
 	}
 }
 
 // Mainboard accelerator setup
+// LSM303D chip
 
 void AclMbSetup() {
 	uint8_t tmp, val;
@@ -657,8 +657,7 @@ void AclMbSetup() {
 }
 
 // Adafruit accelerometer setup
-// N.B. It took me a day to find out that I needed to use Active low and Open drain on the INT1
-// signal, otherwise the Adda_fruit module wont pass it on. Beware !!!
+// LSM303DLH Chip
 
 void AclAdaSetup() {
 
@@ -669,13 +668,13 @@ void AclAdaSetup() {
 #define AEN 0x07	// XYZ Enabled
 
 	val = PMD | DRT | AEN;
-	LMWrite8(acl_ad, LSM303_REGISTER_ACCEL_CTRL_REG1_A, val);
+	LMWrite8(acl_ad, 0x20, val);
 
 #define HPE1 0x04	// High pass filter Int 1 on
 #define HPCF 0x03       // High pass cut off frequency
 
 	val = HPE1 | HPCF;
-	LMWrite8(acl_ad, LSM303_REGISTER_ACCEL_CTRL_REG2_A, val);
+	LMWrite8(acl_ad, 0x21, val);
 
 #define LIR1 0x06	// Latch Int1 bit Data ready
 #define LIR2 0x00	// Latch Int2 bit Data ready (0x20 Latch On)
@@ -683,68 +682,26 @@ void AclAdaSetup() {
 #define IHL_OD 0xC0	// Interrupt active low, open drain (Argh !!!)
 
 	val = LIR1 | LIR2 | IHL_OD;
-	LMWrite8(acl_ad, LSM303_REGISTER_ACCEL_CTRL_REG3_A, val);
+	LMWrite8(acl_ad, 0x22, val);
 
 #define BDU_FS 0x80	// Block data and scale +-2g
 
 	val = BDU_FS;
-	LMWrite8(acl_ad, LSM303_REGISTER_ACCEL_CTRL_REG4_A, val);
+	LMWrite8(acl_ad, 0x23, val);
 
 #define XYZ_HI 0x2A	// Hi values ZHIE YHIE XHIE
 #define AOI_6D 0x00	// 0xC0 would enable 6 directions
 	
 	val = XYZ_HI | AOI_6D;
-	LMWrite8(acl_ad, LSM303_REGISTER_ACCEL_INT1_CFG_A, val);
+	LMWrite8(acl_ad, 0x30, val);
 
 	val = accelr_event_threshold & 0x7F;
-	LMWrite8(acl_ad, LSM303_REGISTER_ACCEL_INT1_THS_A, val);
+	LMWrite8(acl_ad, 0x32, val);
 
 	// The chip make very wide pulses (100ms), the values on the rising and
 	// falling edges are different !
 
 	attachInterrupt(digitalPinToInterrupt(ACL_PIN),Acl_ISR,RISING);
-}
-
-// The following setup makes the accelarometer compare G-forces against a threshold value, and
-// latch the output registers until they are read. To avoid excessive interrupt rates the high
-// pass filter has been configured to keep the frequency low. 
-
-void MagSetup() {
-
-	GetAclId();
-
-	if (acl_id == ACL_ADAFRUIT) {
-		MagAdaSetup();
-		return;
-	}
-	if (acl_id = ACL_ON_MB) {
-		//MagMbSetup();
-		return;
-	}
-}
-
-void MagMbSetup() {
-}
-
-// Magnatometer setup, again the Adda_fruit library was inadequate. 
-
-void MagAdaSetup() {
-	uint8_t val;
-
-	if (!acl_id) return;
-
-	val = 0;
-	LMWrite8(mag_ad, LSM303_REGISTER_MAG_CRA_REG_M, val);
-
-#define GAIN 0x80	// +- 4.0 Gauss
-
-	val = GAIN;
-	LMWrite8(mag_ad, LSM303_REGISTER_MAG_CRB_REG_M, val);
-
-#define MODE 0x0	// 01=Single conversion mode
-
-	val = MODE;
-	LMWrite8(mag_ad, LSM303_REGISTER_MAG_MR_REG_M, val);
 }
 
 // This Accelerometer ISR
@@ -822,6 +779,41 @@ void AclReadAccel() {
 		acl_fy = (2.0 * GEARTH) * ((float) acl_y / (float) 0x7FFF);
 		acl_fz = (2.0 * GEARTH) * ((float) acl_z / (float) 0x7FFF);
 	}
+}
+
+// Simple read of magnatometer data
+
+short mag_x=0, mag_y=0, mag_z=0;
+float mag_fx=0.0, mag_fy=0.0, mag_fz=0.0;
+
+void MagReadData() {
+	uint8_t xlo,xhi,ylo,yhi,zlo,zhi;
+	
+	if (acl_id == ACL_ADAFRUIT) {
+		xlo=LMRead8(mag_ad,0x3);
+		xhi=LMRead8(mag_ad,0x4);
+		ylo=LMRead8(mag_ad,0x5);
+		yhi=LMRead8(mag_ad,0x6);
+		zlo=LMRead8(mag_ad,0x7);
+		zhi=LMRead8(mag_ad,0x8);
+	}
+		
+	if (acl_id == ACL_ON_MB) {
+		xlo=LMRead8(acl_ad,0x8);
+		xhi=LMRead8(acl_ad,0x9);
+		ylo=LMRead8(acl_ad,0xA);
+		yhi=LMRead8(acl_ad,0xB);
+		zlo=LMRead8(acl_ad,0xC);
+		zhi=LMRead8(acl_ad,0xD);
+	}
+
+	mag_x = (xhi<<8 | xlo);
+	mag_y = (yhi<<8 | ylo);
+	mag_z = (zhi<<8 | zlo);
+
+	mag_fx = (float) mag_x;
+	mag_fy = (float) mag_y;
+	mag_fz = (float) mag_z;
 }
 
 // Set up the ADC channels
@@ -1156,11 +1148,9 @@ void setup() {
 
 	htu_ok = htu.begin();
 	bmp_ok = bmp.begin();
-	mag_ok = mag.begin();
 	dof_ok = dof.begin();
 
 	AclSetup();
-	MagSetup();
 	AdcSetup();
 	
 	TimersStart();			// Start timers
@@ -1273,7 +1263,7 @@ void PushVib() { // Push an event when shake detected => Earth Quake
 			old_icount = accl_icount;
 			PushTim(1);		// Push these first, and then vib
 			PushAcl(1);		// This is the real latched value
-			//PushMag(1);
+			PushMag(1);
 			sprintf(txt,"{'VIB':{'Vax':%d,'Vcn':%d}}\n",accl_flag,accl_icount);
 			PushTxt(txt);
 		}
@@ -1283,18 +1273,10 @@ void PushVib() { // Push an event when shake detected => Earth Quake
 // Push the magnetic field strengths in all three axis in micro tesla (gauss)
 
 void PushMag(int flg) {	// Push the mago stuff
-	sensors_event_t mag_event;
-	sensors_vec_t xyz;
 	
-	if ((flg) || ((mag_ok) && ((ppcnt % magnot_display_rate) == 0))) {
-		mag.getEvent(&mag_event);
-
-		// Micro Tesla
-
-		sprintf(txt,"{'MAG':{'Mgx':%f,'Mgy':%f,'Mgz':%f}}\n",
-			mag_event.magnetic.x,
-			mag_event.magnetic.y,
-			mag_event.magnetic.z);
+	if ((flg) || ((acl_id) && ((ppcnt % magnot_display_rate) == 0))) {
+		MagReadData();
+		sprintf(txt,"{'MAG':{'Mgx':%f,'Mgy':%f,'Mgz':%f}}\n",mag_fx,mag_fy,mag_fz);
 		PushTxt(txt);
 	}
 }
@@ -1339,7 +1321,7 @@ uint8_t res;
 
 	if ((flg) || ((ppcnt % status_display_rate) == 0)) {
 		sprintf(txt,"{'STS':{'Qsz':%2d,'Mis':%2d,'Ter':%d,'Tmx':%d,'Htu':%d,'Bmp':%d,'Acl':%d,'Mag':%d,'Gps':%d,'Adn':%d,'Gri':%d,'Eqt':%d,'Chm':%d}}\n",
-			qsize,missed,terr,tmax,htu_ok,bmp_ok,acl_id,mag_ok,gps_ok,adc_samples_per_evt,gps_read_inc,events_display_size,channel_mask);
+			qsize,missed,terr,tmax,htu_ok,bmp_ok,acl_id,acl_id,gps_ok,adc_samples_per_evt,gps_read_inc,events_display_size,channel_mask);
 		PushTxt(txt);
 		terr = 0;
 	}
@@ -1525,7 +1507,6 @@ void rbrk(int arg) {
 	if (arg == 0) {
 		htu_ok = false;
 		bmp_ok = false;
-		mag_ok = false;
 		dof_ok = false;	
 		acl_id = 0;
 		digitalWrite(POW_ONE,LOW);	// Power off to breakouts
@@ -1538,11 +1519,10 @@ void rbrk(int arg) {
 		delay(100);
 		htu_ok = htu.begin();
 		bmp_ok = bmp.begin();
-		mag_ok = mag.begin();
 		dof_ok = dof.begin();
 		GetAclId();
 		sprintf(cmd_mesg,"BRK power ON, htu_ok:%d bmp_ok:%d acl_ok:%d mag_ok:%d dof_ok:%d",
-			htu_ok,bmp_ok,acl_id,mag_ok,dof_ok);
+			htu_ok,bmp_ok,acl_id,acl_id,dof_ok);
 	}
 }
 

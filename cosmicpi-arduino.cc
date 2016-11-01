@@ -75,9 +75,6 @@
 
 #include "Adafruit_L3GD20_U.h"	// Magoscope
 
-// WARNING: I had to modify this library, its no longer standard 
-//#include "Adafruit_LSM303_U.h"	// Accelerometer and magnentometer/compass
-
 #include "Adafruit_10DOF.h"	// 10DOF breakout driver - scale to SI units
 
 // Configuration constants
@@ -124,7 +121,6 @@
 
 #define ACL_BUS_1_ADDR 0x1D	// LMS303D on the main board on i2c bus 1
 #define ACL_BUS_0_ADDR 0x19	// LSM303DLHC on the Adafruit breakout on i2c bus 0
-#define MAG_BUS_1_ADDR 0x40	// LMS303D magnatometer
 #define	MAG_BUS_0_ADDR 0x1E	// LSM303DLHC magnatometer
 #define ACL_ID 0x49		// LMS303D ID register value
 #define ACL_ID_REG 0x0F		// LMS303D ID register address
@@ -153,10 +149,6 @@ boolean			bmp_ok = false;
 
 Adafruit_10DOF		dof = Adafruit_10DOF();		// The 10 Degrees-Of-Freedom DOF breakout
 boolean			dof_ok = false;			// board driver, scales units to SI
-
-//#define MAGID 30302
-//Adafruit_LSM303_Mag_Unified mag = Adafruit_LSM303_Mag_Unified(MAGID);		// Magoscope
-//boolean			mag_ok = false;
 
 // Control the output data rates by setting defaults, these values can be modified at run time
 // via commands from the serial interface. Some output like position isn't supposed to be changing
@@ -752,7 +744,7 @@ float acl_fx=0.0, acl_fy=0.0, acl_fz=0.0;
 #define GEARTH 9.80665
 #define Gg (9.80665 * 0.001)
 
-void AclReadAccel() {
+void AclReadData() {
 	uint8_t xlo,xhi,ylo,yhi,zlo,zhi;
 
 	xlo=LMRead8(acl_ad, LSM303_REGISTER_ACCEL_OUT_X_L_A);
@@ -1286,7 +1278,7 @@ void PushMag(int flg) {	// Push the mago stuff
 void PushAcl(int flg) { // Push the accelerometer and compass stuff
 
 	if ((flg) || ((acl_id) && ((ppcnt % accelr_display_rate) == 0))) {
-		AclReadAccel();
+		AclReadData();
 		sprintf(txt,"{'ACL':{'Acx':%f,'Acy':%f,'Acz':%f}}\n",
 			acl_fx, acl_fy, acl_fz);
 

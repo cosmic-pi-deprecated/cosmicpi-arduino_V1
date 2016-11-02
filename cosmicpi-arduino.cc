@@ -747,12 +747,12 @@ float acl_fx=0.0, acl_fy=0.0, acl_fz=0.0;
 void AclReadData() {
 	uint8_t xlo,xhi,ylo,yhi,zlo,zhi;
 
-	xlo=LMRead8(acl_ad, LSM303_REGISTER_ACCEL_OUT_X_L_A);
-	xhi=LMRead8(acl_ad, LSM303_REGISTER_ACCEL_OUT_X_H_A);
-	ylo=LMRead8(acl_ad, LSM303_REGISTER_ACCEL_OUT_Y_L_A);
-	yhi=LMRead8(acl_ad, LSM303_REGISTER_ACCEL_OUT_Y_H_A);
-	zlo=LMRead8(acl_ad, LSM303_REGISTER_ACCEL_OUT_Z_L_A);
-	zhi=LMRead8(acl_ad, LSM303_REGISTER_ACCEL_OUT_Z_H_A);
+	xlo=LMRead8(acl_ad, 0x28);
+	xhi=LMRead8(acl_ad, 0x29);
+	ylo=LMRead8(acl_ad, 0x2A);
+	yhi=LMRead8(acl_ad, 0x2B);
+	zlo=LMRead8(acl_ad, 0x2C);
+	zhi=LMRead8(acl_ad, 0x2D);
 
 	if (acl_id == ACL_ADAFRUIT) { 
 		acl_x = (xhi<<8 | xlo) >> 4;

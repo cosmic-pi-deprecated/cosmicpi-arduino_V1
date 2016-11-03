@@ -537,6 +537,10 @@ def main():
         				print "   ABTS, Analogue Board test, 110=ADC Offsets, 120/121=SIPMs, 130=Vbias Threshold"
         				print "   GPTS, GPS self test, 510=NMEA, 520=GPS ID, 550=PPS"
         				print "   DGPS, Debug printing of GPS NMEA strings 0=off 1=on"
+					print "   ACTS, Accelerometer self test, 710=ACL ID, 720=Interrupt test"
+					print "   I2CS, I2C Bus scan 0,1"
+					print "   D303, Dump LSM303 registers n=count"
+					print "   DHTU, Dump HTU21D(F) registers n=count"
 					print ""
 
 					if debug:

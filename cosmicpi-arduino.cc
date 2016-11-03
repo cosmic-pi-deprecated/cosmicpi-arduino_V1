@@ -128,29 +128,25 @@
 
 #define HTU_BUS_1_ADDR 0x40
 
-int i2c_bus = 0;		// Which I2C bus to use 0/1
+int acl_bus = 0;		// Bus number 0/1
 int acl_id = 0;			// Which chip LSM303DLHC or LMS303D
 int acl_ad = 0;			// Accelerometer address on the bus
 int mag_ad = 0;			// Magnatometer address on the bus
 
+int bmp_bus = 0;		// Barrometric pressure
+int bmp_id = 0;			// 1=BMP085 2=LPS25H
+int bmp_ad = 0;			// Address on bus
+uint8_t bmp_ok = 0;
+
 // Instantiate external hardware breakouts
 
-boolean			gps_ok = false;			// Chip OK flag
-boolean			time_ok = false;		// Time read from GPS OK
+boolean	gps_ok = false;		// Chip OK flag
+boolean	time_ok = false;	// Time read from GPS OK
 
 float HtuReadTemperature();
 float HtuReadHumidity();
 void  HtuReset();
 uint8_t htu_ok = 0;
-
-//#define BMPID 18001
-//Adafruit_BMP085_Unified	bmp = Adafruit_BMP085_Unified(BMPID);	// Barometric pressure
-boolean			bmp_ok = false;
-
-// The 10DOF isn't a chip, its just a utility to convert say mago values into headings etc
-
-//Adafruit_10DOF		dof = Adafruit_10DOF();		// The 10 Degrees-Of-Freedom DOF breakout
-boolean			dof_ok = false;			// board driver, scales units to SI
 
 // Control the output data rates by setting defaults, these values can be modified at run time
 // via commands from the serial interface. Some output like position isn't supposed to be changing
@@ -206,6 +202,7 @@ typedef enum {
 	I2CS,	// I2C Bus scan 0,1
 	D303,	// Dump LSM303 registers
 	DHTU,	// Dump the HTU registers
+	BMID,	// Get BMP chip ID
 
 	CMDS };	// Command count
 
@@ -248,6 +245,7 @@ void acts(int arg);
 void i2cs(int arg);
 void d303(int arg);
 void dhtu(int arg);
+void bmid(int arg);
 
 // Command table
 
@@ -273,7 +271,8 @@ CmdStruct cmd_table[CMDS] = {
 	{ ACTS, acts, "ACTS", "Accelerometer self test, 710=ACL ID, 720=Interrupt test", 1 },
 	{ I2CS, i2cs, "I2CS", "I2C Bus scan 0,1", 1 },
 	{ D303, d303, "D303", "Dump LSM303 registers", 1 },
-	{ DHTU, dhtu, "DHTU", "Dump HTU21D(F) registers", 1 }
+	{ DHTU, dhtu, "DHTU", "Dump HTU21D(F) registers", 1 },
+	{ BMID, bmid, "BMID", "Get BMP chip type", 1 }
 };
 
 #define CMDLEN 32
@@ -298,11 +297,11 @@ static char adch0[ADCHL],adch1[ADCHL];	// ADC channel values strings
 
 // I2C Bus IO routines for Bus 0 or 1
 
-void LMWrite8(uint8_t address, uint8_t reg, uint8_t value) {
+void LMWrite8(uint8_t address, uint8_t reg, uint8_t value, uint8_t bus) {
 	
 	if (!address) return;
 
-	if (i2c_bus) {
+	if (bus) {
 		Wire1.beginTransmission(address);
         	Wire1.write((uint8_t)reg);
 		Wire1.write((uint8_t)value);
@@ -315,12 +314,12 @@ void LMWrite8(uint8_t address, uint8_t reg, uint8_t value) {
 	}
 }
 
-uint8_t LMRead8(uint8_t address, uint8_t reg) {
+uint8_t LMRead8(uint8_t address, uint8_t reg, uint8_t bus) {
 	uint8_t value;
 
 	if (!address) return 0xFF;
 
-	if (i2c_bus) {
+	if (bus) {
 		Wire1.beginTransmission(address);
 		Wire1.write((uint8_t) reg);
 		Wire1.endTransmission();
@@ -561,8 +560,9 @@ void GetAclId() {
 
 	if (acl_id) return;
 
-	i2c_bus = 1;
-	id = LMRead8(ACL_BUS_1_ADDR,ACL_ID_REG);	
+	Wire1.begin();
+	acl_bus = 1;
+	id = LMRead8(ACL_BUS_1_ADDR,ACL_ID_REG,1);	
 	if (id == ACL_ID) { 
 		acl_id = ACL_ON_MB;
 		acl_ad = ACL_BUS_1_ADDR;
@@ -570,9 +570,10 @@ void GetAclId() {
 		return;
 	}
 
-	i2c_bus = 0;
-	LMWrite8(ACL_BUS_0_ADDR, ACL_CTRL_REG1_A, 0x57);
-        id = LMRead8(ACL_BUS_0_ADDR, ACL_CTRL_REG1_A);
+	Wire.begin();
+	acl_bus = 0;
+	LMWrite8(ACL_BUS_0_ADDR, ACL_CTRL_REG1_A, 0x57, 0);
+        id = LMRead8(ACL_BUS_0_ADDR, ACL_CTRL_REG1_A, 0);
         if (id == 0x57) {
 		acl_id = ACL_ADAFRUIT;
 		acl_ad = ACL_BUS_0_ADDR;
@@ -580,7 +581,7 @@ void GetAclId() {
 		return;
 	}
 
-	i2c_bus = 0;
+	acl_bus = 0;
 	acl_id = 0;
 	acl_ad = 0;
 	mag_ad = 0;
@@ -614,25 +615,25 @@ void AclMbSetup() {
 #define A50Hz (0x5 << 4)
 
 	val = AXYXEN | A50Hz;		// x,y,z enable and 50 Hz
-	LMWrite8(acl_ad, 0x20, val);	// CTRL1
+	LMWrite8(acl_ad, 0x20, val, 1);	// CTRL1
 
 #define GRANGE 2.0
 #define AFS2G (0x00 << 3)
 
 	val = AFS2G;			// +/- 2g Full scale
-	LMWrite8(acl_ad,0x21,val);	// CTRL2
+	LMWrite8(acl_ad,0x21,val, 1);	// CTRL2
 
 #define INT1_DRDY_A 0x4
 #define INT1_IG1 0x20
 
 	val = INT1_IG1;			// Inertial interrupts on INT1 enabled
-	LMWrite8(acl_ad, 0x22, val);	// CTRL3
+	LMWrite8(acl_ad, 0x22, val, 1);	// CTRL3
 
 #define LIR1 0x1
 #define TEMPEN 0x80
 
 	val = LIR1 | TEMPEN;		// Latch interrupt INT1 and Temperature enable
-	LMWrite8(acl_ad, 0x24, val);	// CTRL5
+	LMWrite8(acl_ad, 0x24, val, 1);	// CTRL5
 
 #define AI6D 0x80
 #define ZHIE 0x20
@@ -640,15 +641,15 @@ void AclMbSetup() {
 #define XHIE 0x02
 
 	val = AI6D | XHIE | YHIE | ZHIE;	// Interrupt on high x,y,z
-	LMWrite8(acl_ad, 0x30, val);	// IG_CFG1
+	LMWrite8(acl_ad, 0x30, val, 1);		// IG_CFG1
 
 	val = accelr_event_threshold & 0x7F;
-	LMWrite8(acl_ad, 0x32, val);	// Ineterial threshold
+	LMWrite8(acl_ad, 0x32, val, 1);		// Ineterial threshold
 
 	val = 1;			// Interrupt duration
-	LMWrite8(acl_ad, 0x33, val);	// IG1_DUR1
+	LMWrite8(acl_ad, 0x33, val, 1);	// IG1_DUR1
 	 
-	val = LMRead8(acl_ad, 0x31);	// IG_SRC1 read and clear interrupts
+	val = LMRead8(acl_ad, 0x31, 1);	// IG_SRC1 read and clear interrupts
 
 	attachInterrupt(digitalPinToInterrupt(30),Acl_ISR,RISING);
 }
@@ -665,13 +666,13 @@ void AclAdaSetup() {
 #define AEN 0x07	// XYZ Enabled
 
 	val = PMD | DRT | AEN;
-	LMWrite8(acl_ad, 0x20, val);
+	LMWrite8(acl_ad, 0x20, val, 0);
 
 #define HPE1 0x04	// High pass filter Int 1 on
 #define HPCF 0x03       // High pass cut off frequency
 
 	val = HPE1 | HPCF;
-	LMWrite8(acl_ad, 0x21, val);
+	LMWrite8(acl_ad, 0x21, val, 0);
 
 #define LIR1 0x06	// Latch Int1 bit Data ready
 #define LIR2 0x00	// Latch Int2 bit Data ready (0x20 Latch On)
@@ -679,21 +680,21 @@ void AclAdaSetup() {
 #define IHL_OD 0xC0	// Interrupt active low, open drain (Argh !!!)
 
 	val = LIR1 | LIR2 | IHL_OD;
-	LMWrite8(acl_ad, 0x22, val);
+	LMWrite8(acl_ad, 0x22, val, 0);
 
 #define BDU_FS 0x80	// Block data and scale +-2g
 
 	val = BDU_FS;
-	LMWrite8(acl_ad, 0x23, val);
+	LMWrite8(acl_ad, 0x23, val, 0);
 
 #define XYZ_HI 0x2A	// Hi values ZHIE YHIE XHIE
 #define AOI_6D 0x00	// 0xC0 would enable 6 directions
 	
 	val = XYZ_HI | AOI_6D;
-	LMWrite8(acl_ad, 0x30, val);
+	LMWrite8(acl_ad, 0x30, val, 0);
 
 	val = accelr_event_threshold & 0x7F;
-	LMWrite8(acl_ad, 0x32, val);
+	LMWrite8(acl_ad, 0x32, val, 0);
 
 	// The chip make very wide pulses (100ms), the values on the rising and
 	// falling edges are different !
@@ -724,7 +725,7 @@ static uint8_t acl_src = 0;
 uint8_t AclReadStatus() {
 	uint8_t rval;
 
-	acl_src = LMRead8(acl_ad, 0x31);	// IG_SRC1 read and clear interrupts
+	acl_src = LMRead8(acl_ad, 0x31, acl_bus);	// IG_SRC1 read and clear interrupts
 
 #define IA 0x40
 
@@ -752,12 +753,12 @@ float acl_fx=0.0, acl_fy=0.0, acl_fz=0.0;
 void AclReadData() {
 	uint8_t xlo,xhi,ylo,yhi,zlo,zhi;
 
-	xlo=LMRead8(acl_ad, 0x28);
-	xhi=LMRead8(acl_ad, 0x29);
-	ylo=LMRead8(acl_ad, 0x2A);
-	yhi=LMRead8(acl_ad, 0x2B);
-	zlo=LMRead8(acl_ad, 0x2C);
-	zhi=LMRead8(acl_ad, 0x2D);
+	xlo=LMRead8(acl_ad, 0x28, acl_bus);
+	xhi=LMRead8(acl_ad, 0x29, acl_bus);
+	ylo=LMRead8(acl_ad, 0x2A, acl_bus);
+	yhi=LMRead8(acl_ad, 0x2B, acl_bus);
+	zlo=LMRead8(acl_ad, 0x2C, acl_bus);
+	zhi=LMRead8(acl_ad, 0x2D, acl_bus);
 
 	if (acl_id == ACL_ADAFRUIT) { 
 		acl_x = (xhi<<8 | xlo) >> 4;
@@ -787,21 +788,21 @@ void MagReadData() {
 	uint8_t xlo,xhi,ylo,yhi,zlo,zhi;
 	
 	if (acl_id == ACL_ADAFRUIT) {
-		xlo=LMRead8(mag_ad,0x3);
-		xhi=LMRead8(mag_ad,0x4);
-		ylo=LMRead8(mag_ad,0x5);
-		yhi=LMRead8(mag_ad,0x6);
-		zlo=LMRead8(mag_ad,0x7);
-		zhi=LMRead8(mag_ad,0x8);
+		xlo=LMRead8(mag_ad,0x3,0);
+		xhi=LMRead8(mag_ad,0x4,0);
+		ylo=LMRead8(mag_ad,0x5,0);
+		yhi=LMRead8(mag_ad,0x6,0);
+		zlo=LMRead8(mag_ad,0x7,0);
+		zhi=LMRead8(mag_ad,0x8,0);
 	}
 		
 	if (acl_id == ACL_ON_MB) {
-		xlo=LMRead8(acl_ad,0x8);
-		xhi=LMRead8(acl_ad,0x9);
-		ylo=LMRead8(acl_ad,0xA);
-		yhi=LMRead8(acl_ad,0xB);
-		zlo=LMRead8(acl_ad,0xC);
-		zhi=LMRead8(acl_ad,0xD);
+		xlo=LMRead8(acl_ad,0x8,1);
+		xhi=LMRead8(acl_ad,0x9,1);
+		ylo=LMRead8(acl_ad,0xA,1);
+		yhi=LMRead8(acl_ad,0xB,1);
+		zlo=LMRead8(acl_ad,0xC,1);
+		zhi=LMRead8(acl_ad,0xD,1);
 	}
 
 	mag_x = (xhi<<8 | xlo);
@@ -876,7 +877,7 @@ void GetGpsId() {
 
 	// The adafruit only send its id once at powerup
 
-	if ((gps_ok) && (ppcnt > 10) && (!gps_id))
+	if ((gps_ok) && (ppcnt > 20) && (!gps_id))
 		gps_id = ADAFRUIT_GPS;		
 }
 
@@ -1129,7 +1130,6 @@ void setup() {
 	Serial1.begin(GPS_BAUD_RATE);	// and the second
 
 	GpsSetup();
-	GetAclId();
 
 	InitQueue();			// Reset queue pointers, missed count, and size
 
@@ -1144,9 +1144,7 @@ void setup() {
 	// Initialize breakouts
 
 	HtuReset();
-	//bmp_ok = bmp.begin();
-	//dof_ok = dof.begin();
-
+	GetBmpId();
 	AclSetup();
 	AdcSetup();
 	
@@ -1470,7 +1468,7 @@ void aclt(int arg) {
 	accelr_event_threshold = arg & 0x7F; 
 	val = accelr_event_threshold;
 	sprintf(cmd_mesg,"ACL sensitivity threshold:%d",accelr_event_threshold);
-	LMWrite8(acl_ad, 0x32, val);
+	LMWrite8(acl_ad, 0x32, val, acl_bus);
 }
 
 // The minimum gps read increment is 3 because
@@ -1505,8 +1503,7 @@ void rbrk(int arg) {
 
 	if (arg == 0) {
 		htu_ok = 0;
-		bmp_ok = false;
-		dof_ok = false;	
+		bmp_ok = 0;
 		acl_id = 0;
 		digitalWrite(POW_ONE,LOW);	// Power off to breakouts
 		digitalWrite(POW_TWO,LOW);
@@ -1517,11 +1514,10 @@ void rbrk(int arg) {
 		digitalWrite(POW_TWO,HIGH);	
 		delay(100);
 		HtuReset();
-		//bmp_ok = bmp.begin();
-		//dof_ok = dof.begin();
+		GetBmpId();
 		GetAclId();
-		sprintf(cmd_mesg,"BRK power ON, htu_ok:%d bmp_ok:%d acl_ok:%d mag_ok:%d dof_ok:%d",
-			htu_ok,bmp_ok,acl_id,acl_id,dof_ok);
+		sprintf(cmd_mesg,"BRK power ON, htu_ok:%d bmp_ok:%d acl_ok:%d mag_ok:%d",
+			htu_ok,bmp_ok,acl_id,acl_id);
 	}
 }
 
@@ -2022,11 +2018,11 @@ void acts(int arg) {
 
 	if (arg == TEST_ACL_ID) {
 		if (acl_id == ACL_ADAFRUIT) {
-			sprintf(cmd_mesg,"ACL: Tst:%d PASS Bus:%d Adr:0x%02X Adafruite breakout",arg,i2c_bus,ACL_BUS_0_ADDR);
+			sprintf(cmd_mesg,"ACL: Tst:%d PASS Bus:%d Adr:0x%02X Adafruite breakout",arg,acl_bus,ACL_BUS_0_ADDR);
 			return;
 		}
 		if (acl_id == ACL_ON_MB) {
-			sprintf(cmd_mesg,"ACL: Tst:%d PASS Bus:%d Adr:0x%02X LMS303 on MB",arg,i2c_bus,ACL_BUS_1_ADDR);
+			sprintf(cmd_mesg,"ACL: Tst:%d PASS Bus:%d Adr:0x%02X LMS303 on MB",arg,acl_bus,ACL_BUS_1_ADDR);
 			return;
 		}
 		sprintf(cmd_mesg,"ACL: Tst:%d FAIL No Accelerometer found",arg);
@@ -2082,22 +2078,23 @@ void d303(int arg) {
                 sprintf(txt,"\nAclRegs: ");
                 PushTxt(txt);
                 for (reg=0x00; reg<=0x3F; reg++) {
-			val = LMRead8(acl_ad, reg);
+			val = LMRead8(acl_ad, reg, acl_bus);
                         sprintf(txt,"%02X:%02X ",reg,val);
                         PushTxt(txt);
                 }
 
-                sprintf(txt,"\nMagRegs: ");
-                PushTxt(txt);
-                for (reg=0x00; reg<=0x32; reg++) {
+		if (acl_id == ACL_ADAFRUIT) {
+	                sprintf(txt,"\nMagRegs: ");
+        	        PushTxt(txt);
+                	for (reg=0x00; reg<=0x32; reg++) {
 
-                        if ((reg==0x3E) || (reg==0x3F)) continue;
-                        if ((reg>=0x0D) && (reg<=0x30)) continue;
-			val = LMRead8(mag_ad, reg);
-                        sprintf(txt,"%02X:%02X ",reg,val);
-			PushTxt(txt);
-                }
-		
+	                        if ((reg==0x3E) || (reg==0x3F)) continue;
+        	                if ((reg>=0x0D) && (reg<=0x30)) continue;
+				val = LMRead8(mag_ad, reg, acl_bus);
+                        	sprintf(txt,"%02X:%02X ",reg,val);
+				PushTxt(txt);
+        	        }
+		}
 		sprintf(txt,"\nLoop:%02d\n",i+1);
 		PushTxt(txt);
 	}
@@ -2242,4 +2239,66 @@ void dhtu(int arg) {
 		sprintf(txt,"\nLoop:%02d\n",i+1);
 		PushTxt(txt);
 	}
+}
+
+// =============================================
+// Barometric pressure chips
+
+#define BMP_BUS_1_ADDR 0x5D	// LPS25H chip on bus 1
+#define BMP_BUS_0_ADDR 0x77	// BMP085 chip on bus 0
+#define LPS25H_WHO_AM_I 0x0F
+#define LPS25H_ID 0xBD
+#define BMP_ON_MB 2
+#define BMP_ADAFRUIT 1
+#define BMP085_WHO_AM_I 0xD0
+#define BMP805_ID 0x55
+
+#define NO_BMP 900
+
+void GetBmpId() {
+	uint8_t id;
+
+	if (bmp_id) return;
+
+	Wire1.begin();
+	bmp_bus = 1;
+	id = LMRead8(BMP_BUS_1_ADDR,LPS25H_WHO_AM_I,1);	
+	if (id == LPS25H_ID) { 
+		bmp_id = BMP_ON_MB;
+		bmp_ad = BMP_BUS_1_ADDR;
+		bmp_ok = bmp_id;
+		return;
+	}
+
+	Wire.begin();
+	bmp_bus = 0;
+        id = LMRead8(BMP_BUS_0_ADDR, BMP085_WHO_AM_I, 0);
+        if (id == BMP805_ID) {
+		bmp_id = BMP_ADAFRUIT;
+		bmp_ad = BMP_BUS_0_ADDR;
+		bmp_ok = bmp_id;
+		return;
+	}
+
+	bmp_bus = 0;
+	bmp_id = 0;
+	bmp_ad = 0;
+}
+
+void bmid(int arg) {
+
+	GetBmpId();
+	if (bmp_id == BMP_ON_MB) {
+		sprintf(cmd_mesg,"BMP: PASS: Found LPS25H on MB bus 1");
+		return;
+	}
+
+	if (bmp_id == BMP_ADAFRUIT) {
+		sprintf(cmd_mesg,"BMP: PASS: Found BMP085 on Adafruit breakout bus 0");
+		return;
+	}
+
+	sprintf(cmd_mesg,"BMP: FAIL: No chip answered");
+	cmd_result = NO_BMP;
+	return;
 }

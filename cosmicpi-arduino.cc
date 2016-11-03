@@ -69,9 +69,9 @@
 #include <time.h>
 #include <Wire.h>
 
-#include "Adafruit_BMP085_U.h"	// Barrometric pressure
+//#include "Adafruit_BMP085_U.h"	// Barrometric pressure
 
-#include "Adafruit_10DOF.h"	// 10DOF breakout driver - scale to SI units
+//#include "Adafruit_10DOF.h"	// 10DOF breakout driver - scale to SI units
 
 // Configuration constants
 
@@ -143,13 +143,13 @@ float HtuReadHumidity();
 void  HtuReset();
 uint8_t htu_ok = 0;
 
-#define BMPID 18001
-Adafruit_BMP085_Unified	bmp = Adafruit_BMP085_Unified(BMPID);	// Barometric pressure
+//#define BMPID 18001
+//Adafruit_BMP085_Unified	bmp = Adafruit_BMP085_Unified(BMPID);	// Barometric pressure
 boolean			bmp_ok = false;
 
 // The 10DOF isn't a chip, its just a utility to convert say mago values into headings etc
 
-Adafruit_10DOF		dof = Adafruit_10DOF();		// The 10 Degrees-Of-Freedom DOF breakout
+//Adafruit_10DOF		dof = Adafruit_10DOF();		// The 10 Degrees-Of-Freedom DOF breakout
 boolean			dof_ok = false;			// board driver, scales units to SI
 
 // Control the output data rates by setting defaults, these values can be modified at run time
@@ -1144,8 +1144,8 @@ void setup() {
 	// Initialize breakouts
 
 	HtuReset();
-	bmp_ok = bmp.begin();
-	dof_ok = dof.begin();
+	//bmp_ok = bmp.begin();
+	//dof_ok = dof.begin();
 
 	AclSetup();
 	AdcSetup();
@@ -1231,6 +1231,7 @@ void PushBmp(int flg) {	// If flg is true always push
 	double altib = 0.0;
 	float  tempb = 0.0;
 	float  presr = 0.0;
+#if 0
 	sensors_event_t bmp_event;	// Barrometric pressure event		
 
 	if ((flg) || ((bmp_ok) && ((ppcnt % alttmp_display_rate) == 0))) {
@@ -1244,6 +1245,7 @@ void PushBmp(int flg) {	// If flg is true always push
 			PushTxt(txt);
 		}
 	}
+#endif
 }
 
 // When the detector is shaken this outputs the (vcn) vibration count the (vax) axis bits
@@ -1468,7 +1470,7 @@ void aclt(int arg) {
 	accelr_event_threshold = arg & 0x7F; 
 	val = accelr_event_threshold;
 	sprintf(cmd_mesg,"ACL sensitivity threshold:%d",accelr_event_threshold);
-	LMWrite8(acl_ad, LSM303_REGISTER_ACCEL_INT1_THS_A, val);
+	LMWrite8(acl_ad, 0x32, val);
 }
 
 // The minimum gps read increment is 3 because
@@ -1515,8 +1517,8 @@ void rbrk(int arg) {
 		digitalWrite(POW_TWO,HIGH);	
 		delay(100);
 		HtuReset();
-		bmp_ok = bmp.begin();
-		dof_ok = dof.begin();
+		//bmp_ok = bmp.begin();
+		//dof_ok = dof.begin();
 		GetAclId();
 		sprintf(cmd_mesg,"BRK power ON, htu_ok:%d bmp_ok:%d acl_ok:%d mag_ok:%d dof_ok:%d",
 			htu_ok,bmp_ok,acl_id,acl_id,dof_ok);

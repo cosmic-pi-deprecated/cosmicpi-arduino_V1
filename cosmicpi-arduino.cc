@@ -71,10 +71,6 @@
 
 #include "Adafruit_BMP085_U.h"	// Barrometric pressure
 
-#include "Adafruit_HTU21DF.h"	// Humidity and temperature sensor
-
-#include "Adafruit_L3GD20_U.h"	// Magoscope
-
 #include "Adafruit_10DOF.h"	// 10DOF breakout driver - scale to SI units
 
 // Configuration constants
@@ -128,6 +124,10 @@
 #define ACL_ON_MB 2		// Used to say LMS303D found on MB
 #define ACL_CTRL_REG1_A 0x20	// Used to test for LSM303DLHC presence
 
+// Hydrometer chip is always on bus 1 at the same address even for the adafruit breakout
+
+#define HTU_BUS_1_ADDR 0x40
+
 int i2c_bus = 0;		// Which I2C bus to use 0/1
 int acl_id = 0;			// Which chip LSM303DLHC or LMS303D
 int acl_ad = 0;			// Accelerometer address on the bus
@@ -138,8 +138,10 @@ int mag_ad = 0;			// Magnatometer address on the bus
 boolean			gps_ok = false;			// Chip OK flag
 boolean			time_ok = false;		// Time read from GPS OK
 
-Adafruit_HTU21DF	htu = Adafruit_HTU21DF();	// Humidity and temperature measurment
-boolean			htu_ok = false;			// Chip OK
+float HtuReadTemperature();
+float HtuReadHumidity();
+void  HtuReset();
+uint8_t htu_ok = 0;
 
 #define BMPID 18001
 Adafruit_BMP085_Unified	bmp = Adafruit_BMP085_Unified(BMPID);	// Barometric pressure
@@ -203,6 +205,7 @@ typedef enum {
 
 	I2CS,	// I2C Bus scan 0,1
 	D303,	// Dump LSM303 registers
+	DHTU,	// Dump the HTU registers
 
 	CMDS };	// Command count
 
@@ -244,6 +247,7 @@ void dgps(int arg);
 void acts(int arg);
 void i2cs(int arg);
 void d303(int arg);
+void dhtu(int arg);
 
 // Command table
 
@@ -268,7 +272,8 @@ CmdStruct cmd_table[CMDS] = {
 	{ DGPS, dgps, "DGPS", "Debug printing of GPS NMEA strings 0=off 1=on", 1 },
 	{ ACTS, acts, "ACTS", "Accelerometer self test, 710=ACL ID, 720=Interrupt test", 1 },
 	{ I2CS, i2cs, "I2CS", "I2C Bus scan 0,1", 1 },
-	{ D303, d303, "D303", "Dump LSM303 registers", 1 }
+	{ D303, d303, "D303", "Dump LSM303 registers", 1 },
+	{ DHTU, dhtu, "DHTU", "Dump HTU21D(F) registers", 1 }
 };
 
 #define CMDLEN 32
@@ -1138,7 +1143,7 @@ void setup() {
 
 	// Initialize breakouts
 
-	htu_ok = htu.begin();
+	HtuReset();
 	bmp_ok = bmp.begin();
 	dof_ok = dof.begin();
 
@@ -1212,8 +1217,8 @@ void PushHtu(int flg) {	// If flg is true always push
 	double humid = 0.0;
 
 	if ((flg) || ((htu_ok) && ((ppcnt % humtmp_display_rate) == 0))) {
-		temph = htu.readTemperature();
-		humid = htu.readHumidity();
+		temph = HtuReadTemperature();
+		humid = HtuReadHumidity();
 		sprintf(txt,"{'HTU':{'Tmh':%5.3f,'Hum':%4.1f}}\n",temph,humid);
 		PushTxt(txt);
 	}
@@ -1497,7 +1502,7 @@ void nadc(int arg) {
 void rbrk(int arg) {
 
 	if (arg == 0) {
-		htu_ok = false;
+		htu_ok = 0;
 		bmp_ok = false;
 		dof_ok = false;	
 		acl_id = 0;
@@ -1509,7 +1514,7 @@ void rbrk(int arg) {
 		digitalWrite(POW_ONE,HIGH);	// Power on
 		digitalWrite(POW_TWO,HIGH);	
 		delay(100);
-		htu_ok = htu.begin();
+		HtuReset();
 		bmp_ok = bmp.begin();
 		dof_ok = dof.begin();
 		GetAclId();
@@ -1778,8 +1783,8 @@ void abts(int arg) {
 			return;
 		}
 
-		temph = htu.readTemperature();
-		humid = htu.readHumidity();
+		temph = HtuReadTemperature();
+		humid = HtuReadHumidity();
 		sprintf(cmd_mesg,"HTU: Err:%d :Temp:%5.3f Hum:%4.1f",cmd_result,temph,humid);
 		return;
 	}
@@ -2091,6 +2096,147 @@ void d303(int arg) {
 			PushTxt(txt);
                 }
 		
+		sprintf(txt,"\nLoop:%02d\n",i+1);
+		PushTxt(txt);
+	}
+}
+
+// =============================================
+// Dump HTU registers
+
+#define HTUREGS 7
+typedef enum {			TTmpH,   THumH,   TTmpNH,   THumNH,   WUsr,   RUsr,   SRes   };
+uint8_t hturegs[HTUREGS] = {	0xE3,    0xE5,    0xF3,     0xF5,     0xE6,   0xE7,   0xFE   };
+
+#define HTU_TIMEOUT 50
+
+static uint8_t htu_rd=0;
+void HtuReset() {
+	Wire1.begin();
+
+	Wire1.beginTransmission(HTU_BUS_1_ADDR);
+	Wire1.write(hturegs[SRes]);
+	Wire1.endTransmission();
+	delay(15);
+
+	Wire1.beginTransmission(HTU_BUS_1_ADDR);
+	Wire1.write(hturegs[RUsr]);
+	Wire1.endTransmission();
+	Wire1.requestFrom(HTU_BUS_1_ADDR, 1);
+	htu_rd = Wire1.read();
+	htu_ok = htu_rd;
+}
+
+static uint8_t htu_th=0, htu_tl=0, htu_tc=0, htu_tmo=0; 
+void HtuTemp() {
+
+	htu_tmo = 0;
+	Wire1.beginTransmission(HTU_BUS_1_ADDR);
+	Wire1.write(hturegs[TTmpH]);
+	Wire1.endTransmission();
+	delay(50);
+
+	Wire1.requestFrom(HTU_BUS_1_ADDR, 3);
+	while (!Wire1.available()) {
+		if (htu_tmo++ > HTU_TIMEOUT) 
+			break;
+		else 
+			delay(1);
+	}
+	htu_th = Wire1.read();
+	htu_tl = Wire1.read();
+	htu_tc = Wire1.read();
+}
+
+static uint8_t htu_hh=0, htu_hl=0, htu_hc=0, htu_hmo;
+void HtuHumid() {
+
+	htu_hmo = 0;
+	Wire1.beginTransmission(HTU_BUS_1_ADDR);
+	Wire1.write(hturegs[THumH]);
+	Wire1.endTransmission();
+	delay(50);
+
+	Wire1.requestFrom(HTU_BUS_1_ADDR, 3);
+	while (!Wire1.available()) {
+		if (htu_hmo++ > HTU_TIMEOUT) 
+			break;
+		else 
+			delay(1);
+	}
+
+	htu_hh = Wire1.read();
+	htu_hl = Wire1.read();
+	htu_hc = Wire1.read();
+}
+
+float HtuConvTemp() {
+	float temp;
+	short Stemp;
+
+	Stemp = (htu_th << 8) | htu_tl;
+
+	// See data sheet for this formula
+
+	temp = -46.85 + (175.72 * Stemp / ((float) (unsigned int) 0x10000)); 
+	return temp;
+}
+
+float HtuConvHumid() {
+	float rh;
+	short Srh;
+
+	Srh = (htu_hh << 8) | htu_hl;
+
+	// See data sheet for this formula
+
+	rh = -6.0 + (125.0 * Srh / ((float) (unsigned int) 0x10000));
+	return rh;
+}
+
+float HtuReadTemperature() {
+	if (!htu_rd) HtuReset();
+	HtuTemp();
+	return HtuConvTemp();
+}
+
+float HtuReadHumidity() {
+	if (!htu_rd) HtuReset();
+	HtuHumid();
+	return HtuConvHumid();
+}
+
+#define NO_HTU 800
+
+void dhtu(int arg) {
+	int i, j;
+	uint8_t val, reg;
+	char *cp;
+
+	if ((arg<1) || (arg>10))
+		arg = 1;
+
+	if (!htu_rd) HtuReset();
+	if ((htu_rd==0) || (htu_rd==0xFF)) {
+		htu_rd = 0; 
+		htu_ok = 0; 
+		sprintf(cmd_mesg,"HTU: FAIL no chip found");
+		cmd_result = NO_HTU;
+	}
+
+	for (i=0; i<arg; i++) {
+		sprintf(txt,"\nHtu");
+		PushTxt(txt);
+
+		HtuTemp();
+		HtuHumid();
+
+                sprintf(txt,"rd:0x%02X th:0x%02X tl:0x%02X tc:0x%02X hh:0x%02X hl:0x%02X hc:0x%02X t:%3.5fc rh:%3.5f%",
+			htu_rd, htu_th, htu_tl, htu_tc, htu_hh, htu_hl, htu_hc,
+			HtuConvTemp(),HtuConvHumid());
+                PushTxt(txt);
+		sprintf(cmd_mesg,"%s",txt);
+
 		sprintf(txt,"\nLoop:%02d\n",i+1);
 		PushTxt(txt);
 	}

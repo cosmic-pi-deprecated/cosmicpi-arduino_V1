@@ -68,6 +68,7 @@
 
 #include <time.h>
 #include <Wire.h>
+#include "LPS.h"
 
 //#include "Adafruit_BMP085_U.h"	// Barrometric pressure
 
@@ -133,6 +134,9 @@ int acl_id = 0;			// Which chip LSM303DLHC or LMS303D
 int acl_ad = 0;			// Accelerometer address on the bus
 int mag_ad = 0;			// Magnatometer address on the bus
 
+#define BMP_ON_MB 2
+#define BMP_ADAFRUIT 1
+
 int bmp_bus = 0;		// Barrometric pressure
 int bmp_id = 0;			// 1=BMP085 2=LPS25H
 int bmp_ad = 0;			// Address on bus
@@ -147,6 +151,10 @@ float HtuReadTemperature();
 float HtuReadHumidity();
 void  HtuReset();
 uint8_t htu_ok = 0;
+
+// Barrometer and temperature measurment LPS25H on bus 1
+
+LPS ps;
 
 // Control the output data rates by setting defaults, these values can be modified at run time
 // via commands from the serial interface. Some output like position isn't supposed to be changing
@@ -1144,10 +1152,14 @@ void setup() {
 	// Initialize breakouts
 
 	HtuReset();
-	GetBmpId();
 	AclSetup();
 	AdcSetup();
 	
+	GetBmpId();
+	if (bmp_id == BMP_ON_MB) {
+		if (!ps.init()) bmp_ok = 0;
+	}	
+
 	TimersStart();			// Start timers
 }
 
@@ -1226,24 +1238,21 @@ void PushHtu(int flg) {	// If flg is true always push
 
 void PushBmp(int flg) {	// If flg is true always push
 
-	double altib = 0.0;
-	float  tempb = 0.0;
-	float  presr = 0.0;
-#if 0
-	sensors_event_t bmp_event;	// Barrometric pressure event		
+	float altib = 0.0;
+	float tempb = 0.0;
+	float presr = 0.0;
 
 	if ((flg) || ((bmp_ok) && ((ppcnt % alttmp_display_rate) == 0))) {
-		bmp.getEvent(&bmp_event);
-		if (bmp_event.pressure) {
-			presr = bmp_event.pressure;
-			bmp.getTemperature(&tempb);
-			altib = bmp.pressureToAltitude((float) SENSORS_PRESSURE_SEALEVELHPA, 
-							presr,tempb);
+		if (bmp_id == BMP_ON_MB) {
+			presr = ps.readPressureMillibars();
+			altib = ps.pressureToAltitudeMeters(presr);
+			tempb = ps.readTemperatureC();
 			sprintf(txt,"{'BMP':{'Tmb':%5.3f,'Prs':%5.3f,'Alb':%4.1f}}\n",tempb,presr,altib);
 			PushTxt(txt);
 		}
+		if (bmp_id == BMP_ADAFRUIT) {
+		}
 	}
-#endif
 }
 
 // When the detector is shaken this outputs the (vcn) vibration count the (vax) axis bits
@@ -2248,8 +2257,6 @@ void dhtu(int arg) {
 #define BMP_BUS_0_ADDR 0x77	// BMP085 chip on bus 0
 #define LPS25H_WHO_AM_I 0x0F
 #define LPS25H_ID 0xBD
-#define BMP_ON_MB 2
-#define BMP_ADAFRUIT 1
 #define BMP085_WHO_AM_I 0xD0
 #define BMP805_ID 0x55
 

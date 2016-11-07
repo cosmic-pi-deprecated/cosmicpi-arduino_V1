@@ -68,11 +68,7 @@
 
 #include <time.h>
 #include <Wire.h>
-#include "LPS.h"
-
-//#include "Adafruit_BMP085_U.h"	// Barrometric pressure
-
-//#include "Adafruit_10DOF.h"	// 10DOF breakout driver - scale to SI units
+#include "LPS.h"	// Pololu's LPS library modified to use bus 1, https://github.com/pololu/lps-arduino
 
 // Configuration constants
 
@@ -134,6 +130,8 @@ int acl_id = 0;			// Which chip LSM303DLHC or LMS303D
 int acl_ad = 0;			// Accelerometer address on the bus
 int mag_ad = 0;			// Magnatometer address on the bus
 
+// Barometric pressure and temperature
+
 #define BMP_ON_MB 2
 #define BMP_ADAFRUIT 1
 
@@ -142,10 +140,12 @@ int bmp_id = 0;			// 1=BMP085 2=LPS25H
 int bmp_ad = 0;			// Address on bus
 uint8_t bmp_ok = 0;
 
-// Instantiate external hardware breakouts
+// GPS and time
 
 boolean	gps_ok = false;		// Chip OK flag
 boolean	time_ok = false;	// Time read from GPS OK
+
+// Forward refs
 
 float HtuReadTemperature();
 float HtuReadHumidity();
@@ -155,6 +155,14 @@ uint8_t htu_ok = 0;
 // Barrometer and temperature measurment LPS25H on bus 1
 
 LPS ps;
+
+// Barrometer and temperature measurment BMP085 on bus 0
+
+extern void	BmpGetData();
+extern int32_t	tru_temp;
+extern int32_t	tru_pres;
+extern float	tru_alti;
+extern char     bmp_deb[128];
 
 // Control the output data rates by setting defaults, these values can be modified at run time
 // via commands from the serial interface. Some output like position isn't supposed to be changing
@@ -1158,6 +1166,8 @@ void setup() {
 	GetBmpId();
 	if (bmp_id == BMP_ON_MB) {
 		if (!ps.init()) bmp_ok = 0;
+	} else if (bmp_id == BMP_ADAFRUIT) {
+		BmpGetData();
 	}	
 
 	TimersStart();			// Start timers
@@ -1247,11 +1257,15 @@ void PushBmp(int flg) {	// If flg is true always push
 			presr = ps.readPressureMillibars();
 			altib = ps.pressureToAltitudeMeters(presr);
 			tempb = ps.readTemperatureC();
-			sprintf(txt,"{'BMP':{'Tmb':%5.3f,'Prs':%5.3f,'Alb':%4.1f}}\n",tempb,presr,altib);
-			PushTxt(txt);
 		}
 		if (bmp_id == BMP_ADAFRUIT) {
+			BmpGetData();
+			tempb = tru_temp;
+			presr = tru_pres;
+			altib = tru_alti;
 		}
+		sprintf(txt,"{'BMP':{'Tmb':%5.3f,'Prs':%5.3f,'Alb':%4.1f}}\n",tempb,presr,altib);
+		PushTxt(txt);
 	}
 }
 
@@ -2265,7 +2279,10 @@ void dhtu(int arg) {
 void GetBmpId() {
 	uint8_t id;
 
-	if (bmp_id) return;
+	if (bmp_id) {
+		bmp_ok = bmp_id;
+		return;
+	}
 
 	Wire1.begin();
 	bmp_bus = 1;
@@ -2302,6 +2319,8 @@ void bmid(int arg) {
 
 	if (bmp_id == BMP_ADAFRUIT) {
 		sprintf(cmd_mesg,"BMP: PASS: Found BMP085 on Adafruit breakout bus 0");
+		sprintf(txt,"\nBMP:Cal:%s\n",bmp_deb);
+		PushTxt(txt);
 		return;
 	}
 

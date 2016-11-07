@@ -6,7 +6,7 @@
 
 #define BMP085_ADDRESS 0x77 
 
-const uint8_t OSS = 0; 
+const uint8_t OSS = 1;	// Normal 
 
 static int16_t  ac1	= 408;
 static int16_t  ac2	= -72;
@@ -41,6 +41,7 @@ uint32_t	raw_pres;
 int32_t		tru_temp;
 int32_t		tru_pres;
 float		tru_alti;
+char		bmp_deb[128];
 
 void BmpGetData() {
 
@@ -50,6 +51,12 @@ void BmpGetData() {
 	tru_temp = BmpCalcTemp(raw_temp);
 	tru_pres = BmpCalcPres(raw_pres);
 	tru_alti = BmpCalcAlti(tru_pres);
+}
+
+char *BmpDebug() {
+	sprintf(bmp_deb,"ac1:%d ac2:%d ac3:%d ac4:%d ac5:%d ac6:%d b1:%d b2:%d mb:%d mc:%d md:%d, ut:%d up:%d",
+		         ac1,   ac2,   ac3,   ac4,   ac5,   ac6,   b1,   b2,   mb,   mc,   md, raw_temp, raw_pres );
+	return bmp_deb;
 }
 
 static int16_t BmpReadShort(uint8_t address) {
@@ -71,6 +78,9 @@ static int16_t BmpReadShort(uint8_t address) {
 
 static void BmpReadCalibData() {
 
+	static int calib_ok = 0;
+	if (calib_ok) return;
+
 	ac1 = BmpReadShort(0xAA);
 	ac2 = BmpReadShort(0xAC);
 	ac3 = BmpReadShort(0xAE);
@@ -82,14 +92,16 @@ static void BmpReadCalibData() {
 	mb  = BmpReadShort(0xBA);
 	mc  = BmpReadShort(0xBC);
 	md  = BmpReadShort(0xBE);
+	BmpDebug();
+	calib_ok = 1;
 }
 
 static int32_t BmpCalcTemp(uint16_t ut) {
 
 	int32_t x1, x2;
 
-	x1 = (int32_t) ((ut - ac6) * ac5) >> 15;
-	x2 = (int32_t) ((mc << 11) / (x1 + md));
+	x1 = (int32_t) ((ut - (uint32_t) ac6) * (uint32_t) ac5) >> 15;
+	x2 = (int32_t) (((uint32_t) mc << 11) / (x1 + (uint32_t) md));
 	b5 = x1 + x2;
 	return ((b5 + 8) >> 4);
 }
@@ -101,10 +113,10 @@ static int32_t BmpCalcPres(uint32_t up) {
 
 	b6 = b5 - 4000;
 
-	x1 = (b2 * (b6 * b6) >> 12) >> 11;
+	x1 = (b2 * ((b6 * b6) >> 12)) >> 11;
 	x2 = (ac2 * b6)>>11;
 	x3 = x1 + x2;
-	b3 = (((ac1 * 4) + x3) << (OSS + 2)) >> 2;
+	b3 = ((((uint32_t) ac1 * 4) + x3) << (OSS + 2)) >> 2;
 
 	x1 = (ac3 * b6) >> 13;
 	x2 = (b1 * ((b6 * b6) >> 12)) >> 16;

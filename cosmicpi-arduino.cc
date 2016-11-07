@@ -159,6 +159,7 @@ LPS ps;
 // Barrometer and temperature measurment BMP085 on bus 0
 
 extern void	BmpGetData();
+extern char    *BmpDebug();
 extern int32_t	tru_temp;
 extern int32_t	tru_pres;
 extern float	tru_alti;
@@ -2319,8 +2320,11 @@ void bmid(int arg) {
 
 	if (bmp_id == BMP_ADAFRUIT) {
 		sprintf(cmd_mesg,"BMP: PASS: Found BMP085 on Adafruit breakout bus 0");
+
+		BmpDebug();
 		sprintf(txt,"\nBMP:Cal:%s\n",bmp_deb);
 		PushTxt(txt);
+
 		return;
 	}
 

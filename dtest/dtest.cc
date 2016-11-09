@@ -1,4 +1,3 @@
-
 // Design test firmware
 // Julian Lewis lewis.julian@gmail.com
 
@@ -45,7 +44,6 @@ void p_vector(	uint16_t tp,	// trigger pulse flag
 	if (tp) {
 		digitalWrite(PIN_TRIG_1,HIGH);
 		digitalWrite(PIN_TRIG_2,HIGH);
-		delay(1);
 		digitalWrite(PIN_TRIG_1,LOW);
 		digitalWrite(PIN_TRIG_2,LOW);
 		tp = 0;
@@ -82,10 +80,27 @@ static int count = 0;
 void loop() {
 
 	while (digitalRead(PIN_PPS_IN) == 0) {};
-	
-	//delay(10);
-	digitalWrite(PIN_TRIG_1,HIGH);
-	digitalWrite(PIN_TRIG_1,LOW);
 
-	delay(200);
+	count++;
+#if 1
+	if (count & 1) {
+		delay(250);
+		p_out(1,255,1,20);
+	}
+#endif	
+#if 0
+	if (count & 2) {
+		delay(100);
+		p_out(1,255,1,20);
+
+		delay(100);
+		p_out(2,128,1,30);
+
+		delay(100);
+		p_out(1,255,1,20);
+
+		delay(100);
+		p_out(2,128,1,30);
+	}
+#endif	
 }

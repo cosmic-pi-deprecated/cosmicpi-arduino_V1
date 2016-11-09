@@ -219,7 +219,8 @@ typedef enum {
 	CHNS,	// Channels mask 0=none 1,2 or 3=both
 
 	ABTS,	// Analogue board test
-	GPTS,	// GPS Test
+	GPID,	// Get GPS firmware ID
+	GPPS,	// Test for PPS interrupts arriving
 	DGPS,	// Debug GPS NMEA stringsi
 	ACTS,	// Accelerometer test
 
@@ -266,7 +267,8 @@ void nadc(int arg);
 void rbrk(int arg);
 void chns(int arg);
 void abts(int arg);
-void gpts(int arg);
+void gpid(int arg);
+void gpps(int arg);
 void dgps(int arg);
 void acts(int arg);
 void i2cs(int arg);
@@ -295,7 +297,8 @@ CmdStruct cmd_table[CMDS] = {
 	{ RBRK, rbrk, "RBRK", "Reset power on=1/off=0 for breakouts", 1 },
 	{ CHNS, chns, "CHNS", "Channel mask 0=none, 1,2 or 3=both", 1 },
 	{ ABTS, abts, "ABTS", "Analogue Board test, 110=ADC Offsets, 120/121=SIPMs, 130=Vbias Threshold", 1 },
-	{ GPTS, gpts, "GPTS", "GPS self test, 510=NMEA, 520=GPS ID, 550=PPS", 1 },
+	{ GPID, gpid, "GPID", "Get GPS chip firmware ID", 1 },
+	{ GPPS, gpps, "GPPS", "Test GPS is making PPS interrupts", 1 },
 	{ DGPS, dgps, "DGPS", "Debug printing of GPS NMEA strings 0=off 1=on", 1 },
 	{ ACTS, acts, "ACTS", "Accelerometer self test, 710=ACL ID, 720=Interrupt test", 1 },
 	{ I2CS, i2cs, "I2CS", "I2C Bus scan 0,1", 1 },
@@ -905,11 +908,6 @@ void GetGpsId() {
 		gps_id = QUECTEL76_GPS;
 	else if (strstr(gps_string,"PA6H"))
 		gps_id = ADAFRUIT_GPS;
-
-	// The adafruit only send its id once at powerup
-
-	if ((gps_ok) && (ppcnt > 20) && (!gps_id))
-		gps_id = ADAFRUIT_GPS;		
 }
 
 // WARNING: One up the spout !!
@@ -2006,46 +2004,43 @@ float get_peak_freq(int threshold) {	// Threshold to test
 // The global gps_ok is set in the ISR when a PPS arrives, else the PLL takes over
 // The global gps_id is set when the GPS NMEA string is read
 
-#define NOT_IMPLEMENTED 500
 #define NO_GPS_FOUND 503
 #define NO_PPS 504
-
-#define TEST_NMEA 510
-#define TEST_GPSID 520
-#define TEST_PPS 550
 
 void dgps(int arg) {
 	debug_gps = arg; // Controls printing GPS NMEA strings for debugging
 }
 
-void gpts(int arg) {
+void gpid(int arg) {
 	cmd_result = 0;
 
-	if (arg == TEST_GPSID) {
-		if (gps_id == ADAFRUIT_GPS) {
-			sprintf(cmd_mesg,"GPS: Tst:%d PASS Id:%d Adafruit Ultimate GPS found",arg,gps_id);
-			return;
-		}
-		if (gps_id == QUECTEL76_GPS) {
-			sprintf(cmd_mesg,"GPS: Tst:%d PASS Id:%d QUECTL L76 chip GPS found",arg,gps_id);
-			return;
-		}
-		sprintf(cmd_mesg,"GPS: Tst:%d FAIL No GPS found",arg);
+	if (gps_id == ADAFRUIT_GPS) {
+		sprintf(cmd_mesg,"GPS: PASS Id:%d Adafruit Ultimate GPS found",gps_id);
+		return;
+	}
+	if (gps_id == QUECTEL76_GPS) {
+		sprintf(cmd_mesg,"GPS: PASS Id:%d QUECTL L76 chip GPS found",gps_id);
+		return;
+	}
+	if (!gps_ok) {
+		sprintf(cmd_mesg,"GPS: FAIL No GPS found YET");
 		cmd_result = NO_GPS_FOUND;
 		return;
 	}
-	
-	if (arg == TEST_PPS) {
-		if (gps_ok)
-			sprintf(cmd_mesg,"GPS: Tst:%d PASS PPS Arriving",arg);
-		else {
-			sprintf(cmd_mesg,"GPS: Tst:%d FAIL No PPS detected",arg);
-			cmd_result = NO_PPS;
-		} return;
-	}
+	sprintf(cmd_mesg,"GPS: PASS GPS found, but no ID available");
+	cmd_result = NO_GPS_FOUND;
+	return;
+}
 
-	sprintf(cmd_mesg,"Illegal test number:%d",arg);
-	cmd_result = ASSERTION_FAIL;
+void gpps(int arg) {
+	cmd_result = 0;
+
+	if (gps_ok)
+		sprintf(cmd_mesg,"GPS: PASS PPS Arriving");
+	else {
+		sprintf(cmd_mesg,"GPS: FAIL No PPS detected YET");
+		cmd_result = NO_PPS;
+	} 
 	return;
 }
 

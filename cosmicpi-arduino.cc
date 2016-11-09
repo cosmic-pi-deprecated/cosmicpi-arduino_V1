@@ -110,6 +110,13 @@
 #define BLUE_LED_PIN 46
 #define RED_LED_PIN 48
 
+//set up the pins to remap SPI by hand
+
+const int SS_pin = 42; //tbc
+const int SCK_pin = 44;
+const int MISO_pin = 22;
+const int MOSI_pin = 43;
+
 // Accelerometer/Magnatometer definitions for LMS303D and LSM303DLHC chips
 
 #define ACL_BUS_1_ADDR 0x1D	// LMS303D on the main board on i2c bus 1
@@ -221,6 +228,9 @@ typedef enum {
 	DHTU,	// Dump the HTU registers
 	BMID,	// Get BMP chip ID
 
+	WRPU,	// Write a value to the MAX1923 PU
+	RCPU,	// Set recieve logic ON on the MAX1923 PU
+
 	CMDS };	// Command count
 
 typedef struct {
@@ -263,6 +273,8 @@ void i2cs(int arg);
 void d303(int arg);
 void dhtu(int arg);
 void bmid(int arg);
+void wrpu(int arg);
+void rcpu(int arg);
 
 // Command table
 
@@ -289,7 +301,9 @@ CmdStruct cmd_table[CMDS] = {
 	{ I2CS, i2cs, "I2CS", "I2C Bus scan 0,1", 1 },
 	{ D303, d303, "D303", "Dump LSM303 registers", 1 },
 	{ DHTU, dhtu, "DHTU", "Dump HTU21D(F) registers", 1 },
-	{ BMID, bmid, "BMID", "Get BMP chip type", 1 }
+	{ BMID, bmid, "BMID", "Get BMP chip type", 1 },
+	{ WRPU,	wrpu, "WRPU", "Write a value to the MAX1923 PU", 1 },
+	{ RCPU,	rcpu, "RCPU", "Recievie logic MAX1923 PU 0=just read, 1=set ON, 2=setOFF" }
 };
 
 #define CMDLEN 32
@@ -1152,6 +1166,12 @@ void setup() {
 
 	strcpy(rdtm,"");		// Set initial value for date/time
 	strcpy(wdtm,"");
+
+	digitalWrite(SS, HIGH);  // Start with SS high
+	pinMode(SS_pin, OUTPUT);
+	pinMode(SCK_pin, OUTPUT);
+	pinMode(MISO_pin, INPUT); //this is the avalanche pin, not implemented yet
+	pinMode(MOSI_pin, OUTPUT);
 
 	// Power OFF/ON the breakouts
 
@@ -2330,5 +2350,63 @@ void bmid(int arg) {
 
 	sprintf(cmd_mesg,"BMP: FAIL: No chip answered");
 	cmd_result = NO_BMP;
+	return;
+}
+
+// ==============================================
+// Cosmic Pi Power supply open loop controller
+
+int receive_on = 0;
+
+byte bitBang(byte _send)  {
+
+	byte _receive = 0;
+	digitalWrite(SS_pin, LOW);
+	
+	for(int i=0; i<8; i++) {
+		digitalWrite(MOSI_pin, bitRead(_send, 7-i));
+		digitalWrite(SCK_pin, HIGH);               
+		if (receive_on) 
+			bitWrite(_receive, i, digitalRead(MISO_pin));
+
+		digitalWrite(SCK_pin, LOW);
+
+		if (receive_on) 
+			digitalWrite(MOSI_pin, LOW);
+	}
+
+	digitalWrite(SS_pin, HIGH);
+
+	if (receive_on) 
+		return _receive;
+	return 0xFF;
+}
+
+void wrpu(int arg) {
+	uint8_t send, recv;
+
+	send = (0xFF & arg);
+	recv = bitBang(send);
+	
+	if (receive_on) 
+		sprintf(cmd_mesg,"HV: Send:0x:%02X Recv:0x%02X MAX1923 PU",send,recv);	
+	else
+		sprintf(cmd_mesg,"HV: Send:0x:%02X MAX1923 PU",send);
+
+	return;
+}
+
+void rcpu(int arg) {
+
+	if (arg == 1)
+		receive_on = 1;	
+	else if (arg == 2)
+		receive_on = 0;
+	
+	if (receive_on) 
+		sprintf(cmd_mesg,"HV Receiving ON");
+	else
+		sprintf(cmd_mesg,"HV receivinf OFF");
+
 	return;
 }

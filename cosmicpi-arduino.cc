@@ -300,7 +300,7 @@ CmdStruct cmd_table[CMDS] = {
 	{ GPID, gpid, "GPID", "Get GPS chip firmware ID", 1 },
 	{ GPPS, gpps, "GPPS", "Test GPS is making PPS interrupts", 1 },
 	{ DGPS, dgps, "DGPS", "Debug printing of GPS NMEA strings 0=off 1=on", 1 },
-	{ ACTS, acts, "ACTS", "Accelerometer self test, 710=ACL ID, 720=Interrupt test", 1 },
+	{ ACTS, acts, "ACTS", "Accelerometer self test", 1 },
 	{ I2CS, i2cs, "I2CS", "I2C Bus scan 0,1", 1 },
 	{ D303, d303, "D303", "Dump LSM303 registers", 1 },
 	{ DHTU, dhtu, "DHTU", "Dump HTU21D(F) registers", 1 },
@@ -2047,27 +2047,22 @@ void gpps(int arg) {
 // =============================================
 // Test for accelerometer
 
-#define TEST_ACL_ID 720
 #define TEST_ACL_INTERRUPT 730
 #define NO_ACL_FOUND 700
 
 void acts(int arg) {
 
-	if (!acl_id) GetAclId();
-
-	if (arg == TEST_ACL_ID) {
-		if (acl_id == ACL_ADAFRUIT) {
-			sprintf(cmd_mesg,"ACL: Tst:%d PASS Bus:%d Adr:0x%02X Adafruite breakout",arg,acl_bus,ACL_BUS_0_ADDR);
-			return;
-		}
-		if (acl_id == ACL_ON_MB) {
-			sprintf(cmd_mesg,"ACL: Tst:%d PASS Bus:%d Adr:0x%02X LMS303 on MB",arg,acl_bus,ACL_BUS_1_ADDR);
-			return;
-		}
-		sprintf(cmd_mesg,"ACL: Tst:%d FAIL No Accelerometer found",arg);
-		cmd_result = NO_ACL_FOUND;
+	if (acl_id == ACL_ADAFRUIT) {
+		sprintf(cmd_mesg,"ACL: PASS Bus:%d Adr:0x%02X Adafruite breakout",acl_bus,ACL_BUS_0_ADDR);
 		return;
 	}
+	if (acl_id == ACL_ON_MB) {
+		sprintf(cmd_mesg,"ACL: PASS Bus:%d Adr:0x%02X LMS303 on MB",acl_bus,ACL_BUS_1_ADDR);
+		return;
+	}
+	sprintf(cmd_mesg,"ACL: FAIL No Accelerometer found");
+	cmd_result = NO_ACL_FOUND;
+	return;
 }
 
 // ==========================================

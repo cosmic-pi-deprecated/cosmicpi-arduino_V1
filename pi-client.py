@@ -541,6 +541,10 @@ def main():
 					print "   I2CS, I2C Bus scan 0,1"
 					print "   D303, Dump LSM303 registers n=count"
 					print "   DHTU, Dump HTU21D(F) registers n=count"
+					print "   BMID, Get BMP chip type"
+					print "   WRPU, Write a value to the MAX1923 PU chip"
+					print "   RCPU, Recievie logic MAX1923 PU 0=just read it, 1=set ON, 2=setOFF"
+
 					print ""
 
 					if debug:

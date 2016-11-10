@@ -58,6 +58,9 @@
 // {'EVT':{'Evt':i,'Frq':i,'Tks':i,'Etm':f,'Adc':[[i,i,i,i,i,i,i,i][i,i,i,i,i,i,i,i]]}}
 // Event record containing Evt:event number in second Frq:timer frequency Tks:ticks since last event in second 
 // Etm:event time stamp to 100ns Adc:[[Channel 0 values][Channel 1 values]]
+//
+// {'HLP':{'Idn':i,'Nme':s,'Hlp':s}}
+// Help for command ID number Idn with name nme and help text hlp
 
 // N.B. These records pass the data to a python monitor over the serial line. Python has awsome string handling and looks them up in
 // associative arrays to build records of any arbitary format you want. So this is only the start of the story of record processing.
@@ -110,15 +113,13 @@
 #define BLUE_LED_PIN 46
 #define RED_LED_PIN 48
 
-//set up the pins to remap SPI by hand
-
-const int SS_pin = 42; //tbc
-const int SCK_pin = 44;
+// Set up the pins to remap SPI by hand
+const int SS_pin   = 42; 
+const int SCK_pin  = 44;
 const int MISO_pin = 22;
 const int MOSI_pin = 43;
 
 // Accelerometer/Magnatometer definitions for LMS303D and LSM303DLHC chips
-
 #define ACL_BUS_1_ADDR 0x1D	// LMS303D on the main board on i2c bus 1
 #define ACL_BUS_0_ADDR 0x19	// LSM303DLHC on the Adafruit breakout on i2c bus 0
 #define	MAG_BUS_0_ADDR 0x1E	// LSM303DLHC magnatometer
@@ -129,7 +130,6 @@ const int MOSI_pin = 43;
 #define ACL_CTRL_REG1_A 0x20	// Used to test for LSM303DLHC presence
 
 // Hydrometer chip is always on bus 1 at the same address even for the adafruit breakout
-
 #define HTU_BUS_1_ADDR 0x40
 
 int acl_bus = 0;		// Bus number 0/1
@@ -138,7 +138,6 @@ int acl_ad = 0;			// Accelerometer address on the bus
 int mag_ad = 0;			// Magnatometer address on the bus
 
 // Barometric pressure and temperature
-
 #define BMP_ON_MB 2
 #define BMP_ADAFRUIT 1
 
@@ -148,23 +147,19 @@ int bmp_ad = 0;			// Address on bus
 uint8_t bmp_ok = 0;
 
 // GPS and time
-
 boolean	gps_ok = false;		// Chip OK flag
 boolean	time_ok = false;	// Time read from GPS OK
 
 // Forward refs
-
 float HtuReadTemperature();
 float HtuReadHumidity();
 void  HtuReset();
 uint8_t htu_ok = 0;
 
 // Barrometer and temperature measurment LPS25H on bus 1
-
 LPS ps;
 
 // Barrometer and temperature measurment BMP085 on bus 0
-
 extern void	BmpGetData();
 extern char    *BmpDebug();
 extern int32_t	tru_temp;
@@ -249,7 +244,7 @@ uint32_t cmd_result = 0;	// Last commands completion code
 char     cmd_name[CMD_MAX_LEN];	// Last command name
 char	 cmd_mesg[CMD_MAX_MSG]; // Last command message
 
-// Function forward references 
+// Command functions forward references 
 
 void noop(int arg);
 void help(int arg);
@@ -1456,11 +1451,13 @@ void help(int arg) {	// Display the help
 	CmdStruct *cms;
 	
 	sprintf(cmd_mesg,"");
-	for (i=0; i<CMDS; i++) {
+	for (i=0; i<CMDS-1; i++) {
 		cms = &cmd_table[i];
 		strcat(cmd_mesg,cms->Name);
 		strcat(cmd_mesg," ");
-		sprintf(txt,"%s(%d) - %s\n",cms->Name,cms->Par,cms->Help);
+
+		// {'HLP':{'Idn':i,'Nme':s,'Hlp':s}}
+		sprintf(txt,"{'HLP':{'Idn':%d,'Nme':'%s','Hlp':'%s'}}\n",cms->Id,cms->Name,cms->Help);
 		PushTxt(txt);
 	}
 }

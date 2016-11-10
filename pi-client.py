@@ -89,6 +89,7 @@ class Event(object):
 		self.STS = { "Qsz":"0"  ,"Mis":"0"  ,"Ter":"0","Tmx":"0","Htu":"0","Bmp":"0","Acl":"0","Mag":"0","Gps":"0","Adn":"0","Gri":"0","Eqt":"0","Chm":"0" }
 		self.EVT = { "Evt":"0"  ,"Frq":"0"  ,"Tks":"0","Etm":"0.0","Adc":"[[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0]]" }
 		self.CMD = { "Cmd":"0"  ,"Res":"0"  ,"Msg":"0" }
+		self.HLP = { "Idn":"0"  ,"Nme":"0"  ,"Hlp":"0" }
 
 		# Add ons
 
@@ -100,12 +101,14 @@ class Event(object):
 
 		self.recd = {	"HTU":self.HTU, "BMP":self.BMP, "VIB":self.VIB, "MAG":self.MAG,
 				"ACL":self.ACL, "LOC":self.LOC, "TIM":self.TIM, "STS":self.STS,
-				"EVT":self.EVT, "DAT":self.DAT, "SQN":self.SQN, "PAT":self.PAT, "CMD":self.CMD }
+				"EVT":self.EVT, "DAT":self.DAT, "SQN":self.SQN, "PAT":self.PAT, 
+				"CMD":self.CMD, "HLP":self.HLP }
 
 		self.newvib = 0	# Vibration
 		self.newevt = 0	# Cosmic ray
 		self.newhtu = 0	# Weather report
 		self.newcmd = 0 # Command completion available
+		self.newhlp = 0 # Help text available
 	
 		self.sqn = 0	# Packet sequenc number
 
@@ -134,6 +137,9 @@ class Event(object):
 
 				if kys[0] == "CMD":
 					self.newcmd = 1
+
+				if kys[0] == "HLP":
+					self.newhlp = 1
 
 		except Exception, e:
 			#print e
@@ -270,9 +276,18 @@ class Event(object):
 	def get_cmd(self):
 		return self.recd["CMD"]
 
+	def get_hlp(self):
+		return self.recd["HLP"]
+
 	def new_cmd(self):
 		if self.newcmd:
 			self.newcmd = 0
+			return 1
+		return 0
+
+	def new_hlp(self):
+		if self.newhlp:
+			self.newhlp = 0
 			return 1
 		return 0
 
@@ -548,8 +563,7 @@ def main():
 
 					print ""
 
-					if debug:
-						ser.write("HELP")
+					ser.write("HELP")
 
 				elif cmd.find("n") != -1:
 					if udpflg:
@@ -602,6 +616,16 @@ def main():
 					acm = evt.get_cmd()
 					print ""
 					print "Cmd:%s->%s %s\n" % (acm["Cmd"],acm["Res"],acm["Msg"])
+
+				if evt.new_hlp():
+					hlp = evt.get_hlp()
+					try:
+						print "Hlp:%2d %s %s                                 " % (hlp["Idn"],hlp["Nme"],hlp["Hlp"])
+
+					except Exception, e:
+						print "\nData error:%s\n" % (e)
+						pass
+
 
 				if vibflg:
 					vbuf = evt.get_vibration()

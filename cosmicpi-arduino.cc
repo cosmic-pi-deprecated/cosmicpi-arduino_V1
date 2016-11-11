@@ -50,6 +50,9 @@
 // {'TIM':{'Upt':i,'Frq':i,'Sec':i}}
 // Time record containing Upt:up time seconds Frq:counter frequency Sec:time string
 //
+// {'DTG':{'Yer':i, 'Mnt':i, 'Day':i}}
+// GPS Date record containing Yer:Year Mnt:Month Day:Day in month
+//
 // {'STS':{'Qsz':i,'Mis':i,'Ter':i,'Tmx':i,'Htu':i,'Bmp':i,'Acl':i,'Mag':i, 'Gps':i, 'Adn':i, 'Gri':i, 'Eqt':i, 'Chm':i}}
 // Status record containing Qsz:events on queue Mis:missed events Ter:buffer error Tmx:max buffer size reached
 // Htu:status Bmp:status Acl:status Mag:status Gps:ststus 
@@ -176,7 +179,8 @@ extern char     bmp_deb[128];
 uint32_t latlon_display_rate = 12;	// Display latitude and longitude each X seconds
 uint32_t humtmp_display_rate = 12;	// Display humidity and HTU temperature each X seconds
 uint32_t alttmp_display_rate = 12;	// Display altitude and BMP temperature each X seconds
-uint32_t frqutc_display_rate = 1;	// Display frequency and UTC time each X seconds
+uint32_t frqutc_display_rate = 1;	// Display frequency UTC time each X seconds
+uint32_t frqdat_display_rate = 10;	// Display frequency DAT date each X seconds 
 uint32_t status_display_rate = 4;	// Display status (UpTime, QueueSize, MissedEvents, HardwareOK)
 uint32_t accelr_display_rate = 1;	// Display accelarometer x,y,z
 uint32_t magnot_display_rate = 12;	// Display magnotometer data x,y,z
@@ -871,6 +875,7 @@ uint8_t AdcPullData(struct Event *b) {
 
 // Increment date time by one second when not using the GPS
 
+int year=0, month=0,  day=0;
 int hour=0, minute=0, second=0;
 float latitude = 0.0, longitude = 0.0, altitude = 0.0;
 
@@ -948,13 +953,37 @@ int GetSubPar(char *cp, int len) {
 
 // Parse the GPS NMEA string
 
-#define PARS 9
+#define LOCPARS 9
+#define DATPARS 6
+
+int date_ok  = 0;
+int send_gga = 0;
+
 boolean ParsGpsString() {
-	char *pars[PARS], *cp, *ep;
+	char *pars[LOCPARS], *cp, *ep;
 	int i;
 
+	if ((cp=strstr(gps_string,"$GPZDA"))) {
+		for (i=0; i<DATPARS; i++) {
+			cp = index(cp,',');
+			if (cp) {
+				*cp = 0;
+				pars[i] = ++cp;
+			} else  pars[i] = NULL;
+		}
+		
+		cp = pars[1];
+		day = strtoul(cp,&ep,10);
+		cp = pars[2];
+		month = strtoul(cp,&ep,10);
+		cp = pars[3];
+		year = strtoul(cp,&ep,10);
+
+		date_ok = 1;
+	}
+
 	if ((cp=strstr(gps_string,"$GPGGA"))) {
-		for (i=0; i<PARS; i++) {
+		for (i=0; i<LOCPARS; i++) {
 			cp = index(cp,','); 
 			if (cp) {
 				*cp = 0;
@@ -985,11 +1014,11 @@ boolean ParsGpsString() {
 		altitude = strtof(cp,&ep);
 
 		if (debug_gps) {
-			for (i=0; i<PARS; i++) {
+			for (i=0; i<LOCPARS; i++) {
 				sprintf(txt,"%d:%s ",i,pars[i]);
 				PushTxt(txt);
 			}
-			sprintf(txt,"\n");
+			sprintf(txt,"-GPGGA\n");
 		}
 		return true;
 	}
@@ -1004,6 +1033,7 @@ boolean GpsDateTime() {
 
 		sprintf(wdtm,"%02d%02d%02d",hour,minute,second);
 		time_ok = true;
+		if ((hour==23) && (minute==59) && (second==59)) date_ok = 0;
 		return true;
 	}
 	return false;
@@ -1118,7 +1148,8 @@ void InitQueue() {
 
 void GpsSetup() {
 
-#define RMCGGA		"$PMTK314,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0*28"	// PMTK_SET_NMEA_OUTPUT_RMCGGA
+#define RMCGGA		"$PMTK314,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0*28"	// RMCGGA
+#define RMCZDA		"$PMTK314,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0*29"	// RMCZDA
 #define VERSION 	"$PMTK605*31"  						// PMTK_Q_RELEASE
 #define NORMAL  	"$PMTK220,1000*1F"					// PMTK_SET_NMEA_UPDATE_1HZ
 #define NOANTENNA	"$PGCMD,33,0*6D" 					// PGCMD_NOAN
@@ -1344,6 +1375,16 @@ void PushTim(int flg) {
 
 	if ((flg) || ((ppcnt % frqutc_display_rate) == 0)) {
 		sprintf(txt,"{'TIM':{'Upt':%4d,'Frq':%7d,'Sec':'%s'}}\n",ppcnt,rega0,rdtm);
+		PushTxt(txt);
+	}			
+}
+
+// Push date from GPS (The DAT field is already used in Python)
+
+void PushDtg(int flg) {
+
+	if ((date_ok) && ((flg) || ((ppcnt % frqdat_display_rate) == 0))) {
+		sprintf(txt,"{'DTG':{'Yer':%4d,'Mnt':%2d,'Day':%1d}}\n",year,month,day);
 		PushTxt(txt);
 	}			
 }
@@ -1637,6 +1678,7 @@ void loop() {
 		PushBmp(0);			// Push BMP temperature and barrometric altitude
 		PushLoc(0);			// Push location latitude and longitude
 		PushTim(0);			// Push timing data
+		PushDtg(0);			// Push the date
 		PushMag(0);			// Push mago data
 		PushAcl(0);			// Push accelarometer data
 		PushSts(0,qsize,missed);	// Push status
@@ -1645,8 +1687,14 @@ void loop() {
 
 		if ((!gps_id) || (debug_gps)) {	// Get firmware version ?
 			Serial1.println("$PMTK605*31");
-			// sprintf(txt,"Sent $PMTK605*31\n");
-			// PushTxt(txt);
+		}
+		if ((date_ok) && (send_gga)) {
+			send_gga = 0;
+			Serial1.println(RMCGGA);
+		}
+		if ((gps_ok) && (gps_id) && (!date_ok)) {
+			send_gga = 1;
+			Serial1.println(RMCZDA);
 		}
 	}
 

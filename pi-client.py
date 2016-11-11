@@ -86,6 +86,7 @@ class Event(object):
 		self.ACL = { "Acx":"0.0","Acy":"0.0","Acz":"0.0" }
 		self.LOC = { "Lat":"0.0","Lon":"0.0","Alt":"0.0" }
 		self.TIM = { "Upt":"0"  ,"Frq":"0"  ,"Sec":"0"   }
+		self.DTG = { "Yer":"0"  ,"Mnt":"0"  ,"Day":"0"   }
 		self.STS = { "Qsz":"0"  ,"Mis":"0"  ,"Ter":"0","Tmx":"0","Htu":"0","Bmp":"0","Acl":"0","Mag":"0","Gps":"0","Adn":"0","Gri":"0","Eqt":"0","Chm":"0" }
 		self.EVT = { "Evt":"0"  ,"Frq":"0"  ,"Tks":"0","Etm":"0.0","Adc":"[[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0]]" }
 		self.CMD = { "Cmd":"0"  ,"Res":"0"  ,"Msg":"0" }
@@ -102,7 +103,7 @@ class Event(object):
 		self.recd = {	"HTU":self.HTU, "BMP":self.BMP, "VIB":self.VIB, "MAG":self.MAG,
 				"ACL":self.ACL, "LOC":self.LOC, "TIM":self.TIM, "STS":self.STS,
 				"EVT":self.EVT, "DAT":self.DAT, "SQN":self.SQN, "PAT":self.PAT, 
-				"CMD":self.CMD, "HLP":self.HLP }
+				"DTG":self.DTG, "CMD":self.CMD, "HLP":self.HLP }
 
 		self.newvib = 0	# Vibration
 		self.newevt = 0	# Cosmic ray
@@ -233,6 +234,9 @@ class Event(object):
 
 	def get_tim(self):
 		return self.recd["TIM"]
+
+	def get_dtg(self):
+		return self.recd["DTG"]
 
 	def get_loc(self):
 		return self.recd["LOC"]
@@ -500,6 +504,7 @@ def main():
  	
 				elif cmd.find("s") != -1:
 					tim = evt.get_tim()
+					dtg = evt.get_dtg()
 					sts = evt.get_sts()
 					loc = evt.get_loc()
 					acl = evt.get_acl()
@@ -510,6 +515,7 @@ def main():
 
 					print "ARDUINO STATUS"
 					print "Status........: Upt:%s Frq:%s Qsz:%s Mis:%s" % (tim["Upt"],tim["Frq"],sts["Qsz"],sts["Mis"])
+					print "GPS date......: Yer:%s Mnt:%s Day%s" % (dtg["Yer"],dtg["Mnt"],dtg["Day"])
 					print "Parameters....: Adn:%s Gri:%s Eqt:%s Chm:%s" % (sts["Adn"],sts["Gri"],sts["Eqt"],sts["Chm"])
 					print "HardwareStatus: Htu:%s Bmp:%s Acl:%s Mag:%s Gps:%s" % (sts["Htu"],sts["Bmp"],sts["Acl"],sts["Mag"],sts["Gps"])
 					print "Location......: Lat:%s Lon:%s Alt:%s" % (loc["Lat"],loc["Lon"],loc["Alt"])

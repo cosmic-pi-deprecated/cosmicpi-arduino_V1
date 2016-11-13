@@ -180,7 +180,7 @@ uint32_t latlon_display_rate = 12;	// Display latitude and longitude each X seco
 uint32_t humtmp_display_rate = 12;	// Display humidity and HTU temperature each X seconds
 uint32_t alttmp_display_rate = 12;	// Display altitude and BMP temperature each X seconds
 uint32_t frqutc_display_rate = 1;	// Display frequency UTC time each X seconds
-uint32_t frqdat_display_rate = 10;	// Display frequency DAT date each X seconds 
+uint32_t frqdtg_display_rate = 10;	// Display frequency DTG GPS date each X seconds 
 uint32_t status_display_rate = 4;	// Display status (UpTime, QueueSize, MissedEvents, HardwareOK)
 uint32_t accelr_display_rate = 1;	// Display accelarometer x,y,z
 uint32_t magnot_display_rate = 12;	// Display magnotometer data x,y,z
@@ -205,6 +205,7 @@ typedef enum {
 	BMPD,	// BMP display rate
 	LOCD,	// Location display rate
 	TIMD,	// Timing display rate
+	DTGD,	// Date display rate
 	STSD,	// Status display rate
 	EVQT,	// Event queue dump threshold
 
@@ -256,6 +257,7 @@ void htud(int arg);
 void bmpd(int arg);
 void locd(int arg);
 void timd(int arg);
+void dtgd(int arg);
 void stsd(int arg);
 void evqt(int arg);
 void acld(int arg);
@@ -286,6 +288,7 @@ CmdStruct cmd_table[CMDS] = {
 	{ BMPD, bmpd, "BMPD", "BMP Temperature-Altitude display rate", 1 },
 	{ LOCD, locd, "LOCD", "Location latitude-longitude display rate", 1 },
 	{ TIMD, timd, "TIMD", "Timing uptime-frequency-utc display rate", 1 },
+	{ DTGD, dtgd, "DTGD", "GPS Date display rate", 1 },
 	{ STSD, stsd, "STSD", "Status info display rate", 1 },
 	{ EVQT, evqt, "EVQT", "Event queue dump threshold", 1 },
 	{ ACLD, acld, "ACLD", "Accelerometer display rate", 1 },
@@ -305,13 +308,12 @@ CmdStruct cmd_table[CMDS] = {
 	{ DHTU, dhtu, "DHTU", "Dump HTU21D(F) registers", 1 },
 	{ BMID, bmid, "BMID", "Get BMP chip type", 1 },
 	{ WRPU,	wrpu, "WRPU", "Write a value to the MAX1923 PU", 1 },
-	{ RCPU,	rcpu, "RCPU", "Recievie logic MAX1923 PU 0=just read, 1=set ON, 2=setOFF" }
+	{ RCPU,	rcpu, "RCPU", "Recievie logic MAX1923 PU 0=just write, 1=setON, 2=setOFF" }
 };
 
 #define CMDLEN 32
 static char cmd[CMDLEN];		// Command input buffer
 static int irdp=0, irdy=0, istp=0;	// Read, ready, stop
-
 static char txtb[TBLEN];		// Text ring buffer
 static uint32_t txtw = 0, txtr = 0, 	// Write and Read indexes
 		tsze = 0, terr = 0,	// Buffer size and error code
@@ -1383,7 +1385,7 @@ void PushTim(int flg) {
 
 void PushDtg(int flg) {
 
-	if ((date_ok) && ((flg) || ((ppcnt % frqdat_display_rate) == 0))) {
+	if ((date_ok) && ((flg) || ((ppcnt % frqdtg_display_rate) == 0))) {
 		sprintf(txt,"{'DTG':{'Yer':%4d,'Mnt':%2d,'Day':%1d}}\n",year,month,day);
 		PushTxt(txt);
 	}			
@@ -1497,7 +1499,6 @@ void help(int arg) {	// Display the help
 		strcat(cmd_mesg,cms->Name);
 		strcat(cmd_mesg," ");
 
-		// {'HLP':{'Idn':i,'Nme':s,'Hlp':s}}
 		sprintf(txt,"{'HLP':{'Idn':%d,'Nme':'%s','Hlp':'%s'}}\n",cms->Id,cms->Name,cms->Help);
 		PushTxt(txt);
 	}
@@ -1521,6 +1522,11 @@ void locd(int arg) {
 void timd(int arg) { 
 	frqutc_display_rate = arg; 
 	sprintf(cmd_mesg,"TIM display rate:%d",frqutc_display_rate);
+}
+
+void dtgd(int arg) { 
+	frqdtg_display_rate = arg; 
+	sprintf(cmd_mesg,"DTG Date GPS display rate:%d",frqdtg_display_rate);
 }
 
 void stsd(int arg) { 
@@ -2309,7 +2315,7 @@ void dhtu(int arg) {
 		HtuTemp();
 		HtuHumid();
 
-                sprintf(txt,"rd:0x%02X th:0x%02X tl:0x%02X tc:0x%02X hh:0x%02X hl:0x%02X hc:0x%02X t:%3.5fc rh:%3.5f%",
+                sprintf(txt,"rd:0x%02X th:0x%02X tl:0x%02X tc:0x%02X hh:0x%02X hl:0x%02X hc:0x%02X t:%3.5fc rh:%3.5f",
 			htu_rd, htu_th, htu_tl, htu_tc, htu_hh, htu_hl, htu_hc,
 			HtuConvTemp(),HtuConvHumid());
                 PushTxt(txt);

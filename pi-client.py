@@ -442,6 +442,9 @@ def main():
 
 	sio = Socket_io(ipaddr,ipport)
 
+	time.sleep(1)
+	ser.write("JSON 1\n")	
+	
 	try:
 		while(True):
 			if (back == False) and kbrd.test_input():
@@ -585,6 +588,8 @@ def main():
 				rc = ""
 
 				print "Serial Reopened OK"
+				time.sleep(1)
+				ser.write("JSON 1\n")	
 				pass
 
 			if len(rc):

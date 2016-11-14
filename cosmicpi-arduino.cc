@@ -13,6 +13,7 @@
 // Julian Lewis lewis.julian@gmail.com
 
 #define VERS "2016/November"
+#define CSVERS "1"	// Output CSV version
 
 // In this sketch I am using an Adafruite ultimate GPS breakout which exposes the PPS output
 // The Addafruite Rx is connected to the DUE TX1 (Pin 18) and its Tx to DUE RX1 (Pin 19)
@@ -189,6 +190,7 @@ uint32_t events_display_size = 1;	// Display events after recieving X events
 uint32_t adc_samples_per_evt = 8;	// Number of ADC samples per event
 uint32_t channel_mask        = 3;	// Channel 1 and 2
 uint32_t debug_gps           = 0;	// Debug print of GPS NMEA strings
+uint32_t output_format       = 0;	// Output format 0=CSV else JSON, default CSV
 
 // Siesmic event trigger parameters
 
@@ -231,6 +233,8 @@ typedef enum {
 
 	WRPU,	// Write a value to the MAX1923 PU
 	RCPU,	// Set recieve logic ON on the MAX1923 PU
+
+	JSON,	// Set out put JSON 1, CSV 0
 
 	CMDS };	// Command count
 
@@ -278,6 +282,7 @@ void dhtu(int arg);
 void bmid(int arg);
 void wrpu(int arg);
 void rcpu(int arg);
+void json(int arg);
 
 // Command table
 
@@ -308,7 +313,8 @@ CmdStruct cmd_table[CMDS] = {
 	{ DHTU, dhtu, "DHTU", "Dump HTU21D(F) registers", 1 },
 	{ BMID, bmid, "BMID", "Get BMP chip type", 1 },
 	{ WRPU,	wrpu, "WRPU", "Write a value to the MAX1923 PU", 1 },
-	{ RCPU,	rcpu, "RCPU", "Recievie logic MAX1923 PU 0=just write, 1=setON, 2=setOFF" }
+	{ RCPU,	rcpu, "RCPU", "Recievie logic MAX1923 PU 0=just write, 1=setON, 2=setOFF", 1 },
+	{ JSON, json, "JSON", "Select output format JSON=1 or CSV=0 (default)", 1 }
 };
 
 #define CMDLEN 32
@@ -1152,7 +1158,7 @@ void GpsSetup() {
 
 #define RMCGGA		"$PMTK314,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0*28"	// RMCGGA
 #define RMCZDA		"$PMTK314,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0*29"	// RMCZDA
-#define VERSION 	"$PMTK605*31"  						// PMTK_Q_RELEASE
+#define FMWVERS 	"$PMTK605*31"  						// PMTK_Q_RELEASE
 #define NORMAL  	"$PMTK220,1000*1F"					// PMTK_SET_NMEA_UPDATE_1HZ
 #define NOANTENNA	"$PGCMD,33,0*6D" 					// PGCMD_NOAN
 
@@ -1286,7 +1292,8 @@ void PushHtu(int flg) {	// If flg is true always push
 	if ((flg) || ((htu_ok) && ((ppcnt % humtmp_display_rate) == 0))) {
 		temph = HtuReadTemperature();
 		humid = HtuReadHumidity();
-		sprintf(txt,"{'HTU':{'Tmh':%5.3f,'Hum':%4.1f}}\n",temph,humid);
+		if (output_format) sprintf(txt,"{'HTU':{'Tmh':%5.3f,'Hum':%4.1f}}\n",temph,humid);
+		else sprintf(txt,"%s,HTU,TEMPERATURE %5.3f,HUMIDITY %5.3f\n",CSVERS,temph,humid);
 		PushTxt(txt);
 	}
 }
@@ -1311,7 +1318,8 @@ void PushBmp(int flg) {	// If flg is true always push
 			presr = tru_pres;
 			altib = tru_alti;
 		}
-		sprintf(txt,"{'BMP':{'Tmb':%5.3f,'Prs':%5.3f,'Alb':%4.1f}}\n",tempb,presr,altib);
+		if (output_format) sprintf(txt,"{'BMP':{'Tmb':%5.3f,'Prs':%5.3f,'Alb':%4.1f}}\n",tempb,presr,altib);
+		else sprintf(txt,"%s,BMP,TEMPERATURE %5.3f BARROMETRIC PRESSURE %5.3f ALTITUDE %5.3f\n",CSVERS,tempb,presr,altib);
 		PushTxt(txt);
 	}
 }
@@ -1331,7 +1339,8 @@ void PushVib() { // Push an event when shake detected => Earth Quake
 			PushTim(1);		// Push these first, and then vib
 			PushAcl(1);		// This is the real latched value
 			PushMag(1);
-			sprintf(txt,"{'VIB':{'Vax':%d,'Vcn':%d}}\n",accl_flag,accl_icount);
+			if (output_format) sprintf(txt,"{'VIB':{'Vax':%d,'Vcn':%d}}\n",accl_flag,accl_icount);
+			else sprintf(txt,"%s,VIB,AXIS %d,COUNT %d\n",CSVERS,accl_flag,accl_icount);
 			PushTxt(txt);
 		}
 	}
@@ -1343,7 +1352,8 @@ void PushMag(int flg) {	// Push the mago stuff
 	
 	if ((flg) || ((acl_id) && ((ppcnt % magnot_display_rate) == 0))) {
 		MagReadData();
-		sprintf(txt,"{'MAG':{'Mgx':%f,'Mgy':%f,'Mgz':%f}}\n",mag_fx,mag_fy,mag_fz);
+		if (output_format) sprintf(txt,"{'MAG':{'Mgx':%f,'Mgy':%f,'Mgz':%f}}\n",mag_fx,mag_fy,mag_fz);
+		else sprintf(txt,"%s,MAG,X MAGNETIC FIELD GAUSS %5.3f,Y MAGNETIC FIELD GAUSS %5.3f,Z MAGNETIC FIELD GAUSS %5.3f\n",CSVERS,mag_fx,mag_fy,mag_fz);
 		PushTxt(txt);
 	}
 }
@@ -1354,9 +1364,8 @@ void PushAcl(int flg) { // Push the accelerometer and compass stuff
 
 	if ((flg) || ((acl_id) && ((ppcnt % accelr_display_rate) == 0))) {
 		AclReadData();
-		sprintf(txt,"{'ACL':{'Acx':%f,'Acy':%f,'Acz':%f}}\n",
-			acl_fx, acl_fy, acl_fz);
-
+		if (output_format) sprintf(txt,"{'ACL':{'Acx':%f,'Acy':%f,'Acz':%f}}\n",acl_fx, acl_fy, acl_fz);
+		else sprintf(txt,"%s,ACL,X ACCELERATION M/S/S %3.2f,Y ACCELERATION M/S/S %3.2f,Z ACCELERATION M/S/S %3.2f\n",CSVERS,acl_fx, acl_fy, acl_fz);
 		PushTxt(txt);
 	}
 }
@@ -1366,7 +1375,8 @@ void PushAcl(int flg) { // Push the accelerometer and compass stuff
 void PushLoc(int flg) {
 		
 	if ((flg) || ((ppcnt % latlon_display_rate) == 0)) {
-		sprintf(txt,"{'LOC':{'Lat':%f,'Lon':%f,'Alt':%f}}\n",latitude,longitude,altitude);
+		if (output_format) sprintf(txt,"{'LOC':{'Lat':%f,'Lon':%f,'Alt':%f}}\n",latitude,longitude,altitude);
+		else sprintf(txt,"%s,LOC,LATTITUDE DEGREES %5.3f,LONGITUDE DEGREES %5.3f,ALTITUDE METERS %3.2f\n",CSVERS,latitude,longitude,altitude);
 		PushTxt(txt);
 	}
 }
@@ -1376,7 +1386,8 @@ void PushLoc(int flg) {
 void PushTim(int flg) {
 
 	if ((flg) || ((ppcnt % frqutc_display_rate) == 0)) {
-		sprintf(txt,"{'TIM':{'Upt':%4d,'Frq':%7d,'Sec':'%s'}}\n",ppcnt,rega0,rdtm);
+		if (output_format) sprintf(txt,"{'TIM':{'Upt':%4d,'Frq':%7d,'Sec':'%s'}}\n",ppcnt,rega0,rdtm);
+		else sprintf(txt,"%s,TIM,TIME IN SECONDS SINCE BOOT %4d,MASTER CLOCK FREQUENCY HERTZ %7d,TIME OF DAY HHMMSS %6s\n",CSVERS,ppcnt,rega0,rdtm);
 		PushTxt(txt);
 	}			
 }
@@ -1386,7 +1397,8 @@ void PushTim(int flg) {
 void PushDtg(int flg) {
 
 	if ((date_ok) && ((flg) || ((ppcnt % frqdtg_display_rate) == 0))) {
-		sprintf(txt,"{'DTG':{'Yer':%4d,'Mnt':%2d,'Day':%1d}}\n",year,month,day);
+		if (output_format) sprintf(txt,"{'DTG':{'Yer':%4d,'Mnt':%2d,'Day':%1d}}\n",year,month,day);
+		else sprintf(txt,"%s,DTG,YEAR %4d,MONTH %2d,DAY %2d\n",CSVERS,year,month,day);
 		PushTxt(txt);
 	}			
 }
@@ -1397,8 +1409,18 @@ void PushSts(int flg, int qsize, int missed) {
 uint8_t res;
 
 	if ((flg) || ((ppcnt % status_display_rate) == 0)) {
-		sprintf(txt,"{'STS':{'Qsz':%2d,'Mis':%2d,'Ter':%d,'Tmx':%d,'Htu':%d,'Bmp':%d,'Acl':%d,'Mag':%d,'Gps':%d,'Adn':%d,'Gri':%d,'Eqt':%d,'Chm':%d}}\n",
-			qsize,missed,terr,tmax,htu_ok,bmp_ok,acl_id,acl_id,gps_ok,adc_samples_per_evt,gps_read_inc,events_display_size,channel_mask);
+		if (output_format) {
+			sprintf(txt,"{'STS':{'Qsz':%2d,'Mis':%2d,'Ter':%d,'Tmx':%d,'Htu':%d,'Bmp':%d,'Acl':%d,'Mag':%d,'Gps':%d,'Adn':%d,'Gri':%d,'Eqt':%d,'Chm':%d}}\n",
+				qsize,missed,terr,tmax,htu_ok,bmp_ok,acl_id,acl_id,gps_ok,adc_samples_per_evt,gps_read_inc,events_display_size,channel_mask);
+		} else {
+			sprintf(txt,
+				"%s,STS,EVENT QUEUE SIZE %2d,MISSED EVENT COUNT %2d,TERMINAL IO ERROR %2d,TERMINAL MAX BUFFER SIZE %4d,"
+				"HTU OK FLAG %1d,BMP OK FLAG %1d,ACL OK FLAG %1d,MAG OK FLAG %1d,GPS OK FLAG %1d,"
+				"ADC SAMPLES PER CHANNEL %2d,GPS READ INCREMENT %2d,EVENT DUMP THRESHOLD %2d,ACTIVE CHANNEL MASK %d\n",
+				CSVERS,qsize,missed,terr,tmax,
+				htu_ok,bmp_ok,acl_id,acl_id,gps_ok,
+				adc_samples_per_evt,gps_read_inc,events_display_size,channel_mask);
+		}
 		PushTxt(txt);
 		terr = 0;
 	}
@@ -1446,8 +1468,13 @@ void PushEvq(int flg, int *qsize, int *missed) {
 			adch1[0] = '\0';
 
 			for (i=0; i<adc_samples_per_evt; i++) {
-				sprintf(&adch0[strlen(adch0)],"%d,",eb.Ch0[i]);
-				sprintf(&adch1[strlen(adch1)],"%d,",eb.Ch1[i]);
+				if (output_format) {
+					sprintf(&adch0[strlen(adch0)],"%d,",eb.Ch0[i]);
+					sprintf(&adch1[strlen(adch1)],"%d,",eb.Ch1[i]);
+				} else {
+					sprintf(&adch0[strlen(adch0)],"%02X",eb.Ch0[i]);
+					sprintf(&adch1[strlen(adch1)],"%02X",eb.Ch1[i]);
+				}
 			}
 
 			adch0[strlen(adch0) -1] = '\0';
@@ -1456,9 +1483,14 @@ void PushEvq(int flg, int *qsize, int *missed) {
 			if ((channel_mask & 0x01) == 0) sprintf(adch0,"0");
 			if ((channel_mask & 0x02) == 0) sprintf(adch1,"0"); 
  
-			sprintf(txt,
-				"{'EVT':{'Evt':%1d,'Frq':%8d,'Tks':%8d,'Etm':%s%s,'Adc':[[%s],[%s]]}}\n",
-				eb.Count, eb.Frequency, eb.Ticks, eb.DateTime, index(stx,'.'),adch0,adch1);
+			if (output_format) sprintf(txt,
+						"{'EVT':{'Evt':%1d,'Frq':%8d,'Tks':%8d,'Etm':%s%s,'Adc':[[%s],[%s]]}}\n",
+						eb.Count, eb.Frequency, eb.Ticks, eb.DateTime, index(stx,'.'),adch0,adch1);
+			else sprintf(txt,
+					"%s,EVT,MASTER CLOCK FREQUENCY HERTZ %7d,CLOCK TICKS SINCE LAST EVENT %7d,"
+					"TIME OF DAY HHMMSS %6s,ADC CHANNEL VALUE COUNT %2d,"
+					"AD CHANNEL 0 VALUES %s,AD CHANNEL 1 VALUES %s\n",
+					CSVERS,eb.Frequency,eb.Ticks,index(stx,'.'),adc_samples_per_evt,adch0,adch1);
 			PushTxt(txt);
 		}
 		PushTxt("\n");
@@ -1549,6 +1581,16 @@ void magd(int arg) {
 	sprintf(cmd_mesg,"MAG display rate:%d",magnot_display_rate);
 }
 
+void json(int arg) {
+	if (arg) {
+		output_format = 1;	// JSON output format
+		sprintf(cmd_mesg,"Output format set to JSON");
+	} else {
+		output_format = 0;	// CSV output format
+		sprintf(cmd_mesg,"Output format set to CSV");
+	}
+}
+	
 void aclt(int arg) { 
 	uint8_t val = 0;
 	accelr_event_threshold = arg & 0x7F; 
@@ -1692,7 +1734,7 @@ void loop() {
 		displ = 0;			// Clear flag for next PPS
 
 		if ((!gps_id) || (debug_gps)) {	// Get firmware version ?
-			Serial1.println("$PMTK605*31");
+			Serial1.println(FMWVERS);
 		}
 		if ((date_ok) && (send_gga)) {
 			send_gga = 0;

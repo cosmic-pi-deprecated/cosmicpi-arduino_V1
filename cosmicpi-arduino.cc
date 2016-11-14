@@ -164,12 +164,10 @@ uint8_t htu_ok = 0;
 LPS ps;
 
 // Barrometer and temperature measurment BMP085 on bus 0
-extern void	BmpGetData();
-extern char    *BmpDebug();
-extern int32_t	tru_temp;
-extern int32_t	tru_pres;
-extern float	tru_alti;
-extern char     bmp_deb[128];
+extern float BmpCalcTemp();
+extern float BmpCalcPres();
+extern float BmpCalcAlti();
+extern char *BmpDebug();
 
 // Control the output data rates by setting defaults, these values can be modified at run time
 // via commands from the serial interface. Some output like position isn't supposed to be changing
@@ -1220,7 +1218,7 @@ void setup() {
 	if (bmp_id == BMP_ON_MB) {
 		if (!ps.init()) bmp_ok = 0;
 	} else if (bmp_id == BMP_ADAFRUIT) {
-		BmpGetData();
+		BmpCalcPres();
 	}	
 
 	TimersStart();			// Start timers
@@ -1313,10 +1311,9 @@ void PushBmp(int flg) {	// If flg is true always push
 			tempb = ps.readTemperatureC();
 		}
 		if (bmp_id == BMP_ADAFRUIT) {
-			BmpGetData();
-			tempb = tru_temp;
-			presr = tru_pres;
-			altib = tru_alti;
+			tempb = BmpCalcTemp();
+			presr = BmpCalcPres();
+			altib = BmpCalcAlti();
 		}
 		if (output_format) sprintf(txt,"{'BMP':{'Tmb':%5.3f,'Prs':%5.3f,'Alb':%4.1f}}\n",tempb,presr,altib);
 		else sprintf(txt,"%s,BMP,TEMPERATURE %5.3f BARROMETRIC PRESSURE %5.3f ALTITUDE %5.3f\n",CSVERS,tempb,presr,altib);
@@ -2425,7 +2422,7 @@ void bmid(int arg) {
 		sprintf(cmd_mesg,"BMP: PASS: Found BMP085 on Adafruit breakout bus 0");
 
 		BmpDebug();
-		sprintf(txt,"\nBMP:Cal:%s\n",bmp_deb);
+		sprintf(txt,"\nBMP:Cal:%s\n",BmpDebug());
 		PushTxt(txt);
 
 		return;

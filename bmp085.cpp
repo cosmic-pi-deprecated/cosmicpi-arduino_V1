@@ -39,7 +39,6 @@ float tru_pres;
 float tru_alti;
 
 char bmp_deb[128];
-char txt[256];
 
 char *BmpDebug() {
 	sprintf(bmp_deb,"id:0x%02X ac1:%d ac2:%d ac3:%d ac4:%d ac5:%d ac6:%d b1:%d b2:%d b5:%d mb:%d mc:%d md:%d ut:%d up:%d",
@@ -209,6 +208,8 @@ void setup() {
 }
 
 void loop() {
+	char txt[256];
+
 	BmpGetData();
 	BmpDebug();
 	Serial.println(bmp_deb);

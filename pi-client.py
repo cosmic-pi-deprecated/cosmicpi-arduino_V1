@@ -91,6 +91,7 @@ class Event(object):
 		self.EVT = { "Evt":"0"  ,"Frq":"0"  ,"Tks":"0","Etm":"0.0","Adc":"[[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0]]" }
 		self.CMD = { "Cmd":"0"  ,"Res":"0"  ,"Msg":"0" }
 		self.HLP = { "Idn":"0"  ,"Nme":"0"  ,"Hlp":"0" }
+		self.TXT = { "Txt":"0" }
 
 		# Add ons
 
@@ -103,13 +104,14 @@ class Event(object):
 		self.recd = {	"HTU":self.HTU, "BMP":self.BMP, "VIB":self.VIB, "MAG":self.MAG,
 				"ACL":self.ACL, "LOC":self.LOC, "TIM":self.TIM, "STS":self.STS,
 				"EVT":self.EVT, "DAT":self.DAT, "SQN":self.SQN, "PAT":self.PAT, 
-				"DTG":self.DTG, "CMD":self.CMD, "HLP":self.HLP }
+				"DTG":self.DTG, "CMD":self.CMD, "HLP":self.HLP, "TXT":self.TXT }
 
 		self.newvib = 0	# Vibration
 		self.newevt = 0	# Cosmic ray
 		self.newhtu = 0	# Weather report
 		self.newcmd = 0 # Command completion available
 		self.newhlp = 0 # Help text available
+		self.newtxt = 0 # Text to print
 	
 		self.sqn = 0	# Packet sequenc number
 
@@ -141,6 +143,9 @@ class Event(object):
 
 				if kys[0] == "HLP":
 					self.newhlp = 1
+
+				if kys[0] == "TXT":
+					self.newtxt = 1
 
 		except Exception, e:
 			#print e
@@ -283,6 +288,9 @@ class Event(object):
 	def get_hlp(self):
 		return self.recd["HLP"]
 
+	def get_txt(self):
+		return self.recd["TXT"]
+
 	def new_cmd(self):
 		if self.newcmd:
 			self.newcmd = 0
@@ -292,6 +300,12 @@ class Event(object):
 	def new_hlp(self):
 		if self.newhlp:
 			self.newhlp = 0
+			return 1
+		return 0
+
+	def new_txt(self):
+		if self.newtxt:
+			self.newtxt = 0
 			return 1
 		return 0
 
@@ -451,114 +465,115 @@ def main():
 				kbrd.echo_on()
 				print "\n"
 				cmd = raw_input(">")
-        
-				if cmd.find("q") != -1:
-       					break
- 
-				elif cmd.find("d") != -1:
-         				if debug:
-						debug = False
-					else:
-						debug = True
-					print "Debug:%s\n" % debug
 
-				elif cmd.find("x") != -1:
-         				if display:
-						display = False
-					else:
-						display = True
-					print "Display:%s\n" % display
-
-				elif cmd.find("v") != -1:
-         				if vibflg:
-						vibflg = False
-					else:
-						vibflg = True
-					print "Vibration:%s\n" % vibflg
-
-				elif cmd.find("w") != -1:
-         				if wstflg:
-						wstflg = False
-					else:
-						wstflg = True
-					print "WeatherStation:%s\n" % wstflg
-
-				elif cmd.find("r") != -1:
-					if len(patok) > 0:
-						if pushflg:
-							pushflg = False
-							print "Unregister server notifications"
+				if len(cmd) == 1: 
+					if cmd.find("q") != -1:
+       	       					break
+         
+					elif cmd.find("d") != -1:
+                 				if debug:
+							debug = False
 						else:
-							pushflg = True
-							print "Register for server notifications"
-                                        
+							debug = True
+						print "Debug:%s\n" % debug
+
+					elif cmd.find("x") != -1:
+                 				if display:
+							display = False
+						else:
+							display = True
+						print "Display:%s\n" % display
+
+					elif cmd.find("v") != -1:
+                 				if vibflg:
+							vibflg = False
+						else:
+							vibflg = True
+						print "Vibration:%s\n" % vibflg
+
+					elif cmd.find("w") != -1:
+                 				if wstflg:
+							wstflg = False
+						else:
+							wstflg = True
+						print "WeatherStation:%s\n" % wstflg
+
+					elif cmd.find("r") != -1:
+						if len(patok) > 0:
+							if pushflg:
+								pushflg = False
+								print "Unregister server notifications"
+							else:
+								pushflg = True
+								print "Register for server notifications"
+                                                
+							if udpflg:
+								evt.set_pat(patok,pushflg)
+								pbuf = evt.get_notification()
+								sio.send_event_pkt(pbuf,ipaddr,ipport)
+								sbuf = evt.get_status()
+								sio.send_event_pkt(sbuf,ipaddr,ipport)
+								print "Sent notification request:%s" % pbuf 
+							else:
+								print "UDP sending is OFF, can not register with server"
+								pbuf = ""
+						else:
+							print "Token option is not set"
+ 	 	
+					elif cmd.find("s") != -1:
+						tim = evt.get_tim()
+						dtg = evt.get_dtg()
+						sts = evt.get_sts()
+						loc = evt.get_loc()
+						acl = evt.get_acl()
+						mag = evt.get_mag()
+						bmp = evt.get_bmp()
+						htu = evt.get_htu()
+						vib = evt.get_vib()
+
+						print "ARDUINO STATUS"
+						print "Status........: Upt:%s Frq:%s Qsz:%s Mis:%s" % (tim["Upt"],tim["Frq"],sts["Qsz"],sts["Mis"])
+						print "GPS date......: Yer:%s Mnt:%s Day%s" % (dtg["Yer"],dtg["Mnt"],dtg["Day"])
+						print "Parameters....: Adn:%s Gri:%s Eqt:%s Chm:%s" % (sts["Adn"],sts["Gri"],sts["Eqt"],sts["Chm"])
+						print "HardwareStatus: Htu:%s Bmp:%s Acl:%s Mag:%s Gps:%s" % (sts["Htu"],sts["Bmp"],sts["Acl"],sts["Mag"],sts["Gps"])
+						print "Location......: Lat:%s Lon:%s Alt:%s" % (loc["Lat"],loc["Lon"],loc["Alt"])
+						print "Accelarometer.: Acx:%s Acy:%s Acz:%s" % (acl["Acx"],acl["Acy"],acl["Acz"])
+						print "Magnatometer..: Mgx:%s Mgy:%s Mgz:%s" % (mag["Mgx"],mag["Mgy"],mag["Mgz"])
+						print "Barometer.....: Tmb:%s Prs:%s Alb:%s" % (bmp["Tmb"],bmp["Prs"],bmp["Alb"])
+						print "Humidity......: Tmh:%s Hum:%s" % (htu["Tmh"],htu["Hum"])
+						print "Vibration.....: Vax:%s Vcn:%s\n" % (vib["Vax"],vib["Vcn"])
+
+						print "MONITOR STATUS"
+						print "USB device....: %s" % (usbdev)
+						print "Remote........: Ip:%s Port:%s UdpFlag:%s" % (ipaddr,ipport,udpflg)
+						print "Notifications.: Flag:%s Token:%s" % (pushflg, patok)
+						print "Vibration.....: Sent:%d Flag:%s" % (vbrts,vibflg)
+						print "WeatherStation: Flag:%s" % (wstflg)
+						print "Events........: Sent:%d LogFlag:%s" % (events,logflg)
+						print "LogFile.......: %s\n" % (lgf)
+						print "Display Events: %s\n" % (display)
+
+					elif cmd.find("h") != -1:
+						print "MONITOR COMMANDS"
+						print "   q=quit, s=status, d=toggle_debug, n=toggle_send, l=toggle_log"
+						print "   v=vibration, w=weather, r=toggle_notifications, x=toggle_display, h=help\n"
+						print "ARDUINO COMMANDS"
+						print ""
+						ser.write("HELP")
+
+					elif cmd.find("n") != -1:
 						if udpflg:
-							evt.set_pat(patok,pushflg)
-							pbuf = evt.get_notification()
-							sio.send_event_pkt(pbuf,ipaddr,ipport)
-							sbuf = evt.get_status()
-							sio.send_event_pkt(sbuf,ipaddr,ipport)
-							print "Sent notification request:%s" % pbuf 
+							udpflg = False
 						else:
-							print "UDP sending is OFF, can not register with server"
-							pbuf = ""
-					else:
-						print "Token option is not set"
- 	
-				elif cmd.find("s") != -1:
-					tim = evt.get_tim()
-					dtg = evt.get_dtg()
-					sts = evt.get_sts()
-					loc = evt.get_loc()
-					acl = evt.get_acl()
-					mag = evt.get_mag()
-					bmp = evt.get_bmp()
-					htu = evt.get_htu()
-					vib = evt.get_vib()
+							udpflg = True
+						print "Send:%s\n" % udpflg
 
-					print "ARDUINO STATUS"
-					print "Status........: Upt:%s Frq:%s Qsz:%s Mis:%s" % (tim["Upt"],tim["Frq"],sts["Qsz"],sts["Mis"])
-					print "GPS date......: Yer:%s Mnt:%s Day%s" % (dtg["Yer"],dtg["Mnt"],dtg["Day"])
-					print "Parameters....: Adn:%s Gri:%s Eqt:%s Chm:%s" % (sts["Adn"],sts["Gri"],sts["Eqt"],sts["Chm"])
-					print "HardwareStatus: Htu:%s Bmp:%s Acl:%s Mag:%s Gps:%s" % (sts["Htu"],sts["Bmp"],sts["Acl"],sts["Mag"],sts["Gps"])
-					print "Location......: Lat:%s Lon:%s Alt:%s" % (loc["Lat"],loc["Lon"],loc["Alt"])
-					print "Accelarometer.: Acx:%s Acy:%s Acz:%s" % (acl["Acx"],acl["Acy"],acl["Acz"])
-					print "Magnatometer..: Mgx:%s Mgy:%s Mgz:%s" % (mag["Mgx"],mag["Mgy"],mag["Mgz"])
-					print "Barometer.....: Tmb:%s Prs:%s Alb:%s" % (bmp["Tmb"],bmp["Prs"],bmp["Alb"])
-					print "Humidity......: Tmh:%s Hum:%s" % (htu["Tmh"],htu["Hum"])
-					print "Vibration.....: Vax:%s Vcn:%s\n" % (vib["Vax"],vib["Vcn"])
-
-					print "MONITOR STATUS"
-					print "USB device....: %s" % (usbdev)
-					print "Remote........: Ip:%s Port:%s UdpFlag:%s" % (ipaddr,ipport,udpflg)
-					print "Notifications.: Flag:%s Token:%s" % (pushflg, patok)
-					print "Vibration.....: Sent:%d Flag:%s" % (vbrts,vibflg)
-					print "WeatherStation: Flag:%s" % (wstflg)
-					print "Events........: Sent:%d LogFlag:%s" % (events,logflg)
-					print "LogFile.......: %s\n" % (lgf)
-					print "Display Events: %s\n" % (display)
-
-				elif cmd.find("h") != -1:
-					print "MONITOR COMMANDS"
-					print "   q=quit, s=status, d=toggle_debug, n=toggle_send, l=toggle_log"
-					print "   v=vibration, w=weather, r=toggle_notifications, x=toggle_display, h=help\n"
-					print "ARDUINO COMMANDS"
-					print ""
-					ser.write("HELP")
-
-				elif cmd.find("n") != -1:
-					if udpflg:
-						udpflg = False
-					else:
-						udpflg = True
-					print "Send:%s\n" % udpflg
-
-				elif cmd.find("l") != -1:
-					if logflg:
-						logflg = False
-					else:
-						logflg = True
-					print "Log:%s\n" % logflg
+					elif cmd.find("l") != -1:
+						if logflg:
+							logflg = False
+						else:
+							logflg = True
+						print "Log:%s\n" % logflg
 
 				else:
 					print "Arduino < %s\n" % cmd 
@@ -609,7 +624,10 @@ def main():
 						print "\nData error:%s\n" % (e)
 						pass
 
-
+				if evt.new_txt():
+					txt = evt.get_txt()
+					print "%s" % (txt["Txt"])
+				
 				if vibflg:
 					vbuf = evt.get_vibration()
 					if len(vbuf) > 0:

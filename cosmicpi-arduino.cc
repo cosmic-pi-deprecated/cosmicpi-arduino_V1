@@ -65,6 +65,9 @@
 //
 // {'HLP':{'Idn':i,'Nme':s,'Hlp':s}}
 // Help for command ID number Idn with name nme and help text hlp
+//
+// {'TXT':{'Txt':s}}
+// Text to be displayed
 
 // N.B. These records pass the data to a python monitor over the serial line. Python has awsome string handling and looks them up in
 // associative arrays to build records of any arbitary format you want. So this is only the start of the story of record processing.
@@ -2198,17 +2201,19 @@ void d303(int arg) {
 	if ((arg<1) || (arg>10))
 		arg = 1;
 
+	sprintf(txt,"{'TXT':{'Txt':'LM303 ");
+	PushTxt(txt);
 	for (i=0; i<arg; i++) {
-                sprintf(txt,"\nAclRegs: ");
-                PushTxt(txt);
                 for (reg=0x00; reg<=0x3F; reg++) {
 			val = LMRead8(acl_ad, reg, acl_bus);
-                        sprintf(txt,"%02X:%02X ",reg,val);
+                        sprintf(txt,"%02X/%02X ",reg,val);
                         PushTxt(txt);
                 }
-
+		sprintf(txt,"'}}\n",reg,val);
+		PushTxt(txt);
+	
 		if (acl_id == ACL_ADAFRUIT) {
-	                sprintf(txt,"\nMagRegs: ");
+	                sprintf(txt,"\nAdaFruit:MagRegs: ");
         	        PushTxt(txt);
                 	for (reg=0x00; reg<=0x32; reg++) {
 

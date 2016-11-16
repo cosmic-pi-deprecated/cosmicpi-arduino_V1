@@ -13,7 +13,7 @@
 // Julian Lewis lewis.julian@gmail.com
 
 #define VERS "2016/November"
-#define CSVERS "1"	// Output CSV version
+#define CSVERS "V1"	// Output CSV version
 
 // In this sketch I am using an Adafruite ultimate GPS breakout which exposes the PPS output
 // The Addafruite Rx is connected to the DUE TX1 (Pin 18) and its Tx to DUE RX1 (Pin 19)
@@ -37,6 +37,9 @@
 // {'VIB':{'Vax':i,'Vcn':i}}
 // Vibration record containing Vax:3 bit xyz direction mask Vcn:vibration count
 // This record is always immediatly followed by 3 more records, TIM, ACL, and MAG
+//
+// {'MEV':{'Mev':i,'Mcn':i}}
+// Magnetic event Mev:8 bit status Mcn:magnetic event count
 //
 // {'MAG':{'Mgx':f,'Mgy':f,'Mgz':f}}
 // LSM303DLH magnatometer record containing Mgx:the x field strength Mgy:the y field Mgz:ther z field
@@ -98,9 +101,9 @@
 #define TBLEN 8192	// Serial line output ring buffer size
 
 // Define some output debug pins to monitor whats going on via an oscilloscope
-#define PPS_PIN 13	// PPS (Pulse Per Second) and LED
+#define PPS_PIN 11	// PPS (Pulse Per Second) and LED
 #define EVT_PIN 12	// Cosmic ray event detected
-#define FLG_PIN 11	// Debug flag
+#define FLG_PIN 13	// Debug flag
 
 // Power pins for power on/off the breakouts after a reset
 // The DUE makes a reset if the USB connection is restarted
@@ -156,6 +159,8 @@ uint8_t bmp_ok = 0;
 // GPS and time
 boolean	gps_ok = false;		// Chip OK flag
 boolean	time_ok = false;	// Time read from GPS OK
+boolean pps_led = false;	// PPS Led 
+boolean evt_led = false;	// Event led
 
 // Forward refs
 float HtuReadTemperature();
@@ -184,8 +189,8 @@ uint32_t alttmp_display_rate = 12;	// Display altitude and BMP temperature each 
 uint32_t frqutc_display_rate = 1;	// Display frequency UTC time each X seconds
 uint32_t frqdtg_display_rate = 10;	// Display frequency DTG GPS date each X seconds 
 uint32_t status_display_rate = 4;	// Display status (UpTime, QueueSize, MissedEvents, HardwareOK)
-uint32_t accelr_display_rate = 1;	// Display accelarometer x,y,z
-uint32_t magnot_display_rate = 12;	// Display magnotometer data x,y,z
+uint32_t accelr_display_rate = 10;	// Display accelarometer x,y,z
+uint32_t magnot_display_rate = 10;	// Display magnotometer data x,y,z
 uint32_t gps_read_inc        = 0;	// How often to read the GPS (600 = every 10 minutes, 0 = always)
 uint32_t events_display_size = 1;	// Display events after recieving X events
 uint32_t adc_samples_per_evt = 8;	// Number of ADC samples per event
@@ -193,10 +198,11 @@ uint32_t channel_mask        = 3;	// Channel 1 and 2
 uint32_t debug_gps           = 0;	// Debug print of GPS NMEA strings
 uint32_t output_format       = 0;	// Output format 0=CSV else JSON, default CSV
 
-// Siesmic event trigger parameters
+// Siesmic and magnetic event trigger parameters
 
-uint32_t accelr_event_threshold = 2;	// Trigger level for siesmic events in milli-g
-uint32_t accelr_event_cutoff_fr = 30;	// Siesmic event cutoff frequency
+uint16_t accelr_event_threshold = 2;	// Trigger level for siesmic events +-2g full scale
+uint16_t accelr_event_cutoff_fr = 30;	// Siesmic event cutoff frequency
+uint16_t magnat_event_threshold = 0x7FF;// Magnetic threshold +-4gauss full scale
 
 // Commands can be sent over the serial line to configure the display rates or whatever
 
@@ -216,6 +222,7 @@ typedef enum {
 	MAGD,	// Magnetometer display rate
 
 	ACLT,	// Accelerometer event threshold
+	MAGT,	// Magnatometer event threshold
 	GPRI,	// GPS read increment
 	NADC,	// Number of ADC samples per event
 	RBRK,	// Reset breakouts
@@ -247,6 +254,8 @@ typedef struct {
 	int   Par;		// Command parameter flag
 } CmdStruct;
 
+#define CMD_ERROR 1		// General command failure error code
+#define NO_SUCH_COMMAND 2
 #define CMD_MAX_LEN 8
 #define CMD_MAX_MSG 128
 
@@ -268,6 +277,7 @@ void evqt(int arg);
 void acld(int arg);
 void magd(int arg);
 void aclt(int arg);
+void magt(int arg);
 void gpri(int arg);
 void nadc(int arg);
 void rbrk(int arg);
@@ -300,6 +310,7 @@ CmdStruct cmd_table[CMDS] = {
 	{ ACLD, acld, "ACLD", "Accelerometer display rate", 1 },
 	{ MAGD, magd, "MAGD", "Magnatometer display rate", 1 },
 	{ ACLT, aclt, "ACLT", "Accelerometer event trigger threshold", 1 },
+	{ MAGT, magt, "MAGT", "Magnatometer event trigger threshold", 1 },
 	{ GPRI, gpri, "GPRI", "GPS read increment in seconds", 1 },
 	{ NADC, nadc, "NADC", "Number of ADC sampes tor read per event", 1 },
 	{ RBRK, rbrk, "RBRK", "Reset power on=1/off=0 for breakouts", 1 },
@@ -505,10 +516,13 @@ void TC0_Handler() {
 	
 	IncDateTime();				// Next second
 
-#if PPS_PIN		
-	digitalWrite(PPS_PIN,HIGH);
-	digitalWrite(PPS_PIN,LOW);
-#endif	
+	if (pps_led) {		
+		digitalWrite(PPS_PIN,HIGH);
+		pps_led = false;
+	} else {
+		digitalWrite(PPS_PIN,LOW);
+		pps_led = true;
+	}
 }
 
 // Handle PLL interrupts
@@ -589,10 +603,13 @@ void TC6_Handler() {
 	rega1 = TC2->TC_CHANNEL[0].TC_RA;	// Read the RA on channel 1 (PPS period)
 	stsr1 = TC_GetStatus(TC2, 0); 		// Read status clear load bits
 
-#if EVT_PIN
-	digitalWrite(EVT_PIN,HIGH);	// Event detected
-	digitalWrite(EVT_PIN,LOW);
-#endif
+	if (evt_led) {		
+		digitalWrite(EVT_PIN,HIGH);
+		evt_led = false;
+	} else {
+		digitalWrite(EVT_PIN,LOW);
+		evt_led = true;
+	}
 }
 
 // Discover the hardware configuration 
@@ -647,11 +664,29 @@ void AclSetup() {
 	}
 }
 
-// Mainboard accelerator setup
+// Mainboard magnatometer and accelerometer setup
 // LSM303D chip
 
 void AclMbSetup() {
 	uint8_t tmp, val;
+
+#define FIFO_EN 0x40
+#define HPIS1   0x02
+#define HPIS2	0x01
+
+	val = FIFO_EN | HPIS1;
+	// LMWrite8(acl_ad, 0x1F, val, 1); // CTRL0
+
+#define MXYZEN (0x7 << 5)	// Enable XYZ interrupt detection
+#define MIELEN 0x1		// Enable
+
+	val = MXYZEN | MIELEN;
+	LMWrite8(acl_ad, 0x12, val, 1); // INT_CTRL_M
+
+	val = magnat_event_threshold >> 8;	// High
+	LMWrite8(acl_ad, 0x15, val, 1);		// INT_THS_H_M
+	val = magnat_event_threshold & 0xFF;	// Low
+	LMWrite8(acl_ad, 0x14, val, 1);		// INT_THS_L_M
 
 #define AXYXEN 0x7
 #define A50Hz (0x5 << 4)
@@ -671,11 +706,29 @@ void AclMbSetup() {
 	val = INT1_IG1;			// Inertial interrupts on INT1 enabled
 	LMWrite8(acl_ad, 0x22, val, 1);	// CTRL3
 
-#define LIR1 0x1
-#define TEMPEN 0x80
+#define INT2_IGM 0x10
+#define INT2_DRDY_M 0x4
 
-	val = LIR1 | TEMPEN;		// Latch interrupt INT1 and Temperature enable
+	val = INT2_IGM | INT2_DRDY_M;
+	LMWrite8(acl_ad, 0x23, val, 1);
+
+#define LIR1 0x1	// Latch interrupt 1
+#define MODR (0x2 << 2)	// 12.5 Hz
+#define MRES (0x3 << 5) // High resolution
+#define TEMPEN 0x80	// Temperature enabled
+
+	val = LIR1 | MODR | MRES; // | TEMPEN;		
 	LMWrite8(acl_ad, 0x24, val, 1);	// CTRL5
+
+#define MFS (0x1 << 5)		// +/- 4 Gauss full scale
+	
+	val = MFS;
+	LMWrite8(acl_ad, 0x25, val, 1); // CTRL6
+
+#define MD 0x0		// Continuous mode
+
+	val = MD;
+	LMWrite8(acl_ad, 0x26, val, 1); // CTRL7
 
 #define AI6D 0x80
 #define ZHIE 0x20
@@ -694,6 +747,7 @@ void AclMbSetup() {
 	val = LMRead8(acl_ad, 0x31, 1);	// IG_SRC1 read and clear interrupts
 
 	attachInterrupt(digitalPinToInterrupt(30),Acl_ISR,RISING);
+	attachInterrupt(digitalPinToInterrupt(29),Mag_ISR,RISING);
 }
 
 // Adafruit accelerometer setup
@@ -716,12 +770,11 @@ void AclAdaSetup() {
 	val = HPE1 | HPCF;
 	LMWrite8(acl_ad, 0x21, val, 0);
 
-#define LIR1 0x06	// Latch Int1 bit Data ready
-#define LIR2 0x00	// Latch Int2 bit Data ready (0x20 Latch On)
+#define ALIR1 0x06	// Latch Int1 bit Data ready
 
 #define IHL_OD 0xC0	// Interrupt active low, open drain (Argh !!!)
 
-	val = LIR1 | LIR2 | IHL_OD;
+	val = ALIR1 | IHL_OD;
 	LMWrite8(acl_ad, 0x22, val, 0);
 
 #define BDU_FS 0x80	// Block data and scale +-2g
@@ -756,12 +809,22 @@ void Acl_ISR() {
 	}
 }
 
+// Magnatometer ISR
+
+static uint32_t magn_icount = 0, magn_flag = 0;
+
+void Mag_ISR() {
+
+	magn_flag=MagReadStatus();
+	magn_icount++;
+	if (magn_flag) PushMev();
+}
+
 // Read accelerometer status
 // This just reads the interrupt source INT1 and the overrun status.
 // It returns 1 bit for X, Y, or Z (0..7) if the threshold value is exceeded.
 // This determins if the board is being shaken - Earth quake - or other reason
 
-static uint8_t acl_sts = 0;
 static uint8_t acl_src = 0;
 
 uint8_t AclReadStatus() {
@@ -782,6 +845,13 @@ uint8_t AclReadStatus() {
 		if (acl_src & XH) rval |= 1;
 	}
 	return rval;
+}
+
+// Read magnatometer status
+
+uint8_t MagReadStatus() {
+	acl_src = LMRead8(acl_ad, 0x35, 1);	// IG_SRC2 read and clear interrupts
+	return LMRead8(acl_ad, 0x13, 1);	// INT_SRC_M
 }
 
 // Read accelerometer 
@@ -1177,12 +1247,8 @@ void setup() {
 #if FLG_PIN
 	pinMode(FLG_PIN, OUTPUT);	// Pin for the ppsfl flag for debug
 #endif
-#if EVT_PIN
 	pinMode(EVT_PIN, OUTPUT);	// Pin for the cosmic ray event 
-#endif
-#if PPS_PIN
 	pinMode(PPS_PIN, OUTPUT);	// Pin for the PPS (LED pin)
-#endif
 
 	pinMode(POW_ONE, OUTPUT);	// Breakout power pin
 	pinMode(POW_TWO, OUTPUT);	// ditto
@@ -1208,8 +1274,12 @@ void setup() {
 
 	// Power OFF/ON the breakouts
 
+	digitalWrite(PPS_PIN,HIGH);
+	digitalWrite(EVT_PIN,HIGH);
 	rbrk(0);
 	rbrk(1);
+	digitalWrite(PPS_PIN,LOW);
+	digitalWrite(EVT_PIN,LOW);
 
 	// Initialize breakouts
 
@@ -1343,6 +1413,16 @@ void PushVib() { // Push an event when shake detected => Earth Quake
 			else sprintf(txt,"%s,VIB,AXIS %d,COUNT %d\n",CSVERS,accl_flag,accl_icount);
 			PushTxt(txt);
 		}
+	}
+}
+
+void PushMev() { // Push a magnetic event when field changes
+
+	if (accl_flag) {
+		PushMag(1);
+		if (output_format) sprintf(txt,"{'MEV':{'Mev':0x%02X,'Mcn':%d}}\n",magn_flag,magn_icount);
+		else sprintf(txt,"%s,MEV,EVENT %d,COUNT %d\n",CSVERS,magn_flag,magn_icount);
+		PushTxt(txt);
 	}
 }
 
@@ -1599,6 +1679,22 @@ void aclt(int arg) {
 	LMWrite8(acl_ad, 0x32, val, acl_bus);
 }
 
+void magt(int arg) {
+	uint8_t val;
+
+	if (acl_id == ACL_ON_MB) {
+		magnat_event_threshold = 0x7FFF & arg;
+		val = magnat_event_threshold >> 8;	// High
+		LMWrite8(acl_ad, 0x15, val, 1);		// INT_THS_H_M
+		val = magnat_event_threshold & 0xFF;	// Low
+		LMWrite8(acl_ad, 0x14, val, 1);		// INT_THS_L_M
+		sprintf(cmd_mesg,"MAG sensitivity thresfold:%d",magnat_event_threshold);
+		return;
+	}
+	sprintf(cmd_mesg,"Feature not available, wrong chip");
+	cmd_result = CMD_ERROR;
+}
+
 // The minimum gps read increment is 3 because
 // 0 and 1 read ervery time
 // but there is one up the spout, so 2 is a waste of time
@@ -1670,8 +1766,6 @@ void PushCoCo(int flg) {
 }
 // Look up a command in the command table for the given command string
 // and call it with its single integer parameter
-
-#define NO_SUCH_COMMAND 1
 
 void ParseCmd() {
 	int i, p=0, cl=0;
@@ -2425,9 +2519,8 @@ void bmid(int arg) {
 
 	if (bmp_id == BMP_ADAFRUIT) {
 		sprintf(cmd_mesg,"BMP: PASS: Found BMP085 on Adafruit breakout bus 0");
-
-		BmpDebug();
-		sprintf(txt,"\nBMP:Cal:%s\n",BmpDebug());
+		
+		sprintf(txt,"{'TXT':{'Txt':'BMP %s'}}\n",BmpDebug());
 		PushTxt(txt);
 
 		return;

@@ -83,6 +83,7 @@ class Event(object):
 		self.BMP = { "Tmb":"0.0","Prs":"0.0","Alb":"0.0" }
 		self.VIB = { "Vax":"0"  ,"Vcn":"0"               }
 		self.MAG = { "Mgx":"0.0","Mgy":"0.0","Mgz":"0.0" }
+		self.MEV = { "Mev":"0"  ,"Mcn":"0"               }
 		self.ACL = { "Acx":"0.0","Acy":"0.0","Acz":"0.0" }
 		self.LOC = { "Lat":"0.0","Lon":"0.0","Alt":"0.0" }
 		self.TIM = { "Upt":"0"  ,"Frq":"0"  ,"Sec":"0"   }
@@ -104,9 +105,11 @@ class Event(object):
 		self.recd = {	"HTU":self.HTU, "BMP":self.BMP, "VIB":self.VIB, "MAG":self.MAG,
 				"ACL":self.ACL, "LOC":self.LOC, "TIM":self.TIM, "STS":self.STS,
 				"EVT":self.EVT, "DAT":self.DAT, "SQN":self.SQN, "PAT":self.PAT, 
-				"DTG":self.DTG, "CMD":self.CMD, "HLP":self.HLP, "TXT":self.TXT }
+				"DTG":self.DTG, "CMD":self.CMD, "HLP":self.HLP, "TXT":self.TXT,
+				"MEV":self.MEV }
 
 		self.newvib = 0	# Vibration
+		self.newmev = 0 # Magnetic event
 		self.newevt = 0	# Cosmic ray
 		self.newhtu = 0	# Weather report
 		self.newcmd = 0 # Command completion available
@@ -131,6 +134,9 @@ class Event(object):
 
 				if kys[0] == "VIB":
 					self.newvib = 1
+
+				if kys[0] == "MEV":
+					self.newmev = 1
 					
 				if kys[0] == "EVT":
 					self.newevt = 1
@@ -237,6 +243,9 @@ class Event(object):
 	def get_vib(self):
 		return self.recd["VIB"]
 
+	def get_mev(self):
+		return self.recd["MEV"]
+
 	def get_tim(self):
 		return self.recd["TIM"]
 
@@ -306,6 +315,12 @@ class Event(object):
 	def new_txt(self):
 		if self.newtxt:
 			self.newtxt = 0
+			return 1
+		return 0
+
+	def new_mev(self):
+		if self.newmev:
+			self.newmev = 0
 			return 1
 		return 0
 
@@ -530,6 +545,7 @@ def main():
 						bmp = evt.get_bmp()
 						htu = evt.get_htu()
 						vib = evt.get_vib()
+						mev = evt.get_mev()
 
 						print "ARDUINO STATUS"
 						print "Status........: Upt:%s Frq:%s Qsz:%s Mis:%s" % (tim["Upt"],tim["Frq"],sts["Qsz"],sts["Mis"])
@@ -541,7 +557,8 @@ def main():
 						print "Magnatometer..: Mgx:%s Mgy:%s Mgz:%s" % (mag["Mgx"],mag["Mgy"],mag["Mgz"])
 						print "Barometer.....: Tmb:%s Prs:%s Alb:%s" % (bmp["Tmb"],bmp["Prs"],bmp["Alb"])
 						print "Humidity......: Tmh:%s Hum:%s" % (htu["Tmh"],htu["Hum"])
-						print "Vibration.....: Vax:%s Vcn:%s\n" % (vib["Vax"],vib["Vcn"])
+						print "Vibration.....: Vax:%s Vcn:%s" % (vib["Vax"],vib["Vcn"])
+						print "Magnetic Event: Mev:%s Mcn:%s\n" % (mev["Mev"],mev["Mcn"])
 
 						print "MONITOR STATUS"
 						print "USB device....: %s" % (usbdev)
@@ -627,7 +644,15 @@ def main():
 				if evt.new_txt():
 					txt = evt.get_txt()
 					print "%s" % (txt["Txt"])
-				
+
+				if vibflg:
+					if evt.new_mev():
+						mev = evt.get_mev()
+						mag = evt.get_mag()
+						print ""
+						print "Magnetic Event: Mev:%s Mcn:%s" % (mev["Mev"],mev["Mcn"])
+						print "Magnatometer..: Mgx:%s Mgy:%s Mgz:%s\n" % (mag["Mgx"],mag["Mgy"],mag["Mgz"])
+						
 				if vibflg:
 					vbuf = evt.get_vibration()
 					if len(vbuf) > 0:

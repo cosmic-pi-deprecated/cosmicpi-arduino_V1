@@ -865,6 +865,14 @@ float acl_fx=0.0, acl_fy=0.0, acl_fz=0.0;
 #define GEARTH 9.80665
 #define Gg (9.80665 * 0.001)
 
+#define ACL_FS 2.0 // +-2g 16 bit 2's compliment
+
+// Convert to meters per sec per sec
+
+float AclToMs2(short val) {
+	return (ACL_FS * GEARTH) * ((float) val / (float) 0x7FFF);
+}
+
 void AclReadData() {
 	uint8_t xlo,xhi,ylo,yhi,zlo,zhi;
 
@@ -888,9 +896,9 @@ void AclReadData() {
 		acl_y = (yhi<<8 | ylo);
 		acl_z = (zhi<<8 | zlo);
 
-		acl_fx = (2.0 * GEARTH) * ((float) acl_x / (float) 0x7FFF);
-		acl_fy = (2.0 * GEARTH) * ((float) acl_y / (float) 0x7FFF);
-		acl_fz = (2.0 * GEARTH) * ((float) acl_z / (float) 0x7FFF);
+		acl_fx = AclToMs2(acl_x);
+		acl_fy = AclToMs2(acl_y);
+		acl_fz = AclToMs2(acl_z);
 	}
 }
 

@@ -35,11 +35,11 @@
 // BMP085 record containing Tmb:temperature Prs:pressure Alb:Barrometric altitude
 //
 // {'VIB':{'Vax':i,'Vcn':i}}
-// Vibration record containing Vax:3 bit xyz direction mask Vcn:vibration count
+// Vibration record containing Vax:3 bit zyx direction mask Vcn:vibration count
 // This record is always immediatly followed by 3 more records, TIM, ACL, and MAG
 //
-// {'MEV':{'Mev':i,'Mcn':i}}
-// Magnetic event Mev:8 bit status Mcn:magnetic event count
+// {'MEV':{'Mev':i,'Met':f,'Mdx':f,'Mdy':f,'Mdz':f}}
+// Magnetic event Mev:3 bit zyx status Met:Threshold Mdx:Delta x,Mdy:Delta y,Mdz:Delta z
 //
 // {'MAG':{'Mgx':f,'Mgy':f,'Mgz':f}}
 // LSM303DLH magnatometer record containing Mgx:the x field strength Mgy:the y field Mgz:ther z field
@@ -197,6 +197,7 @@ uint32_t adc_samples_per_evt = 8;	// Number of ADC samples per event
 uint32_t channel_mask        = 3;	// Channel 1 and 2
 uint32_t debug_gps           = 0;	// Debug print of GPS NMEA strings
 uint32_t output_format       = 0;	// Output format 0=CSV else JSON, default CSV
+uint32_t mag_poll_rate	     = 1;	// Magnetic polling rate
 
 // Siesmic and magnetic event trigger parameters
 
@@ -223,6 +224,7 @@ typedef enum {
 
 	ACLT,	// Accelerometer event threshold
 	MAGT,	// Magnatometer event threshold
+	MPOL,	// Magnetic polling on
 	GPRI,	// GPS read increment
 	NADC,	// Number of ADC samples per event
 	RBRK,	// Reset breakouts
@@ -278,6 +280,7 @@ void acld(int arg);
 void magd(int arg);
 void aclt(int arg);
 void magt(int arg);
+void mpol(int arg);
 void gpri(int arg);
 void nadc(int arg);
 void rbrk(int arg);
@@ -311,6 +314,7 @@ CmdStruct cmd_table[CMDS] = {
 	{ MAGD, magd, "MAGD", "Magnatometer display rate", 1 },
 	{ ACLT, aclt, "ACLT", "Accelerometer event trigger threshold", 1 },
 	{ MAGT, magt, "MAGT", "Magnatometer event trigger threshold", 1 },
+	{ MPOL, mpol, "MPOL", "Magnetic polling rate, 0=off else rate", 1 },
 	{ GPRI, gpri, "GPRI", "GPS read increment in seconds", 1 },
 	{ NADC, nadc, "NADC", "Number of ADC sampes tor read per event", 1 },
 	{ RBRK, rbrk, "RBRK", "Reset power on=1/off=0 for breakouts", 1 },
@@ -678,16 +682,15 @@ void AclMbSetup() {
 	// LMWrite8(acl_ad, 0x1F, val, 1); // CTRL0
 
 #define MXYZEN (0x7 << 5)	// Enable XYZ interrupt detection
-//#define MIELEN 0x1		// Enable
-#define MIELEN 0x0		// Disable
+#define MIELEN 0x1		// Enable
 
 	val = MXYZEN | MIELEN;
-	LMWrite8(acl_ad, 0x12, val, 1); // INT_CTRL_M
+	// LMWrite8(acl_ad, 0x12, val, 1); // INT_CTRL_M
 
 	val = magnat_event_threshold >> 8;	// High
-	LMWrite8(acl_ad, 0x15, val, 1);		// INT_THS_H_M
+	// LMWrite8(acl_ad, 0x15, val, 1);		// INT_THS_H_M
 	val = magnat_event_threshold & 0xFF;	// Low
-	LMWrite8(acl_ad, 0x14, val, 1);		// INT_THS_L_M
+	// LMWrite8(acl_ad, 0x14, val, 1);		// INT_THS_L_M
 
 #define AXYXEN 0x7
 #define A50Hz (0x5 << 4)
@@ -711,14 +714,14 @@ void AclMbSetup() {
 #define INT2_DRDY_M 0x4
 
 	val = INT2_IGM | INT2_DRDY_M;
-	LMWrite8(acl_ad, 0x23, val, 1);
+	// LMWrite8(acl_ad, 0x23, val, 1);
 
 #define LIR1 0x1	// Latch interrupt 1
-#define MODR (0x2 << 2)	// 12.5 Hz
+#define MODR (0x4 << 2)	// 50Hz
 #define MRES (0x3 << 5) // High resolution
 #define TEMPEN 0x80	// Temperature enabled
 
-	val = LIR1 | MODR | MRES; // | TEMPEN;		
+	val = LIR1 | MODR | MRES | TEMPEN;		
 	LMWrite8(acl_ad, 0x24, val, 1);	// CTRL5
 
 #define MFS (0x1 << 5)		// +/- 4 Gauss full scale
@@ -897,16 +900,13 @@ void AclReadData() {
 short mag_x=0, mag_y=0, mag_z=0;
 float mag_fx=0.0, mag_fy=0.0, mag_fz=0.0;
 
-#define MAGNETIC_FS 4.0
+#define MAGNETIC_FS 4.0	// Full scale Gauss 16 bit 2's compliment
 
 float MagToGauss(short val) {
 	return (MAGNETIC_FS * (float) val) / (float) 0x7FFF;
 }
 
 void MagConvData() {
-
-	// +-4 Gauss full scale 16 bit two's compliment
-
 	mag_fx = MagToGauss(mag_x);
 	mag_fy = MagToGauss(mag_y);
 	mag_fz = MagToGauss(mag_z);
@@ -938,37 +938,29 @@ void MagReadData() {
 	mag_z = (zhi<<8 | zlo);
 }
 
-// Poll the magnatometer
+// Poll the magnatometer data for events
 
-short omag_x=0, omag_y=0, omag_z=0;
-short dmag_x=0, dmag_y=0, dmag_z=0;
+short omag_x=0, omag_y=0, omag_z=0;	// Old values
+short dmag_x=0, dmag_y=0, dmag_z=0;	// Delta values
+uint8_t mev_flg = 0;			// Magnetic event flag z,y,x bits
 
 void MagPoll() {
-	uint8_t mev = 0;
 
-	if (accl_flag) {
+	mev_flg = 0;	// No z,x,y data
 
-		MagReadData();
+	dmag_x = omag_x - mag_x;
+	dmag_y = omag_y - mag_y;
+	dmag_z = omag_z - mag_z;
 
-		dmag_x = omag_x - mag_x;
-		dmag_y = omag_y - mag_y;
-		dmag_z = omag_z - mag_z;
+	if (abs(dmag_x) > magnat_event_threshold) mev_flg |= 0x1;
+	if (abs(dmag_y) > magnat_event_threshold) mev_flg |= 0x2;
+	if (abs(dmag_z) > magnat_event_threshold) mev_flg |= 0x4;
+	
+	omag_x = mag_x;
+	omag_y = mag_y;
+	omag_z = mag_z;
 
-		if (abs(dmag_x) > magnat_event_threshold) mev |= 0x1;
-		if (abs(dmag_y) > magnat_event_threshold) mev |= 0x2;
-		if (abs(dmag_z) > magnat_event_threshold) mev |= 0x4;
-		
-		omag_x = mag_x;
-		omag_y = mag_y;
-		omag_z = mag_z;
-
-		if (mev) {
-			PushMag(1);
-			sprintf(txt,"{'MEV':{'Mev':%d,'Met':%f,'Mdx':%f,'Mdy':%f,'Mdz':%f}}\n",
-				mev,MagToGauss(magnat_event_threshold),MagToGauss(dmag_x),MagToGauss(dmag_y),MagToGauss(dmag_z));
-			PushTxt(txt);
-		}
-	}
+	if ((mev_flg) && (mag_poll_rate) && (acl_id) && ((ppcnt % mag_poll_rate) == 0)) PushMev();
 }
 
 // Set up the ADC channels
@@ -1453,7 +1445,6 @@ void PushVib() { // Push an event when shake detected => Earth Quake
 			old_icount = accl_icount;
 			PushTim(1);		// Push these first, and then vib
 			PushAcl(1);		// This is the real latched value
-			PushMag(1);
 			if (output_format) sprintf(txt,"{'VIB':{'Vax':%d,'Vcn':%d}}\n",accl_flag,accl_icount);
 			else sprintf(txt,"%s,VIB,AXIS %d,COUNT %d\n",CSVERS,accl_flag,accl_icount);
 			PushTxt(txt);
@@ -1461,24 +1452,26 @@ void PushVib() { // Push an event when shake detected => Earth Quake
 	}
 }
 
-void PushMev() { // Push a magnetic event when field changes
-
-	if (accl_flag) MagPoll();
-}
-
 // Push the magnetic field strengths in all three axis in micro tesla (gauss)
 
 void PushMag(int flg) {	// Push the mago stuff
 	
 	if ((flg) || ((acl_id) && ((ppcnt % magnot_display_rate) == 0))) {
-		if (!flg) {
-			MagReadData();
-			MagConvData();
-		}
 		if (output_format) sprintf(txt,"{'MAG':{'Mgx':%f,'Mgy':%f,'Mgz':%f}}\n",mag_fx,mag_fy,mag_fz);
 		else sprintf(txt,"%s,MAG,X MAGNETIC FIELD GAUSS %5.3f,Y MAGNETIC FIELD GAUSS %5.3f,Z MAGNETIC FIELD GAUSS %5.3f\n",CSVERS,mag_fx,mag_fy,mag_fz);
 		PushTxt(txt);
 	}
+}
+
+// Push magnetic event
+
+void PushMev() {
+
+	if (output_format) sprintf(txt,"{'MEV':{'Mev':%d,'Met':%f,'Mdx':%f,'Mdy':%f,'Mdz':%f}}\n",
+				   mev_flg,MagToGauss(magnat_event_threshold),MagToGauss(dmag_x),MagToGauss(dmag_y),MagToGauss(dmag_z));
+	else sprintf(txt,"%s,MEV,AXIS %d,THRESHOLD %f,DELTA X %f,DELTA Y %f,DELTA Z\n",
+				   CSVERS,mev_flg,MagToGauss(magnat_event_threshold),MagToGauss(dmag_x),MagToGauss(dmag_y),MagToGauss(dmag_z));
+	PushTxt(txt);
 }
 
 // Push the acceleration values in xyz in meters per sec squared
@@ -1728,15 +1721,24 @@ void magt(int arg) {
 	if (acl_id == ACL_ON_MB) {
 		magnat_event_threshold = 0x7FFF & arg;
 		val = magnat_event_threshold >> 8;	// High
-		LMWrite8(acl_ad, 0x15, val, 1);		// INT_THS_H_M
+		// LMWrite8(acl_ad, 0x15, val, 1);		// INT_THS_H_M
 		val = magnat_event_threshold & 0xFF;	// Low
-		LMWrite8(acl_ad, 0x14, val, 1);		// INT_THS_L_M
+		// LMWrite8(acl_ad, 0x14, val, 1);		// INT_THS_L_M
 		mag_ft = (float) (4.0 * (float) magnat_event_threshold) / (float) 0x7FFF;
 		sprintf(cmd_mesg,"MAG sensitivity thresfold:%d = %3.5f Gauss",magnat_event_threshold,mag_ft);
 		return;
 	}
 	sprintf(cmd_mesg,"Feature not available, wrong chip");
 	cmd_result = CMD_ERROR;
+}
+
+void mpol(int arg) {
+	mag_poll_rate = arg;
+	if (!mag_poll_rate) {
+		sprintf(cmd_mesg,"MAG polling is OFF");
+		return;
+	}
+	sprintf(cmd_mesg,"MAG polling rate once each: %d seconds",mag_poll_rate);
 }
 
 // The minimum gps read increment is 3 because
@@ -1865,12 +1867,15 @@ void loop() {
 		PushLoc(0);			// Push location latitude and longitude
 		PushTim(0);			// Push timing data
 		PushDtg(0);			// Push the date
-		PushMag(0);			// Push mago data
-		PushAcl(0);			// Push accelarometer data
+		
+		MagReadData();			// Read magnetic data
+		MagConvData();			// Convert to Gauss
+		MagPoll();			// Check for magnetic event
+		PushMag(0);			// Push mag data
+		PushAcl(0);			// Push accelarometer datai
+
 		PushSts(0,qsize,missed);	// Push status
 		GetDateTime();			// Read the next date/time from the GPS chip
-
-		MagPoll();			// Poll magnetic field
 
 		displ = 0;			// Clear flag for next PPS
 

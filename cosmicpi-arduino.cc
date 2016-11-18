@@ -202,8 +202,7 @@ uint32_t mag_poll_rate	     = 1;	// Magnetic polling rate
 // Siesmic and magnetic event trigger parameters
 
 uint16_t accelr_event_threshold = 2;	// Trigger level for siesmic events +-2g full scale
-uint16_t accelr_event_cutoff_fr = 30;	// Siesmic event cutoff frequency
-uint16_t magnat_event_threshold = 0x7FF;// Magnetic threshold +-4gauss full scale
+uint16_t magnat_event_threshold = 300;  // Magnetic threshold +-4gauss full scale
 
 // Commands can be sent over the serial line to configure the display rates or whatever
 
@@ -1709,9 +1708,11 @@ void json(int arg) {
 	
 void aclt(int arg) { 
 	uint8_t val = 0;
+	float gthresh;
 	accelr_event_threshold = arg & 0x7F; 
+	gthresh = 2.0 / (float) 0x7F;
 	val = accelr_event_threshold;
-	sprintf(cmd_mesg,"ACL sensitivity threshold:%d",accelr_event_threshold);
+	sprintf(cmd_mesg,"ACL sensitivity threshold:%d %fg ",accelr_event_threshold,gthresh);
 	LMWrite8(acl_ad, 0x32, val, acl_bus);
 }
 

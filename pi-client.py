@@ -83,7 +83,7 @@ class Event(object):
 		self.BMP = { "Tmb":"0.0","Prs":"0.0","Alb":"0.0" }
 		self.VIB = { "Vax":"0"  ,"Vcn":"0"               }
 		self.MAG = { "Mgx":"0.0","Mgy":"0.0","Mgz":"0.0" }
-		self.MEV = { "Mev":"0"  ,"Mcn":"0"               }
+		self.MEV = { "Mev":"0"  ,"Met":"0"  ,"Mdx":"0.0" ,"Mdy":"0.0", "Mdz":"0.0" }
 		self.ACL = { "Acx":"0.0","Acy":"0.0","Acz":"0.0" }
 		self.LOC = { "Lat":"0.0","Lon":"0.0","Alt":"0.0" }
 		self.TIM = { "Upt":"0"  ,"Frq":"0"  ,"Sec":"0"   }
@@ -558,7 +558,7 @@ def main():
 						print "Barometer.....: Tmb:%s Prs:%s Alb:%s" % (bmp["Tmb"],bmp["Prs"],bmp["Alb"])
 						print "Humidity......: Tmh:%s Hum:%s" % (htu["Tmh"],htu["Hum"])
 						print "Vibration.....: Vax:%s Vcn:%s" % (vib["Vax"],vib["Vcn"])
-						print "Magnetic Event: Mev:%s Mcn:%s\n" % (mev["Mev"],mev["Mcn"])
+						print "Magnetic Event: Mev:%s Met:%s Mdx:%s Mdy:%s Mdz:%s\n" % (mev["Mev"],mev["Met"],mev["Mdx"],mev["Mdy"],mev["Mdz"])
 
 						print "MONITOR STATUS"
 						print "USB device....: %s" % (usbdev)
@@ -650,7 +650,7 @@ def main():
 						mev = evt.get_mev()
 						mag = evt.get_mag()
 						print ""
-						print "Magnetic Event: Mev:%s Mcn:%s" % (mev["Mev"],mev["Mcn"])
+						print "Magnetic Event: Mev:%s Met:%s Mdx:%s Mdy:%s Mdz:%s" % (mev["Mev"],mev["Met"],mev["Mdx"],mev["Mdy"],mev["Mdz"])
 						print "Magnatometer..: Mgx:%s Mgy:%s Mgz:%s\n" % (mag["Mgx"],mag["Mgy"],mag["Mgz"])
 						
 				if vibflg:

@@ -678,7 +678,8 @@ void AclMbSetup() {
 	// LMWrite8(acl_ad, 0x1F, val, 1); // CTRL0
 
 #define MXYZEN (0x7 << 5)	// Enable XYZ interrupt detection
-#define MIELEN 0x1		// Enable
+//#define MIELEN 0x1		// Enable
+#define MIELEN 0x0		// Disable
 
 	val = MXYZEN | MIELEN;
 	LMWrite8(acl_ad, 0x12, val, 1); // INT_CTRL_M
@@ -896,6 +897,21 @@ void AclReadData() {
 short mag_x=0, mag_y=0, mag_z=0;
 float mag_fx=0.0, mag_fy=0.0, mag_fz=0.0;
 
+#define MAGNETIC_FS 4.0
+
+float MagToGauss(short val) {
+	return (MAGNETIC_FS * (float) val) / (float) 0x7FFF;
+}
+
+void MagConvData() {
+
+	// +-4 Gauss full scale 16 bit two's compliment
+
+	mag_fx = MagToGauss(mag_x);
+	mag_fy = MagToGauss(mag_y);
+	mag_fz = MagToGauss(mag_z);
+}
+
 void MagReadData() {
 	uint8_t xlo,xhi,ylo,yhi,zlo,zhi;
 	
@@ -920,10 +936,39 @@ void MagReadData() {
 	mag_x = (xhi<<8 | xlo);
 	mag_y = (yhi<<8 | ylo);
 	mag_z = (zhi<<8 | zlo);
+}
 
-	mag_fx = (float) mag_x;
-	mag_fy = (float) mag_y;
-	mag_fz = (float) mag_z;
+// Poll the magnatometer
+
+short omag_x=0, omag_y=0, omag_z=0;
+short dmag_x=0, dmag_y=0, dmag_z=0;
+
+void MagPoll() {
+	uint8_t mev = 0;
+
+	if (accl_flag) {
+
+		MagReadData();
+
+		dmag_x = omag_x - mag_x;
+		dmag_y = omag_y - mag_y;
+		dmag_z = omag_z - mag_z;
+
+		if (abs(dmag_x) > magnat_event_threshold) mev |= 0x1;
+		if (abs(dmag_y) > magnat_event_threshold) mev |= 0x2;
+		if (abs(dmag_z) > magnat_event_threshold) mev |= 0x4;
+		
+		omag_x = mag_x;
+		omag_y = mag_y;
+		omag_z = mag_z;
+
+		if (mev) {
+			PushMag(1);
+			sprintf(txt,"{'MEV':{'Mev':%d,'Met':%f,'Mdx':%f,'Mdy':%f,'Mdz':%f}}\n",
+				mev,MagToGauss(magnat_event_threshold),MagToGauss(dmag_x),MagToGauss(dmag_y),MagToGauss(dmag_z));
+			PushTxt(txt);
+		}
+	}
 }
 
 // Set up the ADC channels
@@ -1418,12 +1463,7 @@ void PushVib() { // Push an event when shake detected => Earth Quake
 
 void PushMev() { // Push a magnetic event when field changes
 
-	if (accl_flag) {
-		PushMag(1);
-		if (output_format) sprintf(txt,"{'MEV':{'Mev':0x%02X,'Mcn':%d}}\n",magn_flag,magn_icount);
-		else sprintf(txt,"%s,MEV,EVENT %d,COUNT %d\n",CSVERS,magn_flag,magn_icount);
-		PushTxt(txt);
-	}
+	if (accl_flag) MagPoll();
 }
 
 // Push the magnetic field strengths in all three axis in micro tesla (gauss)
@@ -1431,7 +1471,10 @@ void PushMev() { // Push a magnetic event when field changes
 void PushMag(int flg) {	// Push the mago stuff
 	
 	if ((flg) || ((acl_id) && ((ppcnt % magnot_display_rate) == 0))) {
-		MagReadData();
+		if (!flg) {
+			MagReadData();
+			MagConvData();
+		}
 		if (output_format) sprintf(txt,"{'MAG':{'Mgx':%f,'Mgy':%f,'Mgz':%f}}\n",mag_fx,mag_fy,mag_fz);
 		else sprintf(txt,"%s,MAG,X MAGNETIC FIELD GAUSS %5.3f,Y MAGNETIC FIELD GAUSS %5.3f,Z MAGNETIC FIELD GAUSS %5.3f\n",CSVERS,mag_fx,mag_fy,mag_fz);
 		PushTxt(txt);
@@ -1681,14 +1724,15 @@ void aclt(int arg) {
 
 void magt(int arg) {
 	uint8_t val;
-
+	float mag_ft;
 	if (acl_id == ACL_ON_MB) {
 		magnat_event_threshold = 0x7FFF & arg;
 		val = magnat_event_threshold >> 8;	// High
 		LMWrite8(acl_ad, 0x15, val, 1);		// INT_THS_H_M
 		val = magnat_event_threshold & 0xFF;	// Low
 		LMWrite8(acl_ad, 0x14, val, 1);		// INT_THS_L_M
-		sprintf(cmd_mesg,"MAG sensitivity thresfold:%d",magnat_event_threshold);
+		mag_ft = (float) (4.0 * (float) magnat_event_threshold) / (float) 0x7FFF;
+		sprintf(cmd_mesg,"MAG sensitivity thresfold:%d = %3.5f Gauss",magnat_event_threshold,mag_ft);
 		return;
 	}
 	sprintf(cmd_mesg,"Feature not available, wrong chip");
@@ -1825,6 +1869,9 @@ void loop() {
 		PushAcl(0);			// Push accelarometer data
 		PushSts(0,qsize,missed);	// Push status
 		GetDateTime();			// Read the next date/time from the GPS chip
+
+		MagPoll();			// Poll magnetic field
+
 		displ = 0;			// Clear flag for next PPS
 
 		if ((!gps_id) || (debug_gps)) {	// Get firmware version ?

@@ -123,6 +123,12 @@
 #define BLUE_LED_PIN 46
 #define RED_LED_PIN 48
 
+// Max5387 address pins
+
+#define MAX1_PIN 35
+#define MAX2_PIN 36
+#define MAX3_PIN 37
+
 // Set up the pins to remap SPI by hand
 const int SS_PIN   = 42; 
 const int SCK_PIN  = 44;
@@ -1316,6 +1322,14 @@ void setup() {
 
 	pinMode(BLUE_LED_PIN, OUTPUT);	
 	pinMode(RED_LED_PIN, OUTPUT);
+
+	pinMode(MAX1_PIN, OUTPUT);
+	pinMode(MAX2_PIN, OUTPUT);
+	pinMode(MAX3_PIN, OUTPUT);
+
+	digitalWrite(MAX1_PIN, LOW);
+	digitalWrite(MAX2_PIN, LOW);
+	digitalWrite(MAX3_PIN, LOW);
 
 	Serial.begin(SERIAL_BAUD_RATE);	// Start the serial line
 	Serial1.begin(GPS_BAUD_RATE);	// and the second

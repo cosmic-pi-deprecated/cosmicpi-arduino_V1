@@ -645,7 +645,6 @@ void GetAclId() {
 
 	if (acl_id) return;
 
-	Wire1.begin();
 	acl_bus = 1;
 	id = BusRead(ACL_BUS_1_ADDR,ACL_ID_REG,1);	
 	if (id == ACL_ID) { 
@@ -655,7 +654,6 @@ void GetAclId() {
 		return;
 	}
 
-	Wire.begin();
 	acl_bus = 0;
 	BusWrite(ACL_BUS_0_ADDR, ACL_CTRL_REG1_A, 0x57, 0);
         id = BusRead(ACL_BUS_0_ADDR, ACL_CTRL_REG1_A, 0);
@@ -1310,6 +1308,9 @@ void GpsSetup() {
 // This is the first function to be called when the sketch is started
 
 void setup() {
+
+	Wire.begin();
+	Wire1.begin();
 
 #if FLG_PIN
 	pinMode(FLG_PIN, OUTPUT);	// Pin for the ppsfl flag for debug
@@ -2426,7 +2427,6 @@ uint8_t hturegs[HTUREGS] = {	0xE3,    0xE5,    0xF3,     0xF5,     0xE6,   0xE7,
 
 static uint8_t htu_rd=0;
 void HtuReset() {
-	Wire1.begin();
 
 	Wire1.beginTransmission(HTU_BUS_1_ADDR);
 	Wire1.write(hturegs[SRes]);
@@ -2579,7 +2579,6 @@ void GetBmpId() {
 		return;
 	}
 
-	Wire1.begin();
 	bmp_bus = 1;
 	id = BusRead(BMP_BUS_1_ADDR,LPS25H_WHO_AM_I,1);	
 	if (id == LPS25H_ID) { 
@@ -2589,7 +2588,6 @@ void GetBmpId() {
 		return;
 	}
 
-	Wire.begin();
 	bmp_bus = 0;
         id = BusRead(BMP_BUS_0_ADDR, BMP085_WHO_AM_I, 0);
         if (id == BMP805_ID) {

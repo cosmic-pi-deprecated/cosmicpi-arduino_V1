@@ -71,6 +71,9 @@
 //
 // {'TXT':{'Txt':s}}
 // Text to be displayed
+//
+// {'BER':{'Ber':%d,'Adr':%s,'Reg':%s,'Bus':%d}}
+// Bus error warning, Ber=error code, Adr=the hex address, Reg=the hex register, Bus=the bus number 0/1
 
 // N.B. These records pass the data to a python monitor over the serial line. Python has awsome string handling and looks them up in
 // associative arrays to build records of any arbitary format you want. So this is only the start of the story of record processing.
@@ -1440,7 +1443,7 @@ void PushHtu(int flg) {	// If flg is true always push
 		temph = HtuReadTemperature();
 		humid = HtuReadHumidity();
 		if (output_format) sprintf(txt,"{'HTU':{'Tmh':%5.3f,'Hum':%4.1f}}\n",temph,humid);
-		else sprintf(txt,"%s,HTU,TEMPERATURE %5.3f,HUMIDITY %5.3f\n",CSVERS,temph,humid);
+		else sprintf(txt,"%s,HTU,%f,%f\n",CSVERS,temph,humid);
 		PushTxt(txt);
 	}
 }
@@ -1465,7 +1468,7 @@ void PushBmp(int flg) {	// If flg is true always push
 			altib = BmpCalcAlti();
 		}
 		if (output_format) sprintf(txt,"{'BMP':{'Tmb':%5.3f,'Prs':%5.3f,'Alb':%4.1f}}\n",tempb,presr,altib);
-		else sprintf(txt,"%s,BMP,TEMPERATURE %5.3f BARROMETRIC PRESSURE %5.3f ALTITUDE %5.3f\n",CSVERS,tempb,presr,altib);
+		else sprintf(txt,"%s,BMP,%f,%f,%f\n",CSVERS,tempb,presr,altib);
 		PushTxt(txt);
 	}
 }
@@ -1485,7 +1488,7 @@ void PushVib() { // Push an event when shake detected => Earth Quake
 			PushTim(1);		// Push these first, and then vib
 			PushAcl(1);		// This is the real latched value
 			if (output_format) sprintf(txt,"{'VIB':{'Vax':%d,'Vcn':%d}}\n",accl_flag,accl_icount);
-			else sprintf(txt,"%s,VIB,AXIS %d,COUNT %d\n",CSVERS,accl_flag,accl_icount);
+			else sprintf(txt,"%s,%d,%d\n",CSVERS,accl_flag,accl_icount);
 			PushTxt(txt);
 		}
 	}
@@ -1497,7 +1500,7 @@ void PushMag(int flg) {	// Push the mago stuff
 	
 	if ((flg) || ((acl_id) && ((ppcnt % magnot_display_rate) == 0))) {
 		if (output_format) sprintf(txt,"{'MAG':{'Mgx':%f,'Mgy':%f,'Mgz':%f}}\n",mag_fx,mag_fy,mag_fz);
-		else sprintf(txt,"%s,MAG,X MAGNETIC FIELD GAUSS %5.3f,Y MAGNETIC FIELD GAUSS %5.3f,Z MAGNETIC FIELD GAUSS %5.3f\n",CSVERS,mag_fx,mag_fy,mag_fz);
+		else sprintf(txt,"%s,MAG,%f,%f,%f\n",CSVERS,mag_fx,mag_fy,mag_fz);
 		PushTxt(txt);
 	}
 }
@@ -1508,7 +1511,7 @@ void PushMev() {
 
 	if (output_format) sprintf(txt,"{'MEV':{'Mev':%d,'Met':%f,'Mdx':%f,'Mdy':%f,'Mdz':%f}}\n",
 				   mev_flg,MagToGauss(magnat_event_threshold),MagToGauss(dmag_x),MagToGauss(dmag_y),MagToGauss(dmag_z));
-	else sprintf(txt,"%s,MEV,AXIS %d,THRESHOLD %f,DELTA X %f,DELTA Y %f,DELTA Z\n",
+	else sprintf(txt,"%s,MEV,%d,%f,%f,%f,%f\n",
 				   CSVERS,mev_flg,MagToGauss(magnat_event_threshold),MagToGauss(dmag_x),MagToGauss(dmag_y),MagToGauss(dmag_z));
 	PushTxt(txt);
 }
@@ -1520,7 +1523,7 @@ void PushAcl(int flg) { // Push the accelerometer and compass stuff
 	if ((flg) || ((acl_id) && ((ppcnt % accelr_display_rate) == 0))) {
 		AclReadData();
 		if (output_format) sprintf(txt,"{'ACL':{'Acx':%f,'Acy':%f,'Acz':%f}}\n",acl_fx, acl_fy, acl_fz);
-		else sprintf(txt,"%s,ACL,X ACCELERATION M/S/S %3.2f,Y ACCELERATION M/S/S %3.2f,Z ACCELERATION M/S/S %3.2f\n",CSVERS,acl_fx, acl_fy, acl_fz);
+		else sprintf(txt,"%s,%f,%f,%f\n",CSVERS,acl_fx, acl_fy, acl_fz);
 		PushTxt(txt);
 	}
 }
@@ -1531,7 +1534,7 @@ void PushLoc(int flg) {
 		
 	if ((flg) || ((ppcnt % latlon_display_rate) == 0)) {
 		if (output_format) sprintf(txt,"{'LOC':{'Lat':%f,'Lon':%f,'Alt':%f}}\n",latitude,longitude,altitude);
-		else sprintf(txt,"%s,LOC,LATTITUDE DEGREES %5.3f,LONGITUDE DEGREES %5.3f,ALTITUDE METERS %3.2f\n",CSVERS,latitude,longitude,altitude);
+		else sprintf(txt,"%s,LOC,%f,%f,%f\n",CSVERS,latitude,longitude,altitude);
 		PushTxt(txt);
 	}
 }
@@ -1542,7 +1545,7 @@ void PushTim(int flg) {
 
 	if ((flg) || ((ppcnt % frqutc_display_rate) == 0)) {
 		if (output_format) sprintf(txt,"{'TIM':{'Upt':%4d,'Frq':%7d,'Sec':'%s'}}\n",ppcnt,rega0,rdtm);
-		else sprintf(txt,"%s,TIM,TIME IN SECONDS SINCE BOOT %4d,MASTER CLOCK FREQUENCY HERTZ %7d,TIME OF DAY HHMMSS %6s\n",CSVERS,ppcnt,rega0,rdtm);
+		else sprintf(txt,"%s,TIM,%d,%d,%6s\n",CSVERS,ppcnt,rega0,rdtm);
 		PushTxt(txt);
 	}			
 }
@@ -1553,7 +1556,7 @@ void PushDtg(int flg) {
 
 	if ((date_ok) && ((flg) || ((ppcnt % frqdtg_display_rate) == 0))) {
 		if (output_format) sprintf(txt,"{'DTG':{'Yer':%4d,'Mnt':%2d,'Day':%1d}}\n",year,month,day);
-		else sprintf(txt,"%s,DTG,YEAR %4d,MONTH %2d,DAY %2d\n",CSVERS,year,month,day);
+		else sprintf(txt,"%s,DTG,%4d,%2d,%2d\n",CSVERS,year,month,day);
 		PushTxt(txt);
 	}			
 }
@@ -1569,9 +1572,9 @@ uint8_t res;
 				qsize,missed,terr,tmax,htu_ok,bmp_ok,acl_id,acl_id,gps_ok,adc_samples_per_evt,gps_read_inc,events_display_size,channel_mask);
 		} else {
 			sprintf(txt,
-				"%s,STS,EVENT QUEUE SIZE %2d,MISSED EVENT COUNT %2d,TERMINAL IO ERROR %2d,TERMINAL MAX BUFFER SIZE %4d,"
-				"HTU OK FLAG %1d,BMP OK FLAG %1d,ACL OK FLAG %1d,MAG OK FLAG %1d,GPS OK FLAG %1d,"
-				"ADC SAMPLES PER CHANNEL %2d,GPS READ INCREMENT %2d,EVENT DUMP THRESHOLD %2d,ACTIVE CHANNEL MASK %d\n",
+				"%s,STS,%2d,%2d,%2d,%4d,"
+				"%1d,%1d,%1d,%1d,%1d,"
+				"%2d,%2d,%2d,%d\n",
 				CSVERS,qsize,missed,terr,tmax,
 				htu_ok,bmp_ok,acl_id,acl_id,gps_ok,
 				adc_samples_per_evt,gps_read_inc,events_display_size,channel_mask);
@@ -1642,9 +1645,9 @@ void PushEvq(int flg, int *qsize, int *missed) {
 						"{'EVT':{'Evt':%1d,'Frq':%8d,'Tks':%8d,'Etm':%s%s,'Adc':[[%s],[%s]]}}\n",
 						eb.Count, eb.Frequency, eb.Ticks, eb.DateTime, index(stx,'.'),adch0,adch1);
 			else sprintf(txt,
-					"%s,EVT,MASTER CLOCK FREQUENCY HERTZ %7d,CLOCK TICKS SINCE LAST EVENT %7d,"
-					"TIME OF DAY HHMMSS %6s,ADC CHANNEL VALUE COUNT %2d,"
-					"AD CHANNEL 0 VALUES %s,AD CHANNEL 1 VALUES %s\n",
+					"%s,EVT,%7d,%7d,"
+					"%6s,%2d,"
+					"%s,%s\n",
 					CSVERS,eb.Frequency,eb.Ticks,index(stx,'.'),adc_samples_per_evt,adch0,adch1);
 			PushTxt(txt);
 		}

@@ -2668,29 +2668,38 @@ void rcpu(int arg) {
 
 uint8_t abreg = A_AND_B;
 
-void ThrWrite(uint8_t val) {
+int ThrWrite(uint8_t val) {
+	int err;
+
 	Wire.beginTransmission(MAX_ADDR);
 	Wire.write(abreg);
 	Wire.write(val);
-	Wire.endTransmission();
+	err = Wire.endTransmission();
+
+	return err;
 }
 
 void wrth(int arg) {
+	int err = 0;
 	uint8_t val;
 	val = (uint8_t) arg;
-	ThrWrite(val);
-	if (abreg == A_AND_B) {
-		sprintf(cmd_mesg,"MAX Threshold	A_and_B set: 0x%02X",val);
-		return;
+	
+	err = ThrWrite(val);
+	if (err == 0) {
+		if (abreg == A_AND_B) {
+			sprintf(cmd_mesg,"MAX Threshold	A_and_B set: 0x%02X",val);
+			return;
+		}
+		if (abreg == A_ONLY) {
+			sprintf(cmd_mesg,"MAX Threshold A_Only set: 0x%02X",val);
+			return;
+		}
+		if (abreg == B_ONLY) {
+			sprintf(cmd_mesg,"MAX Threshold B_Only set: 0x%02X",val);
+			return;
+		}
 	}
-	if (abreg == A_ONLY) {
-		sprintf(cmd_mesg,"MAX Threshold A_Only set: 0x%02X",val);
-		return;
-	}
-	if (abreg == B_ONLY) {
-		sprintf(cmd_mesg,"MAX Threshold B_Only set: 0x%02X",val);
-		return;
-	}
+	sprintf(cmd_mesg,"MAX5387 Device did not answer, err:%d",err);
 }
 
 void abth(int arg) {

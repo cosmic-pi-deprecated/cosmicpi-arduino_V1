@@ -124,10 +124,10 @@
 #define RED_LED_PIN 48
 
 // Set up the pins to remap SPI by hand
-const int SS_pin   = 42; 
-const int SCK_pin  = 44;
-const int MISO_pin = 22;
-const int MOSI_pin = 43;
+const int SS_PIN   = 42; 
+const int SCK_PIN  = 44;
+const int MISO_PIN = 22;
+const int MOSI_PIN = 43;
 
 // Accelerometer/Magnatometer definitions for LMS303D and LSM303DLHC chips
 #define ACL_BUS_1_ADDR 0x1D	// LMS303D on the main board on i2c bus 1
@@ -243,6 +243,9 @@ typedef enum {
 	WRPU,	// Write a value to the MAX1923 PU
 	RCPU,	// Set recieve logic ON on the MAX1923 PU
 
+	WRTH,	// Write thresholds to MAX5387
+	ABTH,	// Select MAX5387 write pots
+
 	JSON,	// Set out put JSON 1, CSV 0
 
 	CMDS };	// Command count
@@ -295,6 +298,8 @@ void dhtu(int arg);
 void bmid(int arg);
 void wrpu(int arg);
 void rcpu(int arg);
+void wrth(int arg);
+void abth(int arg);
 void json(int arg);
 
 // Command table
@@ -329,6 +334,8 @@ CmdStruct cmd_table[CMDS] = {
 	{ BMID, bmid, "BMID", "Get BMP chip type", 1 },
 	{ WRPU,	wrpu, "WRPU", "Write a value to the MAX1923 PU", 1 },
 	{ RCPU,	rcpu, "RCPU", "Recievie logic MAX1923 PU 0=just write, 1=setON, 2=setOFF", 1 },
+	{ WRTH, wrth, "WRTH", "Write to the MAX5387 Threshold pots currently selected", 1 },
+	{ ABTH, abth, "ABTH", "Select MAX5387 pots 1=A_ONLY, 2=B_ONLY, 3=A_AND_B", 1 },
 	{ JSON, json, "JSON", "Select output format JSON=1 or CSV=0 (default)", 1 }
 };
 
@@ -1311,10 +1318,10 @@ void setup() {
 	strcpy(wdtm,"");
 
 	digitalWrite(SS, HIGH);  // Start with SS high
-	pinMode(SS_pin, OUTPUT);
-	pinMode(SCK_pin, OUTPUT);
-	pinMode(MISO_pin, INPUT); //this is the avalanche pin, not implemented yet
-	pinMode(MOSI_pin, OUTPUT);
+	pinMode(SS_PIN, OUTPUT);
+	pinMode(SCK_PIN, OUTPUT);
+	pinMode(MISO_PIN, INPUT); //this is the avalanche pin, not implemented yet
+	pinMode(MOSI_PIN, OUTPUT);
 
 	// Power OFF/ON the breakouts
 
@@ -2600,21 +2607,21 @@ int receive_on = 0;
 byte bitBang(byte _send)  {
 
 	byte _receive = 0;
-	digitalWrite(SS_pin, LOW);
+	digitalWrite(SS_PIN, LOW);
 	
 	for(int i=0; i<8; i++) {
-		digitalWrite(MOSI_pin, bitRead(_send, 7-i));
-		digitalWrite(SCK_pin, HIGH);               
+		digitalWrite(MOSI_PIN, bitRead(_send, 7-i));
+		digitalWrite(SCK_PIN, HIGH);               
 		if (receive_on) 
-			bitWrite(_receive, i, digitalRead(MISO_pin));
+			bitWrite(_receive, i, digitalRead(MISO_PIN));
 
-		digitalWrite(SCK_pin, LOW);
+		digitalWrite(SCK_PIN, LOW);
 
 		if (receive_on) 
-			digitalWrite(MOSI_pin, LOW);
+			digitalWrite(MOSI_PIN, LOW);
 	}
 
-	digitalWrite(SS_pin, HIGH);
+	digitalWrite(SS_PIN, HIGH);
 
 	if (receive_on) 
 		return _receive;
@@ -2648,4 +2655,48 @@ void rcpu(int arg) {
 		sprintf(cmd_mesg,"HV receivinf OFF");
 
 	return;
+}
+
+// ==============================================
+// Control the thresholds on MAX5387
+
+#define MAX_ADDR 0x28
+
+#define A_ONLY 0x11
+#define B_ONLY 0x12
+#define A_AND_B 0x13
+
+uint8_t abreg = A_AND_B;
+
+void ThrWrite(uint8_t val) {
+	Wire.beginTransmission(MAX_ADDR);
+	Wire.write(abreg);
+	Wire.write(val);
+	Wire.endTransmission();
+}
+
+void wrth(int arg) {
+	uint8_t val;
+	val = (uint8_t) arg;
+	ThrWrite(val);
+	if (abreg == A_AND_B) {
+		sprintf(cmd_mesg,"MAX Threshold	A_and_B set: 0x%02X",val);
+		return;
+	}
+	if (abreg == A_ONLY) {
+		sprintf(cmd_mesg,"MAX Threshold A_Only set: 0x%02X",val);
+		return;
+	}
+	if (abreg == B_ONLY) {
+		sprintf(cmd_mesg,"MAX Threshold B_Only set: 0x%02X",val);
+		return;
+	}
+}
+
+void abth(int arg) {
+	uint8_t val = 3;
+	if (arg == 1) val = 1;
+	if (arg == 2) val = 2;
+	abreg = val;
+	sprintf(cmd_mesg,"MAX Threshold write channels set: %d",val);
 }

@@ -93,6 +93,7 @@ class Event(object):
 		self.CMD = { "Cmd":"0"  ,"Res":"0"  ,"Msg":"0" }
 		self.HLP = { "Idn":"0"  ,"Nme":"0"  ,"Hlp":"0" }
 		self.TXT = { "Txt":"0" }
+		self.BER = { "Ber":"0"  ,"Adr":"0"  ,"Reg":"0","Bus":"0" }
 
 		# Add ons
 
@@ -106,7 +107,7 @@ class Event(object):
 				"ACL":self.ACL, "LOC":self.LOC, "TIM":self.TIM, "STS":self.STS,
 				"EVT":self.EVT, "DAT":self.DAT, "SQN":self.SQN, "PAT":self.PAT, 
 				"DTG":self.DTG, "CMD":self.CMD, "HLP":self.HLP, "TXT":self.TXT,
-				"MEV":self.MEV }
+				"MEV":self.MEV, "BER":self.BER }
 
 		self.newvib = 0	# Vibration
 		self.newmev = 0 # Magnetic event
@@ -114,7 +115,8 @@ class Event(object):
 		self.newhtu = 0	# Weather report
 		self.newcmd = 0 # Command completion available
 		self.newhlp = 0 # Help text available
-		self.newtxt = 0 # Text to print
+		self.newtxt = 0 # Text to printi
+		self.newber = 0 # New bus error
 	
 		self.sqn = 0	# Packet sequenc number
 
@@ -152,6 +154,9 @@ class Event(object):
 
 				if kys[0] == "TXT":
 					self.newtxt = 1
+
+				if kys[0] == "BER":
+					self.newber = 1
 
 		except Exception, e:
 			#print e
@@ -300,6 +305,9 @@ class Event(object):
 	def get_txt(self):
 		return self.recd["TXT"]
 
+	def get_ber(self):
+		return self.recd["BER"]
+
 	def new_cmd(self):
 		if self.newcmd:
 			self.newcmd = 0
@@ -321,6 +329,12 @@ class Event(object):
 	def new_mev(self):
 		if self.newmev:
 			self.newmev = 0
+			return 1
+		return 0
+
+	def new_ber(self):
+		if self.newber:
+			self.newber = 0
 			return 1
 		return 0
 
@@ -546,9 +560,11 @@ def main():
 						htu = evt.get_htu()
 						vib = evt.get_vib()
 						mev = evt.get_mev()
+						ber = evt.get_ber()
 
 						print "ARDUINO STATUS"
 						print "Status........: Upt:%s Frq:%s Qsz:%s Mis:%s" % (tim["Upt"],tim["Frq"],sts["Qsz"],sts["Mis"])
+						print "BusError......: Ber:%s Adr:%s Reg:%s Bus:%s" % (ber["Ber"],ber["Adr"],ber["Reg"],ber["Bus"])
 						print "GPS date......: Yer:%s Mnt:%s Day%s" % (dtg["Yer"],dtg["Mnt"],dtg["Day"])
 						print "Parameters....: Adn:%s Gri:%s Eqt:%s Chm:%s" % (sts["Adn"],sts["Gri"],sts["Eqt"],sts["Chm"])
 						print "HardwareStatus: Htu:%s Bmp:%s Acl:%s Mag:%s Gps:%s" % (sts["Htu"],sts["Bmp"],sts["Acl"],sts["Mag"],sts["Gps"])
@@ -644,6 +660,10 @@ def main():
 				if evt.new_txt():
 					txt = evt.get_txt()
 					print "%s" % (txt["Txt"])
+
+				if evt.new_ber():
+					ber = evt.get_ber()
+					print "\nBUS ERROR:%s ADDRESS:%s REG:%s BUS:%s" % (ber["Ber"],ber["Adr"],ber["Reg"],ber["Bus"])
 
 				if vibflg:
 					if evt.new_mev():

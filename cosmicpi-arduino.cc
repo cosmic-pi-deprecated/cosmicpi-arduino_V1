@@ -358,9 +358,19 @@ static char adch0[ADCHL],adch1[ADCHL];	// ADC channel values strings
 #define FREQ 42000000			// Clock frequency
 #define MFRQ 40000000			// Sanity check frequency value
 
+int bus_err = 0;
+void PushBusError(int ber, uint8_t address, uint8_t reg, uint8_t bus) {
+	bus_err = ber;
+	if (ber) {
+		sprintf(txt,"{'BER':{'Ber':%d,'Adr':'0x%02X','Reg':'0x%02X','Bus':%d}}\n",
+			ber,address,reg,bus);
+		PushTxt(txt);
+	}
+}
+
 // I2C Bus IO routines for Bus 0 or 1
 
-void LMWrite8(uint8_t address, uint8_t reg, uint8_t value, uint8_t bus) {
+void BusWrite(uint8_t address, uint8_t reg, uint8_t value, uint8_t bus) {
 	
 	if (!address) return;
 
@@ -368,16 +378,16 @@ void LMWrite8(uint8_t address, uint8_t reg, uint8_t value, uint8_t bus) {
 		Wire1.beginTransmission(address);
         	Wire1.write((uint8_t)reg);
 		Wire1.write((uint8_t)value);
-		Wire1.endTransmission();
+		PushBusError(Wire1.endTransmission(),address,reg,bus);
 	} else {
 		Wire.beginTransmission(address);
 		Wire.write((uint8_t)reg);
 		Wire.write((uint8_t)value);
-		Wire.endTransmission();
+		PushBusError(Wire.endTransmission(),address,reg,bus);
 	}
 }
 
-uint8_t LMRead8(uint8_t address, uint8_t reg, uint8_t bus) {
+uint8_t BusRead(uint8_t address, uint8_t reg, uint8_t bus) {
 	uint8_t value;
 
 	if (!address) return 0xFF;
@@ -385,19 +395,19 @@ uint8_t LMRead8(uint8_t address, uint8_t reg, uint8_t bus) {
 	if (bus) {
 		Wire1.beginTransmission(address);
 		Wire1.write((uint8_t) reg);
-		Wire1.endTransmission();
+		PushBusError(Wire1.endTransmission(),address,reg,bus);
 
 		Wire1.requestFrom(address, (uint8_t) 1);
 		value = Wire1.read();
-		Wire1.endTransmission();
+		PushBusError(Wire1.endTransmission(),address,reg,bus);
 	} else {
 		Wire.beginTransmission(address);
 		Wire.write((uint8_t) reg);
-		Wire.endTransmission();
+		PushBusError(Wire.endTransmission(),address,reg,bus);
 
 		Wire.requestFrom(address, (uint8_t) 1);
 		value = Wire.read();
-		Wire.endTransmission();
+		PushBusError(Wire.endTransmission(),address,reg,bus);
 	}
 	return value;
 }
@@ -631,7 +641,7 @@ void GetAclId() {
 
 	Wire1.begin();
 	acl_bus = 1;
-	id = LMRead8(ACL_BUS_1_ADDR,ACL_ID_REG,1);	
+	id = BusRead(ACL_BUS_1_ADDR,ACL_ID_REG,1);	
 	if (id == ACL_ID) { 
 		acl_id = ACL_ON_MB;
 		acl_ad = ACL_BUS_1_ADDR;
@@ -641,8 +651,8 @@ void GetAclId() {
 
 	Wire.begin();
 	acl_bus = 0;
-	LMWrite8(ACL_BUS_0_ADDR, ACL_CTRL_REG1_A, 0x57, 0);
-        id = LMRead8(ACL_BUS_0_ADDR, ACL_CTRL_REG1_A, 0);
+	BusWrite(ACL_BUS_0_ADDR, ACL_CTRL_REG1_A, 0x57, 0);
+        id = BusRead(ACL_BUS_0_ADDR, ACL_CTRL_REG1_A, 0);
         if (id == 0x57) {
 		acl_id = ACL_ADAFRUIT;
 		acl_ad = ACL_BUS_0_ADDR;
@@ -685,42 +695,42 @@ void AclMbSetup() {
 #define HPIS2	0x01
 
 	val = FIFO_EN | HPIS1;
-	// LMWrite8(acl_ad, 0x1F, val, 1); // CTRL0
+	// BusWrite(acl_ad, 0x1F, val, 1); // CTRL0
 
 #define MXYZEN (0x7 << 5)	// Enable XYZ interrupt detection
 #define MIELEN 0x1		// Enable
 
 	val = MXYZEN | MIELEN;
-	// LMWrite8(acl_ad, 0x12, val, 1); // INT_CTRL_M
+	// BusWrite(acl_ad, 0x12, val, 1); // INT_CTRL_M
 
 	val = magnat_event_threshold >> 8;	// High
-	// LMWrite8(acl_ad, 0x15, val, 1);		// INT_THS_H_M
+	// BusWrite(acl_ad, 0x15, val, 1);		// INT_THS_H_M
 	val = magnat_event_threshold & 0xFF;	// Low
-	// LMWrite8(acl_ad, 0x14, val, 1);		// INT_THS_L_M
+	// BusWrite(acl_ad, 0x14, val, 1);		// INT_THS_L_M
 
 #define AXYXEN 0x7
 #define A50Hz (0x5 << 4)
 
 	val = AXYXEN | A50Hz;		// x,y,z enable and 50 Hz
-	LMWrite8(acl_ad, 0x20, val, 1);	// CTRL1
+	BusWrite(acl_ad, 0x20, val, 1);	// CTRL1
 
 #define GRANGE 2.0
 #define AFS2G (0x00 << 3)
 
 	val = AFS2G;			// +/- 2g Full scale
-	LMWrite8(acl_ad,0x21,val, 1);	// CTRL2
+	BusWrite(acl_ad,0x21,val, 1);	// CTRL2
 
 #define INT1_DRDY_A 0x4
 #define INT1_IG1 0x20
 
 	val = INT1_IG1;			// Inertial interrupts on INT1 enabled
-	LMWrite8(acl_ad, 0x22, val, 1);	// CTRL3
+	BusWrite(acl_ad, 0x22, val, 1);	// CTRL3
 
 #define INT2_IGM 0x10
 #define INT2_DRDY_M 0x4
 
 	val = INT2_IGM | INT2_DRDY_M;
-	// LMWrite8(acl_ad, 0x23, val, 1);
+	// BusWrite(acl_ad, 0x23, val, 1);
 
 #define LIR1 0x1	// Latch interrupt 1
 #define MODR (0x4 << 2)	// 50Hz
@@ -728,17 +738,17 @@ void AclMbSetup() {
 #define TEMPEN 0x80	// Temperature enabled
 
 	val = LIR1 | MODR | MRES | TEMPEN;		
-	LMWrite8(acl_ad, 0x24, val, 1);	// CTRL5
+	BusWrite(acl_ad, 0x24, val, 1);	// CTRL5
 
 #define MFS (0x1 << 5)		// +/- 4 Gauss full scale
 	
 	val = MFS;
-	LMWrite8(acl_ad, 0x25, val, 1); // CTRL6
+	BusWrite(acl_ad, 0x25, val, 1); // CTRL6
 
 #define MD 0x0		// Continuous mode
 
 	val = MD;
-	LMWrite8(acl_ad, 0x26, val, 1); // CTRL7
+	BusWrite(acl_ad, 0x26, val, 1); // CTRL7
 
 #define AI6D 0x80
 #define ZHIE 0x20
@@ -746,15 +756,15 @@ void AclMbSetup() {
 #define XHIE 0x02
 
 	val = AI6D | XHIE | YHIE | ZHIE;	// Interrupt on high x,y,z
-	LMWrite8(acl_ad, 0x30, val, 1);		// IG_CFG1
+	BusWrite(acl_ad, 0x30, val, 1);		// IG_CFG1
 
 	val = accelr_event_threshold & 0x7F;
-	LMWrite8(acl_ad, 0x32, val, 1);		// Ineterial threshold
+	BusWrite(acl_ad, 0x32, val, 1);		// Ineterial threshold
 
 	val = 1;			// Interrupt duration
-	LMWrite8(acl_ad, 0x33, val, 1);	// IG1_DUR1
+	BusWrite(acl_ad, 0x33, val, 1);	// IG1_DUR1
 	 
-	val = LMRead8(acl_ad, 0x31, 1);	// IG_SRC1 read and clear interrupts
+	val = BusRead(acl_ad, 0x31, 1);	// IG_SRC1 read and clear interrupts
 
 	attachInterrupt(digitalPinToInterrupt(30),Acl_ISR,RISING);
 	attachInterrupt(digitalPinToInterrupt(29),Mag_ISR,RISING);
@@ -772,34 +782,34 @@ void AclAdaSetup() {
 #define AEN 0x07	// XYZ Enabled
 
 	val = PMD | DRT | AEN;
-	LMWrite8(acl_ad, 0x20, val, 0);
+	BusWrite(acl_ad, 0x20, val, 0);
 
 #define HPE1 0x04	// High pass filter Int 1 on
 #define HPCF 0x03       // High pass cut off frequency
 
 	val = HPE1 | HPCF;
-	LMWrite8(acl_ad, 0x21, val, 0);
+	BusWrite(acl_ad, 0x21, val, 0);
 
 #define ALIR1 0x06	// Latch Int1 bit Data ready
 
 #define IHL_OD 0xC0	// Interrupt active low, open drain (Argh !!!)
 
 	val = ALIR1 | IHL_OD;
-	LMWrite8(acl_ad, 0x22, val, 0);
+	BusWrite(acl_ad, 0x22, val, 0);
 
 #define BDU_FS 0x80	// Block data and scale +-2g
 
 	val = BDU_FS;
-	LMWrite8(acl_ad, 0x23, val, 0);
+	BusWrite(acl_ad, 0x23, val, 0);
 
 #define XYZ_HI 0x2A	// Hi values ZHIE YHIE XHIE
 #define AOI_6D 0x00	// 0xC0 would enable 6 directions
 	
 	val = XYZ_HI | AOI_6D;
-	LMWrite8(acl_ad, 0x30, val, 0);
+	BusWrite(acl_ad, 0x30, val, 0);
 
 	val = accelr_event_threshold & 0x7F;
-	LMWrite8(acl_ad, 0x32, val, 0);
+	BusWrite(acl_ad, 0x32, val, 0);
 
 	// The chip make very wide pulses (100ms), the values on the rising and
 	// falling edges are different !
@@ -840,7 +850,7 @@ static uint8_t acl_src = 0;
 uint8_t AclReadStatus() {
 	uint8_t rval;
 
-	acl_src = LMRead8(acl_ad, 0x31, acl_bus);	// IG_SRC1 read and clear interrupts
+	acl_src = BusRead(acl_ad, 0x31, acl_bus);	// IG_SRC1 read and clear interrupts
 
 #define IA 0x40
 
@@ -860,8 +870,8 @@ uint8_t AclReadStatus() {
 // Read magnatometer status
 
 uint8_t MagReadStatus() {
-	acl_src = LMRead8(acl_ad, 0x35, 1);	// IG_SRC2 read and clear interrupts
-	return LMRead8(acl_ad, 0x13, 1);	// INT_SRC_M
+	acl_src = BusRead(acl_ad, 0x35, 1);	// IG_SRC2 read and clear interrupts
+	return BusRead(acl_ad, 0x13, 1);	// INT_SRC_M
 }
 
 // Read accelerometer 
@@ -883,12 +893,12 @@ float AclToMs2(short val) {
 void AclReadData() {
 	uint8_t xlo,xhi,ylo,yhi,zlo,zhi;
 
-	xlo=LMRead8(acl_ad, 0x28, acl_bus);
-	xhi=LMRead8(acl_ad, 0x29, acl_bus);
-	ylo=LMRead8(acl_ad, 0x2A, acl_bus);
-	yhi=LMRead8(acl_ad, 0x2B, acl_bus);
-	zlo=LMRead8(acl_ad, 0x2C, acl_bus);
-	zhi=LMRead8(acl_ad, 0x2D, acl_bus);
+	xlo=BusRead(acl_ad, 0x28, acl_bus);
+	xhi=BusRead(acl_ad, 0x29, acl_bus);
+	ylo=BusRead(acl_ad, 0x2A, acl_bus);
+	yhi=BusRead(acl_ad, 0x2B, acl_bus);
+	zlo=BusRead(acl_ad, 0x2C, acl_bus);
+	zhi=BusRead(acl_ad, 0x2D, acl_bus);
 
 	if (acl_id == ACL_ADAFRUIT) { 
 		acl_x = (xhi<<8 | xlo) >> 4;
@@ -930,21 +940,21 @@ void MagReadData() {
 	uint8_t xlo,xhi,ylo,yhi,zlo,zhi;
 	
 	if (acl_id == ACL_ADAFRUIT) {
-		xlo=LMRead8(mag_ad,0x3,0);
-		xhi=LMRead8(mag_ad,0x4,0);
-		ylo=LMRead8(mag_ad,0x5,0);
-		yhi=LMRead8(mag_ad,0x6,0);
-		zlo=LMRead8(mag_ad,0x7,0);
-		zhi=LMRead8(mag_ad,0x8,0);
+		xlo=BusRead(mag_ad,0x3,0);
+		xhi=BusRead(mag_ad,0x4,0);
+		ylo=BusRead(mag_ad,0x5,0);
+		yhi=BusRead(mag_ad,0x6,0);
+		zlo=BusRead(mag_ad,0x7,0);
+		zhi=BusRead(mag_ad,0x8,0);
 	}
 		
 	if (acl_id == ACL_ON_MB) {
-		xlo=LMRead8(acl_ad,0x8,1);
-		xhi=LMRead8(acl_ad,0x9,1);
-		ylo=LMRead8(acl_ad,0xA,1);
-		yhi=LMRead8(acl_ad,0xB,1);
-		zlo=LMRead8(acl_ad,0xC,1);
-		zhi=LMRead8(acl_ad,0xD,1);
+		xlo=BusRead(acl_ad,0x8,1);
+		xhi=BusRead(acl_ad,0x9,1);
+		ylo=BusRead(acl_ad,0xA,1);
+		yhi=BusRead(acl_ad,0xB,1);
+		zlo=BusRead(acl_ad,0xC,1);
+		zhi=BusRead(acl_ad,0xD,1);
 	}
 
 	mag_x = (xhi<<8 | xlo);
@@ -1728,7 +1738,7 @@ void aclt(int arg) {
 	gthresh = 2.0 / (float) 0x7F;
 	val = accelr_event_threshold;
 	sprintf(cmd_mesg,"ACL sensitivity threshold:%d %fg ",accelr_event_threshold,gthresh);
-	LMWrite8(acl_ad, 0x32, val, acl_bus);
+	BusWrite(acl_ad, 0x32, val, acl_bus);
 }
 
 void magt(int arg) {
@@ -1737,9 +1747,9 @@ void magt(int arg) {
 	if (acl_id == ACL_ON_MB) {
 		magnat_event_threshold = 0x7FFF & arg;
 		val = magnat_event_threshold >> 8;	// High
-		// LMWrite8(acl_ad, 0x15, val, 1);		// INT_THS_H_M
+		// BusWrite(acl_ad, 0x15, val, 1);		// INT_THS_H_M
 		val = magnat_event_threshold & 0xFF;	// Low
-		// LMWrite8(acl_ad, 0x14, val, 1);		// INT_THS_L_M
+		// BusWrite(acl_ad, 0x14, val, 1);		// INT_THS_L_M
 		mag_ft = (float) (4.0 * (float) magnat_event_threshold) / (float) 0x7FFF;
 		sprintf(cmd_mesg,"MAG sensitivity thresfold:%d = %3.5f Gauss",magnat_event_threshold,mag_ft);
 		return;
@@ -2367,7 +2377,7 @@ void d303(int arg) {
 	PushTxt(txt);
 	for (i=0; i<arg; i++) {
                 for (reg=0x00; reg<=0x3F; reg++) {
-			val = LMRead8(acl_ad, reg, acl_bus);
+			val = BusRead(acl_ad, reg, acl_bus);
                         sprintf(txt,"%02X/%02X ",reg,val);
                         PushTxt(txt);
                 }
@@ -2381,7 +2391,7 @@ void d303(int arg) {
 
 	                        if ((reg==0x3E) || (reg==0x3F)) continue;
         	                if ((reg>=0x0D) && (reg<=0x30)) continue;
-				val = LMRead8(mag_ad, reg, acl_bus);
+				val = BusRead(mag_ad, reg, acl_bus);
                         	sprintf(txt,"%02X:%02X ",reg,val);
 				PushTxt(txt);
         	        }
@@ -2406,12 +2416,14 @@ void HtuReset() {
 
 	Wire1.beginTransmission(HTU_BUS_1_ADDR);
 	Wire1.write(hturegs[SRes]);
-	Wire1.endTransmission();
+	PushBusError(Wire1.endTransmission(),HTU_BUS_1_ADDR,hturegs[SRes],1);
+	bus_err = Wire1.endTransmission();
 	delay(15);
 
 	Wire1.beginTransmission(HTU_BUS_1_ADDR);
 	Wire1.write(hturegs[RUsr]);
-	Wire1.endTransmission();
+	bus_err = Wire1.endTransmission();
+	PushBusError(Wire1.endTransmission(),HTU_BUS_1_ADDR,hturegs[RUsr],1);
 	Wire1.requestFrom(HTU_BUS_1_ADDR, 1);
 	htu_rd = Wire1.read();
 	htu_ok = htu_rd;
@@ -2423,7 +2435,7 @@ void HtuTemp() {
 	htu_tmo = 0;
 	Wire1.beginTransmission(HTU_BUS_1_ADDR);
 	Wire1.write(hturegs[TTmpH]);
-	Wire1.endTransmission();
+	PushBusError(Wire1.endTransmission(),HTU_BUS_1_ADDR,hturegs[TTmpH],1);
 	delay(50);
 
 	Wire1.requestFrom(HTU_BUS_1_ADDR, 3);
@@ -2444,7 +2456,8 @@ void HtuHumid() {
 	htu_hmo = 0;
 	Wire1.beginTransmission(HTU_BUS_1_ADDR);
 	Wire1.write(hturegs[THumH]);
-	Wire1.endTransmission();
+	PushBusError(Wire1.endTransmission(),HTU_BUS_1_ADDR,hturegs[THumH],1);
+	bus_err = Wire1.endTransmission();
 	delay(50);
 
 	Wire1.requestFrom(HTU_BUS_1_ADDR, 3);
@@ -2554,7 +2567,7 @@ void GetBmpId() {
 
 	Wire1.begin();
 	bmp_bus = 1;
-	id = LMRead8(BMP_BUS_1_ADDR,LPS25H_WHO_AM_I,1);	
+	id = BusRead(BMP_BUS_1_ADDR,LPS25H_WHO_AM_I,1);	
 	if (id == LPS25H_ID) { 
 		bmp_id = BMP_ON_MB;
 		bmp_ad = BMP_BUS_1_ADDR;
@@ -2564,7 +2577,7 @@ void GetBmpId() {
 
 	Wire.begin();
 	bmp_bus = 0;
-        id = LMRead8(BMP_BUS_0_ADDR, BMP085_WHO_AM_I, 0);
+        id = BusRead(BMP_BUS_0_ADDR, BMP085_WHO_AM_I, 0);
         if (id == BMP805_ID) {
 		bmp_id = BMP_ADAFRUIT;
 		bmp_ad = BMP_BUS_0_ADDR;
@@ -2668,24 +2681,13 @@ void rcpu(int arg) {
 
 uint8_t abreg = A_AND_B;
 
-int ThrWrite(uint8_t val) {
-	int err;
-
-	Wire.beginTransmission(MAX_ADDR);
-	Wire.write(abreg);
-	Wire.write(val);
-	err = Wire.endTransmission();
-
-	return err;
-}
-
 void wrth(int arg) {
 	int err = 0;
 	uint8_t val;
 	val = (uint8_t) arg;
 	
-	err = ThrWrite(val);
-	if (err == 0) {
+	BusWrite(MAX_ADDR,abreg,val,0);
+	if (bus_err == 0) {
 		if (abreg == A_AND_B) {
 			sprintf(cmd_mesg,"MAX Threshold	A_and_B set: 0x%02X",val);
 			return;
@@ -2699,7 +2701,7 @@ void wrth(int arg) {
 			return;
 		}
 	}
-	sprintf(cmd_mesg,"MAX5387 Device did not answer, err:%d",err);
+	sprintf(cmd_mesg,"MAX5387 Device did not answer, err:%d",bus_err);
 }
 
 void abth(int arg) {

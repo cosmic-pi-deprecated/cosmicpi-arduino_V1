@@ -186,6 +186,10 @@ extern float BmpCalcPres();
 extern float BmpCalcAlti();
 extern char *BmpDebug();
 
+// HT temperature automatic setting
+
+void SetHtValue();
+
 // Control the output data rates by setting defaults, these values can be modified at run time
 // via commands from the serial interface. Some output like position isn't supposed to be changing
 // very fast if at all, so no need to clutter up the serial line with it. The Python monitor keeps
@@ -1934,6 +1938,8 @@ void loop() {
 			send_gga = 1;
 			Serial1.println(RMCZDA);
 		}
+
+		SetHtValue();			// Temperature compensated HT setting
 	}
 
 	PutChar();	// Print one character per loop !!!
@@ -2655,12 +2661,13 @@ byte bitBang(byte _send)  {
 		return _receive;
 	return 0xFF;
 }
-
+uint8_t puval = 0;
 void wrpu(int arg) {
 	uint8_t send, recv;
 
 	send = (0xFF & arg);
 	recv = bitBang(send);
+	puval = send;
 	
 	if (receive_on) 
 		sprintf(cmd_mesg,"HV: Send:0x:%02X Recv:0x%02X MAX1923 PU",send,recv);	
@@ -2695,24 +2702,25 @@ void rcpu(int arg) {
 #define A_AND_B 0x13
 
 uint8_t abreg = A_AND_B;
+uint8_t thval = 0x50;
 
 void wrth(int arg) {
 	int err = 0;
-	uint8_t val;
-	val = (uint8_t) arg;
+
+	thval = (uint8_t) arg;
 	
-	BusWrite(MAX_ADDR,abreg,val,0);
+	BusWrite(MAX_ADDR,abreg,thval,0);
 	if (bus_err == 0) {
 		if (abreg == A_AND_B) {
-			sprintf(cmd_mesg,"MAX Threshold	A_and_B set: 0x%02X",val);
+			sprintf(cmd_mesg,"MAX Threshold	A_and_B set: 0x%02X",thval);
 			return;
 		}
 		if (abreg == A_ONLY) {
-			sprintf(cmd_mesg,"MAX Threshold A_Only set: 0x%02X",val);
+			sprintf(cmd_mesg,"MAX Threshold A_Only set: 0x%02X",thval);
 			return;
 		}
 		if (abreg == B_ONLY) {
-			sprintf(cmd_mesg,"MAX Threshold B_Only set: 0x%02X",val);
+			sprintf(cmd_mesg,"MAX Threshold B_Only set: 0x%02X",thval);
 			return;
 		}
 	}
@@ -2726,3 +2734,43 @@ void abth(int arg) {
 	abreg = val;
 	sprintf(cmd_mesg,"MAX Threshold write channels set: %d",val);
 }
+
+static uint8_t ht_vals[51] = {
+	// -10  -09  -08  -07  -06  -05  -04  -03  -02  -01
+	   0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xEF,0xEF,0xEF,
+	// 00   01   02   03   04   05   06   07   08   09
+	   0xEF,0xEF,0xEF,0xEF,0xEF,0xDF,0xDF,0xCF,0xCF,0xBF,
+	// 10   11   12   13   14   15   16   17   18   19
+	   0xBF,0xBF,0xAF,0x9F,0x9F,0x8F,0x8F,0x7F,0x7F,0x7F,
+	// 20   21   22   23   24   25   26   27   28   29
+	   0x6F,0x6F,0x5F,0x5F,0x5F,0x4F,0x4F,0x4F,0x4F,0x4F,
+	// 30   31   32   33   34   35   36   37   38   39
+	   0x3F,0x3F,0x3F,0x2F,0x2F,0x2F,0x2F,0x2F,0x1F,0x1F,
+	// 40  
+	   0x0F };
+
+int itmp = 0;
+int htval = 0;
+void SetHtValue() {
+	float htmp = 0.0;
+
+	if ((!puval) && ((!itmp) || ((ppcnt % 60) == 0))) { 
+		htmp = HtuReadTemperature();
+
+		itmp = (int) round(htmp) + 10;	
+		if (itmp <  0) itmp = 0;
+		if (itmp > 51) itmp = 51;
+		if (htval != ht_vals[itmp]) {
+			htval = ht_vals[itmp];
+			bitBang(htval);
+			BusWrite(MAX_ADDR,abreg,thval,0);
+			PushHpu();
+		}
+	}
+}
+
+void PushHpu() {
+	sprintf(txt,"{'HPU':{'Hpu':'0x%02X','Thr':'0x%02X','Abr':'0x%02X'}}\n",htval,thval,abreg);
+	PushTxt(txt);
+}
+

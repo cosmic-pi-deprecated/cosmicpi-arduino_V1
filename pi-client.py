@@ -94,6 +94,7 @@ class Event(object):
 		self.HLP = { "Idn":"0"  ,"Nme":"0"  ,"Hlp":"0" }
 		self.TXT = { "Txt":"0" }
 		self.BER = { "Ber":"0"  ,"Adr":"0"  ,"Reg":"0","Bus":"0" }
+		self.HPU = { "Hpu":"0"  ,"Thr":"0"  ,"Abr":"0" }
 
 		# Add ons
 
@@ -107,7 +108,7 @@ class Event(object):
 				"ACL":self.ACL, "LOC":self.LOC, "TIM":self.TIM, "STS":self.STS,
 				"EVT":self.EVT, "DAT":self.DAT, "SQN":self.SQN, "PAT":self.PAT, 
 				"DTG":self.DTG, "CMD":self.CMD, "HLP":self.HLP, "TXT":self.TXT,
-				"MEV":self.MEV, "BER":self.BER }
+				"MEV":self.MEV, "BER":self.BER, "HPU":self.HPU }
 
 		self.newvib = 0	# Vibration
 		self.newmev = 0 # Magnetic event
@@ -308,6 +309,9 @@ class Event(object):
 	def get_ber(self):
 		return self.recd["BER"]
 
+	def get_hpu(self):
+		return self.recd["HPU"]
+
 	def new_cmd(self):
 		if self.newcmd:
 			self.newcmd = 0
@@ -428,7 +432,7 @@ def main():
 	patok  = options.patok
 	back   = options.back
 	
-	display = True	
+	display = False	
 	pushflg = False
 
 	if back:
@@ -561,7 +565,8 @@ def main():
 						vib = evt.get_vib()
 						mev = evt.get_mev()
 						ber = evt.get_ber()
-
+						hpu = evt.get_hpu()
+						
 						print "ARDUINO STATUS"
 						print "Status........: Upt:%s Frq:%s Qsz:%s Mis:%s" % (tim["Upt"],tim["Frq"],sts["Qsz"],sts["Mis"])
 						print "BusError......: Ber:%s Adr:%s Reg:%s Bus:%s" % (ber["Ber"],ber["Adr"],ber["Reg"],ber["Bus"])
@@ -574,7 +579,8 @@ def main():
 						print "Barometer.....: Tmb:%s Prs:%s Alb:%s" % (bmp["Tmb"],bmp["Prs"],bmp["Alb"])
 						print "Humidity......: Tmh:%s Hum:%s" % (htu["Tmh"],htu["Hum"])
 						print "Vibration.....: Vax:%s Vcn:%s" % (vib["Vax"],vib["Vcn"])
-						print "Magnetic Event: Mev:%s Met:%s Mdx:%s Mdy:%s Mdz:%s\n" % (mev["Mev"],mev["Met"],mev["Mdx"],mev["Mdy"],mev["Mdz"])
+						print "Magnetic Event: Mev:%s Met:%s Mdx:%s Mdy:%s Mdz:%s" % (mev["Mev"],mev["Met"],mev["Mdx"],mev["Mdy"],mev["Mdz"])
+						print "HT power......: Hpu:%s Thr:%s Abr:%s\n" % (hpu["Hpu"],hpu["Thr"],hpu["Abr"])
 
 						print "MONITOR STATUS"
 						print "USB device....: %s" % (usbdev)

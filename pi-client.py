@@ -94,7 +94,7 @@ class Event(object):
 		self.HLP = { "Idn":"0"  ,"Nme":"0"  ,"Hlp":"0" }
 		self.TXT = { "Txt":"0" }
 		self.BER = { "Ber":"0"  ,"Adr":"0"  ,"Reg":"0","Bus":"0" }
-		self.HPU = { "Hpu":"0"  ,"Thr":"0"  ,"Abr":"0" }
+		self.HPU = { "Ato":"0"  ,"Hpu":"0"  ,"Thr":"0","Abr":"0" }
 
 		# Add ons
 
@@ -570,7 +570,7 @@ def main():
 						print "ARDUINO STATUS"
 						print "Status........: Upt:%s Frq:%s Qsz:%s Mis:%s" % (tim["Upt"],tim["Frq"],sts["Qsz"],sts["Mis"])
 						print "BusError......: Ber:%s Adr:%s Reg:%s Bus:%s" % (ber["Ber"],ber["Adr"],ber["Reg"],ber["Bus"])
-						print "GPS date......: Yer:%s Mnt:%s Day%s" % (dtg["Yer"],dtg["Mnt"],dtg["Day"])
+						print "GPS date......: Yer:%s Mnt:%s Day:%s" % (dtg["Yer"],dtg["Mnt"],dtg["Day"])
 						print "Parameters....: Adn:%s Gri:%s Eqt:%s Chm:%s" % (sts["Adn"],sts["Gri"],sts["Eqt"],sts["Chm"])
 						print "HardwareStatus: Htu:%s Bmp:%s Acl:%s Mag:%s Gps:%s" % (sts["Htu"],sts["Bmp"],sts["Acl"],sts["Mag"],sts["Gps"])
 						print "Location......: Lat:%s Lon:%s Alt:%s" % (loc["Lat"],loc["Lon"],loc["Alt"])
@@ -580,7 +580,7 @@ def main():
 						print "Humidity......: Tmh:%s Hum:%s" % (htu["Tmh"],htu["Hum"])
 						print "Vibration.....: Vax:%s Vcn:%s" % (vib["Vax"],vib["Vcn"])
 						print "Magnetic Event: Mev:%s Met:%s Mdx:%s Mdy:%s Mdz:%s" % (mev["Mev"],mev["Met"],mev["Mdx"],mev["Mdy"],mev["Mdz"])
-						print "HT power......: Hpu:%s Thr:%s Abr:%s\n" % (hpu["Hpu"],hpu["Thr"],hpu["Abr"])
+						print "HT power......: Ato:%s Hpu:%s Thr:%s Abr:%s\n" % (hpu["Ato"],hpu["Hpu"],hpu["Thr"],hpu["Abr"])
 
 						print "MONITOR STATUS"
 						print "USB device....: %s" % (usbdev)
@@ -615,9 +615,11 @@ def main():
 						print "Log:%s\n" % logflg
 
 				else:
-					print "Arduino < %s\n" % cmd 
+					cms = "Arduino < %s\n" % cmd 
+					print cms
+					log.write(cms)
 					ser.write(cmd.upper())
-
+					
 				if back == False:
 					kbrd.echo_off()
 			
@@ -652,7 +654,9 @@ def main():
 				if evt.new_cmd():
 					acm = evt.get_cmd()
 					print ""
-					print "Cmd:%s->%s %s\n" % (acm["Cmd"],acm["Res"],acm["Msg"])
+					cms = "Cmd:%s->%s %s\n" % (acm["Cmd"],acm["Res"],acm["Msg"])
+					print cms
+					log.write(cms);
 
 				if evt.new_hlp():
 					hlp = evt.get_hlp()

@@ -89,7 +89,7 @@
 // Configuration constants
 
 // The size of the one second event buffer
-#define PPS_EVENTS 8	// The maximum number of events stored per second
+#define PPS_EVENTS 5	// The maximum number of events stored per second
 #define ADC_BUF_LEN 32	// Maximum number of ADC values per event
 
 // This is the event queue size
@@ -187,7 +187,7 @@ extern char *BmpDebug();
 
 // HT temperature automatic setting
 
-void SetHtValue();
+void SetHtValue(int flg);
 
 // Control the output data rates by setting defaults, these values can be modified at run time
 // via commands from the serial interface. Some output like position isn't supposed to be changing
@@ -609,9 +609,15 @@ static char *rdtm = t2;			// Read date/time pointer
 // Swap read write event buffers and indexes along with their time strings
 // each second, so we have the current and previous second numbers
 
+int inc_ht_flg = 0;	// Too many interrupts, increment the HT control
+int dec_ht_flg = 0;	// No interrupts, decrement the HT control
+
 void SwapBufs() {
 	struct Event *tbuf;			// Temp event buf pointer
 	char *tdtm;				// Temp date/time string pointer
+
+	if (!widx) dec_ht_flg++;		// No interrupts: dec the HT value
+
 	tbuf = rbuf; rbuf = wbuf; wbuf = tbuf;	// Swap write with read buffer
 	ridx = widx; widx = 0;			// Write count to read, reset the write count
 	tdtm = rdtm; rdtm = wdtm; wdtm = tdtm;	// And swap asociated buffer date/time
@@ -631,7 +637,9 @@ void TC6_Handler() {
 		wbuf[widx].Tks = TC2->TC_CHANNEL[0].TC_RA;
 		AdcPullData(&wbuf[widx]);
 		widx++;
-	}
+	} else
+		inc_ht_flg++;
+
 	rega1 = TC2->TC_CHANNEL[0].TC_RA;	// Read the RA on channel 1 (PPS period)
 	stsr1 = TC_GetStatus(TC2, 0); 		// Read status clear load bits
 
@@ -1370,6 +1378,8 @@ void setup() {
 		BmpCalcPres();
 	}	
 
+	SetHtValue(1);
+
 	TimersStart();			// Start timers
 }
 
@@ -1384,9 +1394,12 @@ void setup() {
 
 // Copy text to the buffer for future printing
 
+int silent = 0;
 void PushTxt(char *txt) {
 	
 	int i, l = strlen(txt);
+
+	if (silent) return;
 
 	// If this happens there is a programming bug
  
@@ -1867,7 +1880,7 @@ void ParseCmd() {
 		if (strncmp(cms->Name,cmd,cl) == 0) {
 			if ((cms->Par) && (strlen(cmd) > cl)) {
 				cp = &cmd[cl];
-				p = (int) strtoul(cp,&ep,10);
+				p = (int) strtoul(cp,&ep,0);
 			}
 			sprintf(cmd_name,"%s",cms->Name);
 			cms->proc(p);
@@ -1930,7 +1943,7 @@ void loop() {
 			Serial1.println(RMCZDA);
 		}
 
-		SetHtValue();			// Temperature compensated HT setting
+		SetHtValue(0);			// Temperature compensated HT setting
 		digitalWrite(EVT_PIN,LOW);
 	}
 
@@ -2744,20 +2757,54 @@ static uint8_t ht_vals[51] = {
 	// 40  
 	   0x63 };
 
-int htval = 0;
-void SetHtValue() {
+uint8_t htval  = 0;
+uint8_t incadj = 0;
+uint8_t decadj = 0;
+
+void SetHtValue(int flg) {
+	uint8_t hval=0;
 	int itmp = 0;
 	float htmp = 0.0;
 
-	if ((!puval) && ((!htval) || ((ppcnt % 60) == 0))) { 
+	if (flg) {
+		htval = 0;
+		bitBang(htval);
+		BusWrite(MAX_ADDR,abreg,thval,0);
+		PushHpu();
+		return;
+	}
+
+	if (puval) {
+		incadj = 0;
+		decadj = 0;
+		inc_ht_flg = 0;
+		dec_ht_flg = 0;
+
+	} else if ((!htval) || ((ppcnt % 10) == 0)) { 
+	
+		if (inc_ht_flg > 100) {	
+			if (decadj > 0) decadj--;
+			else if (incadj <= 10) incadj++;
+			inc_ht_flg = 0;
+			htval = 0;
+		}
+
+		if (dec_ht_flg > 10) {
+			if (incadj > 0) incadj--;
+			else if (decadj <= 10) decadj++;
+			dec_ht_flg = 0;
+			htval = 0;
+		}
+
 		htmp = HtuReadTemperature();
 
 		itmp = (int) round(htmp) + 10;	
 		if (itmp <  0) itmp = 0;
 		if (itmp > 51) itmp = 51;
-		if (htval != ht_vals[itmp]) {
+		if ((!htval) || (htval != ht_vals[itmp])) {
 			htval = ht_vals[itmp];
-			bitBang(htval);
+			hval = (htval + incadj - decadj) & 0xFF;
+			bitBang(hval);
 			BusWrite(MAX_ADDR,abreg,thval,0);
 			PushHpu();
 		}
@@ -2765,7 +2812,7 @@ void SetHtValue() {
 }
 
 void PushHpu() {
-	sprintf(txt,"{'HPU':{'Hpu':'0x%02X','Thr':'0x%02X','Abr':'0x%02X'}}\n",puval,thval,abreg);
+	sprintf(txt,"{'HPU':{'Ato':'0x%02X','Hpu':'0x%02X','Thr':'0x%02X','Abr':'0x%02X'}}\n",htval,puval,thval,abreg);
 	PushTxt(txt);
 }
 

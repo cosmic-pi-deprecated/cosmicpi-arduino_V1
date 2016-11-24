@@ -169,7 +169,6 @@ uint8_t bmp_ok = 0;
 boolean	gps_ok = false;		// Chip OK flag
 boolean	time_ok = false;	// Time read from GPS OK
 boolean pps_led = false;	// PPS Led 
-boolean evt_led = false;	// Event led
 
 // Forward refs
 float HtuReadTemperature();
@@ -636,13 +635,7 @@ void TC6_Handler() {
 	rega1 = TC2->TC_CHANNEL[0].TC_RA;	// Read the RA on channel 1 (PPS period)
 	stsr1 = TC_GetStatus(TC2, 0); 		// Read status clear load bits
 
-	if (evt_led) {		
-		digitalWrite(EVT_PIN,HIGH);
-		evt_led = false;
-	} else {
-		digitalWrite(EVT_PIN,LOW);
-		evt_led = true;
-	}
+	digitalWrite(EVT_PIN,HIGH);		// Event LEP on, off in loop()
 }
 
 // Discover the hardware configuration 
@@ -1649,10 +1642,8 @@ void PushEvq(int flg, int *qsize, int *missed) {
 						"{'EVT':{'Evt':%1d,'Frq':%8d,'Tks':%8d,'Etm':%s%s,'Adc':[[%s],[%s]]}}\n",
 						eb.Count, eb.Frequency, eb.Ticks, eb.DateTime, index(stx,'.'),adch0,adch1);
 			else sprintf(txt,
-					"%s,EVT,%7d,%7d,"
-					"%6s,%2d,"
-					"%s,%s\n",
-					CSVERS,eb.Frequency,eb.Ticks,index(stx,'.'),adc_samples_per_evt,adch0,adch1);
+					"%s,EVT, %7d,%7d,%s%s,%2d,%s,%s\n",
+					CSVERS,  eb.Frequency,eb.Ticks,eb.DateTime, index(stx,'.'),adc_samples_per_evt,adch0,adch1);
 			PushTxt(txt);
 		}
 		PushTxt("\n");
@@ -1940,6 +1931,7 @@ void loop() {
 		}
 
 		SetHtValue();			// Temperature compensated HT setting
+		digitalWrite(EVT_PIN,LOW);
 	}
 
 	PutChar();	// Print one character per loop !!!
@@ -2661,7 +2653,7 @@ byte bitBang(byte _send)  {
 		return _receive;
 	return 0xFF;
 }
-uint8_t puval = 0;
+uint8_t puval = 0x6E;	// Seems about right at room temp
 void wrpu(int arg) {
 	uint8_t send, recv;
 
@@ -2674,6 +2666,7 @@ void wrpu(int arg) {
 	else
 		sprintf(cmd_mesg,"HV: Send:0x:%02X MAX1923 PU",send);
 
+	PushHpu();
 	return;
 }
 
@@ -2702,7 +2695,7 @@ void rcpu(int arg) {
 #define A_AND_B 0x13
 
 uint8_t abreg = A_AND_B;
-uint8_t thval = 0x50;
+uint8_t thval = 0x30;	// Nice initial value
 
 void wrth(int arg) {
 	int err = 0;
@@ -2711,6 +2704,7 @@ void wrth(int arg) {
 	
 	BusWrite(MAX_ADDR,abreg,thval,0);
 	if (bus_err == 0) {
+		PushHpu();
 		if (abreg == A_AND_B) {
 			sprintf(cmd_mesg,"MAX Threshold	A_and_B set: 0x%02X",thval);
 			return;
@@ -2733,6 +2727,7 @@ void abth(int arg) {
 	if (arg == 2) val = 2;
 	abreg = val;
 	sprintf(cmd_mesg,"MAX Threshold write channels set: %d",val);
+	PushHpu();
 }
 
 static uint8_t ht_vals[51] = {
@@ -2743,18 +2738,18 @@ static uint8_t ht_vals[51] = {
 	// 10   11   12   13   14   15   16   17   18   19
 	   0xBF,0xBF,0xAF,0x9F,0x9F,0x8F,0x8F,0x7F,0x7F,0x7F,
 	// 20   21   22   23   24   25   26   27   28   29
-	   0x6F,0x6F,0x5F,0x5F,0x5F,0x4F,0x4F,0x4F,0x4F,0x4F,
+	   0x6F,0x6F,0x6E,0x6E,0x6E,0x6E,0x6E,0x6E,0x6E,0x6E,
 	// 30   31   32   33   34   35   36   37   38   39
-	   0x3F,0x3F,0x3F,0x2F,0x2F,0x2F,0x2F,0x2F,0x1F,0x1F,
+	   0x6D,0x6C,0x6B,0x6A,0x69,0x68,0x67,0x66,0x65,0x64,
 	// 40  
-	   0x0F };
+	   0x63 };
 
-int itmp = 0;
 int htval = 0;
 void SetHtValue() {
+	int itmp = 0;
 	float htmp = 0.0;
 
-	if ((!puval) && ((!itmp) || ((ppcnt % 60) == 0))) { 
+	if ((!puval) && ((!htval) || ((ppcnt % 60) == 0))) { 
 		htmp = HtuReadTemperature();
 
 		itmp = (int) round(htmp) + 10;	
@@ -2770,7 +2765,7 @@ void SetHtValue() {
 }
 
 void PushHpu() {
-	sprintf(txt,"{'HPU':{'Hpu':'0x%02X','Thr':'0x%02X','Abr':'0x%02X'}}\n",htval,thval,abreg);
+	sprintf(txt,"{'HPU':{'Hpu':'0x%02X','Thr':'0x%02X','Abr':'0x%02X'}}\n",puval,thval,abreg);
 	PushTxt(txt);
 }
 

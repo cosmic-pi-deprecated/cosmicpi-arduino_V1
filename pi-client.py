@@ -746,8 +746,12 @@ def main():
 						if udpflg:
 							sio.send_event_pkt(ebuf,ipaddr,ipport)
 						if logflg:
-							log.write(ebuf)
-							log.write("\n")
+							l0 = "\n-----\n"
+							l1 = "Evt:%s Frq:%s Tks:%s Etm:%s\n" % (evd["Evt"],evd["Frq"],evd["Tks"],evd["Etm"])
+							l2 = "Upt:%s Sec:%s Sqn:%s\n" % (tim["Upt"],tim["Sec"],sqn["Sqn"])
+							log.write(l0)
+							log.write(l1)
+							log.write(l2)
 						continue
 				if debug:
 					sys.stdout.write(rc)

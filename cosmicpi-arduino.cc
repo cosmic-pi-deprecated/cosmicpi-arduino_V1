@@ -74,6 +74,9 @@
 //
 // {'BER':{'Ber':%d,'Adr':%s,'Reg':%s,'Bus':%d}}
 // Bus error warning, Ber=error code, Adr=the hex address, Reg=the hex register, Bus=the bus number 0/1
+//
+// {'HPU':{'Ato':%s,'Hpu':%s,'Thr':%s,'Abr':%s}}
+// HT power supply Ato:Thauto algorithm value Hpu:Manual value Thr:Threshold Abr:AB potentiometer bits
 
 // N.B. These records pass the data to a python monitor over the serial line. Python has awsome string handling and looks them up in
 // associative arrays to build records of any arbitary format you want. So this is only the start of the story of record processing.
@@ -1374,6 +1377,7 @@ void setup() {
 	GetBmpId();
 	if (bmp_id == BMP_ON_MB) {
 		if (!ps.init()) bmp_ok = 0;
+		else ps.enableDefault();
 	} else if (bmp_id == BMP_ADAFRUIT) {
 		BmpCalcPres();
 	}	

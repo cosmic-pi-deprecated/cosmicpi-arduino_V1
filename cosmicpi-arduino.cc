@@ -2666,7 +2666,7 @@ byte bitBang(byte _send)  {
 		return _receive;
 	return 0xFF;
 }
-uint8_t puval = 0x6E;	// Seems about right at room temp
+uint8_t puval = 0;	// 0x6E Seems about right at room temp
 void wrpu(int arg) {
 	uint8_t send, recv;
 
@@ -2779,40 +2779,39 @@ void SetHtValue(int flg) {
 		decadj = 0;
 		inc_ht_flg = 0;
 		dec_ht_flg = 0;
+		return;
+	} 
 
-	} else if ((!htval) || ((ppcnt % 10) == 0)) { 
-	
-		if (inc_ht_flg > 100) {	
-			if (decadj > 0) decadj--;
-			else if (incadj <= 10) incadj++;
-			inc_ht_flg = 0;
-			htval = 0;
-		}
+	if (inc_ht_flg > 10) {	
+		if (decadj > 0) decadj--;
+		else if (incadj <= 10) incadj++;
+		inc_ht_flg = 0;
+		htval = 0;
+	}
 
-		if (dec_ht_flg > 10) {
-			if (incadj > 0) incadj--;
-			else if (decadj <= 10) decadj++;
-			dec_ht_flg = 0;
-			htval = 0;
-		}
+	if (dec_ht_flg) {
+		if (incadj > 0) incadj--;
+		else if (decadj <= 10) decadj++;
+		dec_ht_flg = 0;
+		htval = 0;
+	}
 
-		htmp = HtuReadTemperature();
+	htmp = HtuReadTemperature();
 
-		itmp = (int) round(htmp) + 10;	
-		if (itmp <  0) itmp = 0;
-		if (itmp > 51) itmp = 51;
-		if ((!htval) || (htval != ht_vals[itmp])) {
-			htval = ht_vals[itmp];
-			hval = (htval + incadj - decadj) & 0xFF;
-			bitBang(hval);
-			BusWrite(MAX_ADDR,abreg,thval,0);
-			PushHpu();
-		}
+	itmp = (int) round(htmp) + 10;	
+	if (itmp <  0) itmp = 0;
+	if (itmp > 51) itmp = 51;
+	if ((!htval) || (htval != ht_vals[itmp])) {
+		htval = ht_vals[itmp];
+		hval = (htval + incadj - decadj) & 0xFF;
+		bitBang(hval);
+		BusWrite(MAX_ADDR,abreg,thval,0);
+		PushHpu();
 	}
 }
 
 void PushHpu() {
-	sprintf(txt,"{'HPU':{'Ato':'0x%02X','Hpu':'0x%02X','Thr':'0x%02X','Abr':'0x%02X'}}\n",htval,puval,thval,abreg);
+	sprintf(txt,"{'HPU':{'Ato':'0x%02X','Hpu':'0x%02X','Thr':'0x%02X','Abr':'0x%02X'}}\n",(htval+incadj-decadj),puval,thval,abreg);
 	PushTxt(txt);
 }
 

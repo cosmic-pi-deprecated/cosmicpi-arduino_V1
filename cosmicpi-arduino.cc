@@ -520,6 +520,10 @@ static uint32_t stsr2 = 0;
 
 boolean pll_flag = false;	
 
+int old_ra = 0;
+int new_ra = 0;
+#define DEAD_TIME 42000	// 1ms
+
 // Handle the PPS interrupt in counter block 0 ISR
 
 void TC0_Handler() {
@@ -548,6 +552,9 @@ void TC0_Handler() {
 	displ = 1;				// Display stuff in the loop
 	gps_ok = true;				// Its OK because we got a PPS	
 	pll_flag = true;			// Inhibit PLL, dont take over PPS arrived
+
+	old_ra = 0;				// Dead time counters
+	new_ra = 0;
 	
 	IncDateTime();				// Next second
 
@@ -637,16 +644,20 @@ void TC6_Handler() {
 		// Read the latched tick count getting the event time
 		// and then pull the ADC pipe line
 
-		wbuf[widx].Tks = TC2->TC_CHANNEL[0].TC_RA;
-		AdcPullData(&wbuf[widx]);
-		widx++;
+		new_ra = TC2->TC_CHANNEL[0].TC_RA;
+		if (new_ra - old_ra > DEAD_TIME) {
+			old_ra = new_ra;
+			wbuf[widx].Tks = new_ra;
+			AdcPullData(&wbuf[widx]);
+			widx++;
+			digitalWrite(EVT_PIN,HIGH);	// Event LEP on, off in loop()
+		} else inc_ht_flg++;
 	} else
 		inc_ht_flg++;
 
 	rega1 = TC2->TC_CHANNEL[0].TC_RA;	// Read the RA on channel 1 (PPS period)
 	stsr1 = TC_GetStatus(TC2, 0); 		// Read status clear load bits
 
-	digitalWrite(EVT_PIN,HIGH);		// Event LEP on, off in loop()
 }
 
 // Discover the hardware configuration 

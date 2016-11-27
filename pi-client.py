@@ -431,7 +431,8 @@ def main():
 	evtflg = options.evtflg
 	patok  = options.patok
 	back   = options.back
-	
+
+	ptsflg  = False
 	display = False	
 	pushflg = False
 
@@ -567,20 +568,75 @@ def main():
 						ber = evt.get_ber()
 						hpu = evt.get_hpu()
 						
-						print "ARDUINO STATUS"
-						print "Status........: Upt:%s Frq:%s Qsz:%s Mis:%s" % (tim["Upt"],tim["Frq"],sts["Qsz"],sts["Mis"])
-						print "BusError......: Ber:%s Adr:%s Reg:%s Bus:%s" % (ber["Ber"],ber["Adr"],ber["Reg"],ber["Bus"])
-						print "GPS date......: Yer:%s Mnt:%s Day:%s" % (dtg["Yer"],dtg["Mnt"],dtg["Day"])
-						print "Parameters....: Adn:%s Gri:%s Eqt:%s Chm:%s" % (sts["Adn"],sts["Gri"],sts["Eqt"],sts["Chm"])
-						print "HardwareStatus: Htu:%s Bmp:%s Acl:%s Mag:%s Gps:%s" % (sts["Htu"],sts["Bmp"],sts["Acl"],sts["Mag"],sts["Gps"])
-						print "Location......: Lat:%s Lon:%s Alt:%s" % (loc["Lat"],loc["Lon"],loc["Alt"])
-						print "Accelarometer.: Acx:%s Acy:%s Acz:%s" % (acl["Acx"],acl["Acy"],acl["Acz"])
-						print "Magnatometer..: Mgx:%s Mgy:%s Mgz:%s" % (mag["Mgx"],mag["Mgy"],mag["Mgz"])
-						print "Barometer.....: Tmb:%s Prs:%s Alb:%s" % (bmp["Tmb"],bmp["Prs"],bmp["Alb"])
-						print "Humidity......: Tmh:%s Hum:%s" % (htu["Tmh"],htu["Hum"])
-						print "Vibration.....: Vax:%s Vcn:%s" % (vib["Vax"],vib["Vcn"])
-						print "Magnetic Event: Mev:%s Met:%s Mdx:%s Mdy:%s Mdz:%s" % (mev["Mev"],mev["Met"],mev["Mdx"],mev["Mdy"],mev["Mdz"])
-						print "HT power......: Ato:%s Hpu:%s Thr:%s Abr:%s\n" % (hpu["Ato"],hpu["Hpu"],hpu["Thr"],hpu["Abr"])
+						s = "ARDUINO STATUS"
+						print s
+						if ptsflg:
+							log.write(s + '\n')
+
+						s = "Status........: Upt:%s Frq:%s Qsz:%s Mis:%s" % (tim["Upt"],tim["Frq"],sts["Qsz"],sts["Mis"])
+						print s
+						if ptsflg:
+							log.write(s + '\n')
+
+						s = "BusError......: Ber:%s Adr:%s Reg:%s Bus:%s" % (ber["Ber"],ber["Adr"],ber["Reg"],ber["Bus"])
+						print s
+						if ptsflg:
+							log.write(s + '\n')
+
+						s = "GPS date......: Yer:%s Mnt:%s Day:%s" % (dtg["Yer"],dtg["Mnt"],dtg["Day"])
+						print s
+						if ptsflg:
+							log.write(s + '\n')
+
+						s = "Parameters....: Adn:%s Gri:%s Eqt:%s Chm:%s" % (sts["Adn"],sts["Gri"],sts["Eqt"],sts["Chm"])
+						print s
+						if ptsflg:
+							log.write(s + '\n')
+
+						s = "HardwareStatus: Htu:%s Bmp:%s Acl:%s Mag:%s Gps:%s" % (sts["Htu"],sts["Bmp"],sts["Acl"],sts["Mag"],sts["Gps"])
+						print s
+						if ptsflg:
+							log.write(s + '\n')
+
+						s = "Location......: Lat:%s Lon:%s Alt:%s" % (loc["Lat"],loc["Lon"],loc["Alt"])
+						print s
+						if ptsflg:
+							log.write(s + '\n')
+
+						s = "Accelarometer.: Acx:%s Acy:%s Acz:%s" % (acl["Acx"],acl["Acy"],acl["Acz"])
+						print s
+						if ptsflg:
+							log.write(s + '\n')
+
+						s = "Magnatometer..: Mgx:%s Mgy:%s Mgz:%s" % (mag["Mgx"],mag["Mgy"],mag["Mgz"])
+						print s
+						if ptsflg:
+							log.write(s + '\n')
+
+						s = "Barometer.....: Tmb:%s Prs:%s Alb:%s" % (bmp["Tmb"],bmp["Prs"],bmp["Alb"])
+						print s
+						if ptsflg:
+							log.write(s + '\n')
+
+						s = "Humidity......: Tmh:%s Hum:%s" % (htu["Tmh"],htu["Hum"])
+						print s
+						if ptsflg:
+							log.write(s + '\n')
+
+						s = "Vibration.....: Vax:%s Vcn:%s" % (vib["Vax"],vib["Vcn"])
+						print s
+						if ptsflg:
+							log.write(s + '\n')
+
+						s = "Magnetic Event: Mev:%s Met:%s Mdx:%s Mdy:%s Mdz:%s" % (mev["Mev"],mev["Met"],mev["Mdx"],mev["Mdy"],mev["Mdz"])
+						print s
+						if ptsflg:
+							log.write(s + '\n')
+
+						s = "HT power......: Ato:%s Hpu:%s Thr:%s Abr:%s\n" % (hpu["Ato"],hpu["Hpu"],hpu["Thr"],hpu["Abr"])
+						print s
+						if ptsflg:
+							log.write(s + '\n')
 
 						print "MONITOR STATUS"
 						print "USB device....: %s" % (usbdev)
@@ -595,10 +651,49 @@ def main():
 					elif cmd.find("h") != -1:
 						print "MONITOR COMMANDS"
 						print "   q=quit, s=status, d=toggle_debug, n=toggle_send, l=toggle_log"
-						print "   v=vibration, w=weather, r=toggle_notifications, x=toggle_display, h=help\n"
+						print "   v=vibration, w=weather, r=toggle_notifications, x=toggle_display" 
+						print "   p=ptslog h=help\n"
 						print "ARDUINO COMMANDS"
 						print ""
 						ser.write("HELP")
+
+					elif cmd.find("p") != -1:
+						if ptsflg:
+							ptsflg = False
+						else:
+							ptsflg = True
+
+							cms = "%s\n" % "I2CS 0" 
+							print cms
+							log.write(cms)
+							ser.write(cms)
+							time.sleep(1)
+
+							cms = "%s\n" % "I2CS 1" 
+							print cms
+							log.write(cms)
+							ser.write(cms)
+							time.sleep(1)
+
+							cms = "%s\n" % "GPID" 
+							print cms
+							log.write(cms)
+							ser.write(cms)
+							time.sleep(1)
+
+							cms = "%s\n" % "BMID" 
+							print cms
+							log.write(cms)
+							ser.write(cms)
+							time.sleep(1)
+
+							cms = "%s\n" % "DHTU" 
+							print cms
+							log.write(cms)
+							ser.write(cms)
+							time.sleep(1)
+
+						print "PtsLog:%s\n" % ptsflg
 
 					elif cmd.find("n") != -1:
 						if udpflg:

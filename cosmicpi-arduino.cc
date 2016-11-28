@@ -1946,14 +1946,14 @@ void loop() {
 
 		displ = 0;			// Clear flag for next PPS
 
-		if ((!gps_id) || (debug_gps)) {	// Get firmware version ?
+		if ((!gps_id) && ((ppcnt % 20) == 0)) { // Get firmware version ?
 			Serial1.println(FMWVERS);
 		}
 		if ((date_ok) && (send_gga)) {
 			send_gga = 0;
 			Serial1.println(RMCGGA);
 		}
-		if ((gps_ok) && (gps_id) && (!date_ok)) {
+		if ((gps_ok) && (!date_ok)) {
 			send_gga = 1;
 			Serial1.println(RMCZDA);
 		}
@@ -2772,18 +2772,18 @@ static uint8_t ht_vals[51] = {
 	// 40  
 	   0x63 };
 
-uint8_t htval  = 0;
+uint8_t nhtval = 0;
+uint8_t ohtval = 0;
 uint8_t incadj = 0;
 uint8_t decadj = 0;
 
 void SetHtValue(int flg) {
-	uint8_t hval=0;
 	int itmp = 0;
 	float htmp = 0.0;
 
 	if (flg) {
-		htval = 0;
-		bitBang(htval);
+		nhtval = 0;
+		bitBang(nhtval);
 		BusWrite(MAX_ADDR,abreg,thval,0);
 		PushHpu();
 		return;
@@ -2799,34 +2799,33 @@ void SetHtValue(int flg) {
 
 	if (inc_ht_flg > 10) {	
 		if (decadj > 0) decadj--;
-		else if (incadj <= 10) incadj++;
+		else incadj++;
 		inc_ht_flg = 0;
-		htval = 0;
 	}
 
 	if (dec_ht_flg) {
 		if (incadj > 0) incadj--;
-		else if (decadj <= 10) decadj++;
+		else decadj++;
 		dec_ht_flg = 0;
-		htval = 0;
 	}
 
 	htmp = HtuReadTemperature();
-
 	itmp = (int) round(htmp) + 10;	
 	if (itmp <  0) itmp = 0;
 	if (itmp > 51) itmp = 51;
-	if ((!htval) || (htval != ht_vals[itmp])) {
-		htval = ht_vals[itmp];
-		hval = (htval + incadj - decadj) & 0xFF;
-		bitBang(hval);
+	nhtval = ht_vals[itmp] + incadj -decadj;
+	if (nhtval < 0x40) nhtval = 0x40;
+
+	if (ohtval != nhtval) {
+		ohtval = nhtval;
+		bitBang(nhtval);
 		BusWrite(MAX_ADDR,abreg,thval,0);
 		PushHpu();
 	}
 }
 
 void PushHpu() {
-	sprintf(txt,"{'HPU':{'Ato':'0x%02X','Hpu':'0x%02X','Thr':'0x%02X','Abr':'0x%02X'}}\n",(htval+incadj-decadj),puval,thval,abreg);
+	sprintf(txt,"{'HPU':{'Ato':'0x%02X','Hpu':'0x%02X','Thr':'0x%02X','Abr':'0x%02X'}}\n",nhtval,puval,thval,abreg);
 	PushTxt(txt);
 }
 

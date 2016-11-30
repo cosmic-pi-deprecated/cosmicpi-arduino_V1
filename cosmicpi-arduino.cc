@@ -9,6 +9,8 @@
 // In this version interrupts come from the accelerometer chip, if the acceleration exceeds
 // the threshold (in meters/sec/sec) in any direction the chip interrupts and its logged to
 // the serial output stream.
+// The magnatometer chip if polled and if the deltas exceed the threshold a magnatometer 
+// event is generated.
 
 // Julian Lewis lewis.julian@gmail.com
 
@@ -1324,6 +1326,7 @@ void GpsSetup() {
 	Serial1.println(NOANTENNA);
 	Serial1.println(RMCGGA);
 	Serial1.println(NORMAL);
+	Serial1.println(FMWVERS);
 }
 
 // Arduino setup function, initialize hardware and software
@@ -1948,14 +1951,26 @@ void loop() {
 
 		if ((!gps_id) && ((ppcnt % 20) == 0)) { // Get firmware version ?
 			Serial1.println(FMWVERS);
+			if (debug_gps) {
+				sprintf(txt,"{'TXT':{'Txt':'Send:%s'}}\n",FMWVERS);
+				PushTxt(txt);
+			}
 		}
 		if ((date_ok) && (send_gga)) {
 			send_gga = 0;
 			Serial1.println(RMCGGA);
+			if (debug_gps) {
+				sprintf(txt,"{'TXT':{'Txt':'Send:%s'}}\n",RMCGGA);
+				PushTxt(txt);
+			}
 		}
 		if ((gps_ok) && (!date_ok)) {
 			send_gga = 1;
 			Serial1.println(RMCZDA);
+			if (debug_gps) {
+				sprintf(txt,"{'TXT':{'Txt':'Send:%s'}}\n",RMCZDA);
+				PushTxt(txt);
+			}
 		}
 
 		SetHtValue(0);			// Temperature compensated HT setting
@@ -2318,10 +2333,15 @@ float get_peak_freq(int threshold) {	// Threshold to test
 
 void dgps(int arg) {
 	debug_gps = arg; // Controls printing GPS NMEA strings for debugging
+	sprintf(cmd_mesg,"GPS: Debug:%d",debug_gps);
+	Serial1.println(FMWVERS);
+	sprintf(txt,"{'TXT':{'Txt':'Send:%s'}}\n",FMWVERS);
+	PushTxt(txt);
 }
 
 void gpid(int arg) {
 	cmd_result = 0;
+	Serial1.println(FMWVERS);
 
 	if (gps_id == ADAFRUIT_GPS) {
 		sprintf(cmd_mesg,"GPS: PASS Id:%d Adafruit Ultimate GPS found",gps_id);

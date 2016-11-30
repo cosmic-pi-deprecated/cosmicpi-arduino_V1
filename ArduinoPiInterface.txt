@@ -13,10 +13,12 @@ The data item lables sent back from the Arduino to th RPi
 HTU 	Humidity and temperature sensor chip
 BMP 	Barrometric pressure chip
 VIB 	Siesmic vibration event
+MEV	Magnetic field event
 MAG 	Magnatometer chip
 ACL 	Accelerometer chip
 LOC 	GPS Location
 TIM 	Time stamp
+DTG	Date from the GPS
 STS 	Firmware/Hardware status
 EVT 	Cosmic ray event
 

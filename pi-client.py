@@ -118,6 +118,7 @@ class Event(object):
 		self.newhlp = 0 # Help text available
 		self.newtxt = 0 # Text to printi
 		self.newber = 0 # New bus error
+		self.newhpu = 0 # New high voltage setting
 	
 		self.sqn = 0	# Packet sequenc number
 
@@ -158,6 +159,9 @@ class Event(object):
 
 				if kys[0] == "BER":
 					self.newber = 1
+
+				if kys[0] == "HPU":
+					self.newhpu = 1
 
 		except Exception, e:
 			#print e
@@ -342,6 +346,12 @@ class Event(object):
 			return 1
 		return 0
 
+	def new_hpu(self):
+		if self.newhpu:
+			self.newhpu = 0
+			return 1
+		return 0
+
 # Send UDP packets to the remote server
 
 class Socket_io(object):
@@ -435,6 +445,7 @@ def main():
 	ptsflg  = False
 	display = False	
 	pushflg = False
+	monflg  = False
 
 	if back:
 		Daemon()
@@ -652,7 +663,7 @@ def main():
 						print "MONITOR COMMANDS"
 						print "   q=quit, s=status, d=toggle_debug, n=toggle_send, l=toggle_log"
 						print "   v=vibration, w=weather, r=toggle_notifications, x=toggle_display" 
-						print "   p=ptslog h=help\n"
+						print "   m=monitor_ht, p=ptslog h=help\n"
 						print "ARDUINO COMMANDS"
 						print ""
 						ser.write("HELP")
@@ -701,6 +712,13 @@ def main():
 						else:
 							udpflg = True
 						print "Send:%s\n" % udpflg
+
+					elif cmd.find("m") != -1:
+						if monflg:
+							monflg = False
+						else:
+							monflg = True;
+						print "Monitor HT:%s\n" % monflg
 
 					elif cmd.find("l") != -1:
 						if logflg:
@@ -769,6 +787,11 @@ def main():
 				if evt.new_ber():
 					ber = evt.get_ber()
 					print "\nBUS ERROR:%s ADDRESS:%s REG:%s BUS:%s" % (ber["Ber"],ber["Adr"],ber["Reg"],ber["Bus"])
+
+				if monflg:
+					if evt.new_hpu():
+						hpu = evt.get_hpu()
+						print "\nHPU:Ato:%s" % hpu["Ato"]
 
 				if vibflg:
 					if evt.new_mev():

@@ -4,9 +4,9 @@ sent back from the Arduino over the serial link in ASCII format
 Cheers Julian
 
 
-The version number starts at 1.0 represented by the value 1.0
+The version number starts at 1 represented by the value V1
 
-VER 1.0
+VER	V1
 
 The data item lables sent back from the Arduino to th RPi 
 
@@ -26,6 +26,8 @@ EVT 	Cosmic ray event
 
 		VER,VIB,<AXIS %d>,<COUNT %d>
 
+		VER,MEV,<AXIS %d>,<MAGNETIC THRESHOLD GAUSS %f>,<DELTA X %f>,<DELTA Y %f>,<DELTA Z %f>
+
 		VER,MAG,<X MAGNETIC FIELD GAUSS %5.3f>,<Y MAGNETIC FIELD GAUSS %5.3f>,<Z MAGNETIC FIELD GAUSS %5.3f>
 
 		VER,ACL,<X ACCELERATION M/S/S %3.2f>,<Y ACCELERATION M/S/S %3.2f>,<Z ACCELERATION M/S/S %3.2f>
@@ -33,6 +35,8 @@ EVT 	Cosmic ray event
 		VER,LOC,<LATTITUDE DEGREES %5.3f>,<LONGITUDE DEGREES %5.3f>,<ALTITUDE METERS %3.2f>
 
 		VER,TIM,<TIME IN SECONDS SINCE BOOT %4d>,<MASTER CLOCK FREQUENCY HERTZ %7d>,<TIME OF DAY HHMMSS %6s>
+
+		VER,DTG,<YEAR %d>,<MONTH %d>,<DAY %d>
 N.B
 The time of day field is a 6 digit number, eg 093010 is 9AM and 30 minutes 10 seconds
 Beware Python would interpret the leading zero to mean Octal and the 9 is an illegal Octal number
@@ -80,3 +84,60 @@ When connection to the server is reestablished the items stored in the data base
 
 It might be interesting to implement the concept of subgroups at some higher level
 
+
+===================================
+
+N.B. The firmware is still capable of producing JSON output for the test program.
+There are many more data items resulting from hardware errors, command responses help texts, system information etc.
+Here is the list of JSON texts set when the JSON global is set via the JSON command ....
+
+
+{'HTU':{'Tmh':f,'Hum':f}}
+HTU21DF record containing Tmh:temperature in C Hum:humidity percent
+
+{'BMP':{'Tmb':f,'Prs':f,'Alb':f}}
+BMP085 record containing Tmb:temperature Prs:pressure Alb:Barrometric altitude
+
+{'VIB':{'Vax':i,'Vcn':i}}
+Vibration record containing Vax:3 bit zyx direction mask Vcn:vibration count
+This record is always immediatly followed by 3 more records, TIM, ACL, and MAG
+
+{'MEV':{'Mev':i,'Met':f,'Mdx':f,'Mdy':f,'Mdz':f}}
+Magnetic event Mev:3 bit zyx status Met:Threshold Mdx:Delta x,Mdy:Delta y,Mdz:Delta z
+
+{'MAG':{'Mgx':f,'Mgy':f,'Mgz':f}}
+LSM303DLH magnatometer record containing Mgx:the x field strength Mgy:the y field Mgz:ther z field
+
+{'ACL':{'Acx':f,'Acy':f,'Acz':f}}
+LSM303DLH acclerometer record containing Acx:the x acceleration Acy:the y acceleration Acz:the z acceleration
+If this record immediatly follows a VIB record the fields were hardware latched when the g threshold was exceeded
+
+{'LOC':{'Lat':f,'Lon':f,'Alt':f}}
+GPS location record containing Lat:latitude in degrees Lon:longitude in degrees Alt:altitude in meters
+
+{'TIM':{'Upt':i,'Frq':i,'Sec':i}}
+Time record containing Upt:up time seconds Frq:counter frequency Sec:time string
+
+{'DTG':{'Yer':i, 'Mnt':i, 'Day':i}}
+GPS Date record containing Yer:Year Mnt:Month Day:Day in month
+
+{'STS':{'Qsz':i,'Mis':i,'Ter':i,'Tmx':i,'Htu':i,'Bmp':i,'Acl':i,'Mag':i, 'Gps':i, 'Adn':i, 'Gri':i, 'Eqt':i, 'Chm':i}}
+Status record containing Qsz:events on queue Mis:missed events Ter:buffer error Tmx:max buffer size reached
+Htu:status Bmp:status Acl:status Mag:status Gps:ststus 
+Adn:Number of samples per event Gri:Number of seconds between GPS reads Eqt:Event queue dump threshold Chm:Channel mask
+
+{'EVT':{'Evt':i,'Frq':i,'Tks':i,'Etm':f,'Adc':[[i,i,i,i,i,i,i,i][i,i,i,i,i,i,i,i]]}}
+Event record containing Evt:event number in second Frq:timer frequency Tks:ticks since last event in second 
+Etm:event time stamp to 100ns Adc:[[Channel 0 values][Channel 1 values]]
+
+{'HLP':{'Idn':i,'Nme':s,'Hlp':s}}
+Help for command ID number Idn with name nme and help text hlp
+
+{'TXT':{'Txt':s}}
+Text to be displayed
+
+{'BER':{'Ber':%d,'Adr':%s,'Reg':%s,'Bus':%d}}
+Bus error warning, Ber=error code, Adr=the hex address, Reg=the hex register, Bus=the bus number 0/1
+
+{'HPU':{'Ato':%s,'Hpu':%s,'Thr':%s,'Abr':%s}}
+HT power supply Ato:Thauto algorithm value Hpu:Manual value Thr:Threshold Abr:AB potentiometer bits

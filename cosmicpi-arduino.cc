@@ -14,7 +14,7 @@
 
 // Julian Lewis lewis.julian@gmail.com
 
-#define VERS "2016/November"
+#define VERS "2016/December"
 #define CSVERS "V1"	// Output CSV version
 
 // In this sketch I am using an Adafruite ultimate GPS breakout which exposes the PPS output

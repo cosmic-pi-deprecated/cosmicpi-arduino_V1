@@ -653,7 +653,7 @@ void TC6_Handler() {
 			AdcPullData(&wbuf[widx]);
 			widx++;
 			digitalWrite(EVT_PIN,HIGH);	// Event LEP on, off in loop()
-		} else inc_ht_flg++;
+		} // else inc_ht_flg++;
 	} else
 		inc_ht_flg++;
 

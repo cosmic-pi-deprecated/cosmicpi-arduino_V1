@@ -47,6 +47,7 @@ pi-client.py
 		sudo ./pi-client -u /dev/ttyACM0 -i 31.194.73.171 -p 15443-o .
 
 pi-server.py
+
 	The client pi-client.py can be configured to send events and other information such as siesmic events, 
 	weather station events, changes in magnetic field, and cosmic ray events to the server through UDP
 	TCP/IP datagrams to the server. This can be useful for test involving multiple cosmicpi devices. These

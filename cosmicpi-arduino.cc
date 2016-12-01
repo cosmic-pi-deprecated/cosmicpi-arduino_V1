@@ -379,8 +379,11 @@ int bus_err = 0;
 void PushBusError(int ber, uint8_t address, uint8_t reg, uint8_t bus) {
 	bus_err = ber;
 	if (ber) {
-		sprintf(txt,"{'BER':{'Ber':%d,'Adr':'0x%02X','Reg':'0x%02X','Bus':%d}}\n",
-			ber,address,reg,bus);
+		if (output_format) 
+			sprintf(txt,"{'BER':{'Ber':%d,'Adr':'0x%02X','Reg':'0x%02X','Bus':%d}}\n",
+				ber,address,reg,bus);
+		else sprintf(txt,"%s,BER,%d,%d,%d,%d\n",CSVERS,ber,address,reg,bus);
+
 		PushTxt(txt);
 	}
 }
@@ -2845,7 +2848,9 @@ void SetHtValue(int flg) {
 }
 
 void PushHpu() {
-	sprintf(txt,"{'HPU':{'Ato':'0x%02X','Hpu':'0x%02X','Thr':'0x%02X','Abr':'0x%02X'}}\n",nhtval,puval,thval,abreg);
-	PushTxt(txt);
+	if (output_format) {
+		sprintf(txt,"{'HPU':{'Ato':'0x%02X','Hpu':'0x%02X','Thr':'0x%02X','Abr':'0x%02X'}}\n",nhtval,puval,thval,abreg);
+		PushTxt(txt);
+	}
 }
 

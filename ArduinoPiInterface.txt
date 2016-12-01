@@ -21,6 +21,7 @@ TIM 	Time stamp
 DTG	Date from the GPS
 STS 	Firmware/Hardware status
 EVT 	Cosmic ray event
+BER	Bus error on I2C bus
 
 		VER,HTU,<TEMPERATURE %5.3f>,<HUMIDITY %4.1f>
 
@@ -56,6 +57,10 @@ Channel values are encoded as follows, say <ADC CHANNEL VALUE COUNT %2d> = 8
 then the following CHANNEL VALUES would contain 3 x 8 = 24 Hex digits
 Each Hex digit triplet representsd one ADC 12 bit value
 Example: 8,ABCABCABCABCABCABCABCABC,123123123123123123123123
+
+		VER,BER,<Bus error code %d>,<Address %d>,<Register %d>,<Bus number %d>
+
+Bus errors are very bad, if you detect these there is a serious hardware problem
 
 ==================================
 

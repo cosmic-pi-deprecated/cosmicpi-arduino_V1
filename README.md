@@ -33,8 +33,11 @@ pi-client.py
 	program requires write access to the /dev node, and depending on your system configuration you may need 
 	to run with sudo privaledges. Once the test program is running type the ">" character to get a command
 	prompt, the type "h" for help. 
+
 	example:
+
 		sudo ./pi-client -u /dev/ttyACM0 
+
 		sudo ./pi-client -u /dev/ttyACM0 -i 31.164.56.101 -p 15443-o .
 
 pi-server.py
@@ -43,7 +46,9 @@ pi-server.py
 	TCP/IP datagrams to the server. This can be useful for test involving multiple cosmicpi devices. These
 	devices may be local or at remote locations. The server is able to corrolate and log data for futher
 	analysis. See example above for specifying an ip address and port.
+
 	example:
+
 		./pi-client.py -p 15443
 
 

@@ -17,17 +17,12 @@
 #define VERS "2016/December"
 #define CSVERS "V1"	// Output CSV version
 
-// In this sketch I am using an Adafruite ultimate GPS breakout which exposes the PPS output
-// The Addafruite Rx is connected to the DUE TX1 (Pin 18) and its Tx to DUE RX1 (Pin 19)
-// The Adafruite 3.3V power is provided from the DUE 3.3V and ground pins
-// N.B. Go to the Adafruit downloads page and copy Adafruit_GPS.h and Adafruit_GPS.cc to
-// your sketch directory. 
-
 // The output from this program is processed by a Python monitor on the other end of the
 // serial line. There has to be mutual aggreement between this program and the monitor.
 
 // Output strings
-// All fields in all output strings conform to the json standard
+// All fields in all output strings conform to the json standard when the output_format
+// global is set non zero, otherwise the output format is CSV
 
 // Here is the list of all records where 'f' denotes float and 'i' denotes integer ...
 // {'HTU':{'Tmh':f,'Hum':f}}
@@ -87,6 +82,15 @@
 // This program also accepts commands sent to it on the serial line.
 // When a command arrives it is immediatly executed.
 
+// About the hardware configuration: This firmware was originaly developed using Adafruit breakouts
+// for the GPS, Accelerometer, Magnatometer, Barometer, Humidity and temperature. The cosmicpi main
+// board (MB) implements these functions directly whith on board chips. However Adafruit breakouts
+// can optionally replace the main board implementation which provides a pin compatible foot print
+// on which the breakout can be inserted. Also you can build your own cosmic ray detector using the
+// breakouts, and still use this firmware which supports both hardware configurations. The firmware
+// detects the hardware and behaves according to whats installed. This has lead to some extra code.
+// In particular the MB uses two I2C buses 0,1 and the Adafruit breakouts are on bus 0 mostly.
+
 #include <time.h>
 #include <Wire.h>
 #include "LPS.h"	// Pololu's LPS library modified to use bus 1, https://github.com/pololu/lps-arduino
@@ -106,7 +110,7 @@
 // #define HANDLE_OVERFLOW
 
 // This is the text ring buffer for real time output to serial line with interrupt on
-#define TBLEN 8192	// Serial line output ring buffer size
+#define TBLEN 8192	// Serial line output ring buffer size, 8K
 
 // Define some output debug pins to monitor whats going on via an oscilloscope
 #define PPS_PIN 11	// PPS (Pulse Per Second) and LED
@@ -116,7 +120,8 @@
 // Power pins for power on/off the breakouts after a reset
 // The DUE makes a reset if the USB connection is restarted
 // The AddaFruit breakouts loose it when this happens and the
-// only way to recover them is a power cycle
+// only way to recover them is a power cycle. This feature
+// is redundant on the standard MB hardware configuration
 
 #define POW_ONE 8	// High power 15ma
 #define POW_TWO 9	// 15ma
@@ -143,7 +148,7 @@ const int SCK_PIN  = 44;
 const int MISO_PIN = 22;
 const int MOSI_PIN = 43;
 
-// Accelerometer/Magnatometer definitions for LMS303D and LSM303DLHC chips
+// Accelerometer/Magnatometer definitions for LMS303D (MB) and LSM303DLHC (Adafruit) chips
 #define ACL_BUS_1_ADDR 0x1D	// LMS303D on the main board on i2c bus 1
 #define ACL_BUS_0_ADDR 0x19	// LSM303DLHC on the Adafruit breakout on i2c bus 0
 #define	MAG_BUS_0_ADDR 0x1E	// LSM303DLHC magnatometer
@@ -181,10 +186,10 @@ float HtuReadHumidity();
 void  HtuReset();
 uint8_t htu_ok = 0;
 
-// Barrometer and temperature measurment LPS25H on bus 1
+// Barrometer and temperature measurment LPS25H on bus 1 (MB)
 LPS ps;
 
-// Barrometer and temperature measurment BMP085 on bus 0
+// Barrometer and temperature measurment BMP085 on bus 0 (Adafruit)
 extern float BmpCalcTemp();
 extern float BmpCalcPres();
 extern float BmpCalcAlti();
@@ -375,6 +380,8 @@ static char adch0[ADCHL],adch1[ADCHL];	// ADC channel values strings
 #define FREQ 42000000			// Clock frequency
 #define MFRQ 40000000			// Sanity check frequency value
 
+// Handle i2c bus errors
+
 int bus_err = 0;
 void PushBusError(int ber, uint8_t address, uint8_t reg, uint8_t bus) {
 	bus_err = ber;
@@ -440,6 +447,7 @@ uint8_t BusRead(uint8_t address, uint8_t reg, uint8_t bus) {
 // I use a the unconnected timer block TC1 to make a PLL that is kept in phase by the PPS
 // arrival in TC0 and which is loaded with the last measured PPS frequency. This PLL will
 // take over the PPS generation if the real PPS goes missing.
+// In this implementation the diode is implemented in software, see later
 
 void TimersStart() {
 
@@ -641,6 +649,7 @@ void SwapBufs() {
 // Handle isolated PPS (via diode) LOR with the Event
 // The diode is needed to block Event pulses getting back to TC0
 // LOR means Logical inclusive OR
+// Now we are using the software diode implementation
 
 void TC6_Handler() {
 
@@ -1985,6 +1994,7 @@ void loop() {
 }
 
 // Production tests suit commands and self test features
+// and the HT auto setting for the SiPMs
 // =====================================================
 
 // Error Codes are 3 digits "Tnn" as follows
@@ -2736,8 +2746,12 @@ void rcpu(int arg) {
 	return;
 }
 
-// ==============================================
+// =================================================================================================
 // Control the thresholds on MAX5387
+// This is the HT voltage automatic setting for the SiPMs. An initial guess is made by looking up a
+// value in the temperature array. If two many events arrive the voltage is decreased, if no events
+// arrive the voltage is increased. There is also a threshold value that is set to be above the 
+// the noise value.
 
 #define MAX_ADDR 0x28
 
@@ -2781,6 +2795,8 @@ void abth(int arg) {
 	PushHpu();
 }
 
+// temperature range -10 to +40 initial HT values
+
 static uint8_t ht_vals[51] = {
 	// -10  -09  -08  -07  -06  -05  -04  -03  -02  -01
 	   0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xEF,0xEF,0xEF,
@@ -2795,14 +2811,17 @@ static uint8_t ht_vals[51] = {
 	// 40  
 	   0x63 };
 
-uint8_t nhtval = 0;
-uint8_t ohtval = 0;
-uint8_t incadj = 0;
-uint8_t decadj = 0;
+uint8_t nhtval = 0;	// New HT value
+uint8_t ohtval = 0;	// Old HT value
+uint8_t incadj = 0;	// Increment adjustment
+uint8_t decadj = 0;	// Decrement adjustment
 
 void SetHtValue(int flg) {
 	int itmp = 0;
 	float htmp = 0.0;
+
+	// If the flag is set switch off the HT, this happens at startup
+	// because the reset has no effect on the HT value
 
 	if (flg) {
 		nhtval = 0;
@@ -2812,6 +2831,9 @@ void SetHtValue(int flg) {
 		return;
 	}
 
+	// If manual control is requested use that value
+	// Automatic control happens when the puval is zero
+
 	if (puval) {
 		incadj = 0;
 		decadj = 0;
@@ -2820,11 +2842,17 @@ void SetHtValue(int flg) {
 		return;
 	} 
 
+	// N.B. The bigger the value, the lower the HT voltage
+
+	// More than 10 extra events adjust
+
 	if (inc_ht_flg > 10) {	
 		if (decadj > 0) decadj--;
 		else incadj++;
 		inc_ht_flg = 0;
 	}
+	
+	// No events detected, adjust
 
 	if (dec_ht_flg) {
 		if (incadj > 0) incadj--;
@@ -2832,18 +2860,20 @@ void SetHtValue(int flg) {
 		dec_ht_flg = 0;
 	}
 
-	htmp = HtuReadTemperature();
+	// Calculate the HT voltage setting
+
+	htmp = HtuReadTemperature();		// Read the temperature
 	itmp = (int) round(htmp) + 10;	
 	if (itmp <  0) itmp = 0;
-	if (itmp > 51) itmp = 51;
-	nhtval = ht_vals[itmp] + incadj -decadj;
-	if (nhtval < 0x40) nhtval = 0x40;
+	if (itmp > 51) itmp = 51;		// Clamp it 0..51 (-10..40)
+	nhtval = ht_vals[itmp] + incadj -decadj;// Look it up
+	if (nhtval < 0x40) nhtval = 0x40;	// Going less than 40 could damage the SiPMs
 
-	if (ohtval != nhtval) {
+	if (ohtval != nhtval) {			// If its changed write the new value
 		ohtval = nhtval;
-		bitBang(nhtval);
-		BusWrite(MAX_ADDR,abreg,thval,0);
-		PushHpu();
+		bitBang(nhtval);		  // Set HT value
+		BusWrite(MAX_ADDR,abreg,thval,0); // Set threshold
+		PushHpu();			  // Send message
 	}
 }
 

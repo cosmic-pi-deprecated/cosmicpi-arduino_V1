@@ -10,6 +10,7 @@ VER	V1
 
 The data item lables sent back from the Arduino to th RPi 
 
+UID     Unique 128 ID of Arduino DUE
 HTU 	Humidity and temperature sensor chip
 BMP 	Barrometric pressure chip
 VIB 	Siesmic vibration event
@@ -22,6 +23,8 @@ DTG	Date from the GPS
 STS 	Firmware/Hardware status
 EVT 	Cosmic ray event
 BER	Bus error on I2C bus
+
+		VER,UID,<128 BIT CODE IN HEX %32X>
 
 		VER,HTU,<TEMPERATURE %5.3f>,<HUMIDITY %4.1f>
 
@@ -98,6 +101,8 @@ N.B. The firmware is still capable of producing JSON output for the test program
 There are many more data items resulting from hardware errors, command responses help texts, system information etc.
 Here is the list of JSON texts set when the JSON global is set via the JSON command ....
 
+{'UID':{'Uid':0x%032X}}
+The 128 bit code as 32 Hex digits
 
 {'HTU':{'Tmh':f,'Hum':f}}
 HTU21DF record containing Tmh:temperature in C Hum:humidity percent

@@ -199,12 +199,18 @@ extern char *BmpDebug();
 
 void SetHtValue(int flg);
 
+// Unique Arduino 128 bit ID code
+
+void GetUid();
+void PushUid(int flg);
+
 // Control the output data rates by setting defaults, these values can be modified at run time
 // via commands from the serial interface. Some output like position isn't supposed to be changing
 // very fast if at all, so no need to clutter up the serial line with it. The Python monitor keeps
 // the last sent values when it builds event messages to be sent over the internet to the server
 // or logged to a file.
 
+uint32_t uid_display_rate    = 30;	// Unique 128 bit display rate
 uint32_t latlon_display_rate = 12;	// Display latitude and longitude each X seconds
 uint32_t humtmp_display_rate = 12;	// Display humidity and HTU temperature each X seconds
 uint32_t alttmp_display_rate = 12;	// Display altitude and BMP temperature each X seconds
@@ -219,7 +225,7 @@ uint32_t adc_samples_per_evt = 8;	// Number of ADC samples per event
 uint32_t channel_mask        = 3;	// Channel 1 and 2
 uint32_t debug_gps           = 0;	// Debug print of GPS NMEA strings
 uint32_t output_format       = 0;	// Output format 0=CSV else JSON, default CSV
-uint32_t mag_poll_rate	     = 1;	// Magnetic polling rate
+uint32_t mag_poll_rate	     = 1;	// Magnetic polling ratei
 
 // Siesmic and magnetic event trigger parameters
 
@@ -238,7 +244,8 @@ typedef enum {
 	TIMD,	// Timing display rate
 	DTGD,	// Date display rate
 	STSD,	// Status display rate
-	EVQT,	// Event queue dump threshold
+	EVQT,	// Event queue dump thresholdi
+	UNID,   // Unique 128 bit ID display rate
 
 	ACLD,	// Accelerometer display rate
 	MAGD,	// Magnetometer display rate
@@ -300,6 +307,7 @@ void timd(int arg);
 void dtgd(int arg);
 void stsd(int arg);
 void evqt(int arg);
+void unid(int arg);
 void acld(int arg);
 void magd(int arg);
 void aclt(int arg);
@@ -336,6 +344,7 @@ CmdStruct cmd_table[CMDS] = {
 	{ DTGD, dtgd, "DTGD", "GPS Date display rate", 1 },
 	{ STSD, stsd, "STSD", "Status info display rate", 1 },
 	{ EVQT, evqt, "EVQT", "Event queue dump threshold", 1 },
+	{ UNID, unid, "UNID", "Show Unique ID, arg = display rate", 1 },
 	{ ACLD, acld, "ACLD", "Accelerometer display rate", 1 },
 	{ MAGD, magd, "MAGD", "Magnatometer display rate", 1 },
 	{ ACLT, aclt, "ACLT", "Accelerometer event trigger threshold", 1 },
@@ -1345,6 +1354,8 @@ void GpsSetup() {
 // This is the first function to be called when the sketch is started
 
 void setup() {
+	
+	GetUid();			// Read unique 128 bit ID from memory
 
 	Wire.begin();
 	Wire1.begin();
@@ -1408,9 +1419,9 @@ void setup() {
 		BmpCalcPres();
 	}	
 
-	SetHtValue(1);
-
-	TimersStart();			// Start timers
+	SetHtValue(1);	// Set the High Tension
+	TimersStart();	// Start timers
+	PushUid(1);	// Push UID 128 bit code
 }
 
 // These two routines are needed because the Serial.print method prints without using interrupts.
@@ -1949,6 +1960,7 @@ void loop() {
 		PushLoc(0);			// Push location latitude and longitude
 		PushTim(0);			// Push timing data
 		PushDtg(0);			// Push the date
+		PushUid(0);			// Push unique ID
 		
 		MagReadData();			// Read magnetic data
 		MagConvData();			// Convert to Gauss
@@ -2884,3 +2896,66 @@ void PushHpu() {
 	}
 }
 
+// ==========================================================================
+// Get Arduino DUE unique ID
+
+__attribute__ ((section (".ramfunc")))
+void _EEFC_ReadUniqueID( unsigned int * pdwUniqueID ) {
+	unsigned int status;
+
+	/* Send the Start Read unique Identifier command (STUI) 
+	 * by writing the Flash Command Register with the STUI command.
+	 */
+	EFC1->EEFC_FCR = (0x5A << 24) | EFC_FCMD_STUI;
+	do {
+		status = EFC1->EEFC_FSR ;
+	} while ((status & EEFC_FSR_FRDY) == EEFC_FSR_FRDY);
+
+	/* The Unique Identifier is located in the first 128 bits of the 
+	 * Flash memory mapping. So, at the address 0x400000-0x400003. 
+	 */
+	pdwUniqueID[0] = *(uint32_t *)IFLASH1_ADDR;
+	pdwUniqueID[1] = *(uint32_t *)(IFLASH1_ADDR + 4);
+	pdwUniqueID[2] = *(uint32_t *)(IFLASH1_ADDR + 8);
+	pdwUniqueID[3] = *(uint32_t *)(IFLASH1_ADDR + 12);
+
+	/* To stop the Unique Identifier mode, the user needs to send the Stop Read unique Identifier
+	 * command (SPUI) by writing the Flash Command Register with the SPUI command. 
+	 */
+	EFC1->EEFC_FCR = (0x5A << 24) | EFC_FCMD_SPUI ;
+
+	/* When the Stop read Unique Unique Identifier command (SPUI) has been performed, the
+	 * FRDY bit in the Flash Programming Status Register (EEFC_FSR) rises. 
+	 */
+	do {
+		status = EFC1->EEFC_FSR ;
+	} while ((status & EEFC_FSR_FRDY) != EEFC_FSR_FRDY);
+}
+
+int uid_ok = 0;
+char uidtxt[132];
+
+void GetUid() {
+	unsigned int uidata[5];
+	if (!uid_ok) {
+		_EEFC_ReadUniqueID(uidata);
+		sprintf(uidtxt,"%08X%08X%08X%08X",uidata[0],uidata[1],uidata[2],uidata[3]);
+		uid_ok = 1;
+	}
+}
+
+void PushUid(int flg) {
+	if ((flg) || ((uid_ok) && ((ppcnt % uid_display_rate) == 0))) {
+		if (output_format) sprintf(txt,"{'UID':{'Uid':'%s'}}\n",uidtxt);
+		else sprintf(txt,"%s,UID,0x%08X%08X%08X%08X\n",CSVERS,uidtxt);
+		PushTxt(txt);
+	}
+}
+
+void unid(int arg) {
+	if (arg) 
+		uid_display_rate = arg;
+	GetUid();
+	PushUid(1);
+	sprintf(cmd_mesg,"UNID:%s display_rate:%d",uidtxt,uid_display_rate);
+}

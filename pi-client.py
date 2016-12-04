@@ -95,6 +95,7 @@ class Event(object):
 		self.TXT = { "Txt":"0" }
 		self.BER = { "Ber":"0"  ,"Adr":"0"  ,"Reg":"0","Bus":"0" }
 		self.HPU = { "Ato":"0"  ,"Hpu":"0"  ,"Thr":"0","Abr":"0" }
+		self.UID = { "Uid":"0" }
 
 		# Add ons
 
@@ -108,7 +109,7 @@ class Event(object):
 				"ACL":self.ACL, "LOC":self.LOC, "TIM":self.TIM, "STS":self.STS,
 				"EVT":self.EVT, "DAT":self.DAT, "SQN":self.SQN, "PAT":self.PAT, 
 				"DTG":self.DTG, "CMD":self.CMD, "HLP":self.HLP, "TXT":self.TXT,
-				"MEV":self.MEV, "BER":self.BER, "HPU":self.HPU }
+				"MEV":self.MEV, "BER":self.BER, "HPU":self.HPU, "UID":self.UID }
 
 		self.newvib = 0	# Vibration
 		self.newmev = 0 # Magnetic event
@@ -315,6 +316,9 @@ class Event(object):
 
 	def get_hpu(self):
 		return self.recd["HPU"]
+
+	def get_uid(self):
+		return self.recd["UID"]
 
 	def new_cmd(self):
 		if self.newcmd:
@@ -578,8 +582,14 @@ def main():
 						mev = evt.get_mev()
 						ber = evt.get_ber()
 						hpu = evt.get_hpu()
-						
+						uid = evt.get_uid()
+
 						s = "ARDUINO STATUS"
+						print s
+						if ptsflg:
+							log.write(s + '\n')
+
+						s = "UniqueId......: Uid:%s" % (uid["Uid"])
 						print s
 						if ptsflg:
 							log.write(s + '\n')

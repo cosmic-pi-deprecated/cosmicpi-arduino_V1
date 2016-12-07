@@ -2866,7 +2866,7 @@ void SetHtValue(int flg) {
 	
 	// No events detected, adjust
 
-	if (dec_ht_flg) {
+	if (dec_ht_flg > 5) {
 		if (incadj > 0) incadj--;
 		else decadj++;
 		dec_ht_flg = 0;
@@ -2890,10 +2890,11 @@ void SetHtValue(int flg) {
 }
 
 void PushHpu() {
-	if (output_format) {
+	if (output_format)
 		sprintf(txt,"{'HPU':{'Ato':'0x%02X','Hpu':'0x%02X','Thr':'0x%02X','Abr':'0x%02X'}}\n",nhtval,puval,thval,abreg);
-		PushTxt(txt);
-	}
+	else
+		sprintf(txt,"%s,HPU,0x%02X,0x%02X,0x%02X,%d\n",CSVERS,nhtval,puval,thval,abreg);
+	PushTxt(txt);
 }
 
 // ==========================================================================

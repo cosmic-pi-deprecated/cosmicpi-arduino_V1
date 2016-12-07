@@ -159,28 +159,37 @@ class Event(object):
 	def __init__(self):
 
 		# These are the UDP packets containing json strings we are expecting
-
                 self.HTU = { "Tmh":"0.0","Hum":"0.0"             }
                 self.BMP = { "Tmb":"0.0","Prs":"0.0","Alb":"0.0" }
                 self.VIB = { "Vax":"0"  ,"Vcn":"0"               }
                 self.MAG = { "Mgx":"0.0","Mgy":"0.0","Mgz":"0.0" }
+                self.MEV = { "Mev":"0"  ,"Met":"0"  ,"Mdx":"0.0" ,"Mdy":"0.0", "Mdz":"0.0" }
                 self.ACL = { "Acx":"0.0","Acy":"0.0","Acz":"0.0" }
                 self.LOC = { "Lat":"0.0","Lon":"0.0","Alt":"0.0" }
                 self.TIM = { "Upt":"0"  ,"Frq":"0"  ,"Sec":"0"   }
+                self.DTG = { "Yer":"0"  ,"Mnt":"0"  ,"Day":"0"   }
                 self.STS = { "Qsz":"0"  ,"Mis":"0"  ,"Ter":"0","Tmx":"0","Htu":"0","Bmp":"0","Acl":"0","Mag":"0","Gps":"0","Adn":"0","Gri":"0","Eqt":"0","Chm":"0" }
                 self.EVT = { "Evt":"0"  ,"Frq":"0"  ,"Tks":"0","Etm":"0.0","Adc":"[[0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0]]" }
-	
-		# Add ons
+                self.CMD = { "Cmd":"0"  ,"Res":"0"  ,"Msg":"0" }
+                self.HLP = { "Idn":"0"  ,"Nme":"0"  ,"Hlp":"0" }
+                self.TXT = { "Txt":"0" }
+                self.BER = { "Ber":"0"  ,"Adr":"0"  ,"Reg":"0","Bus":"0" }
+                self.HPU = { "Ato":"0"  ,"Hpu":"0"  ,"Thr":"0","Abr":"0" }
+                self.UID = { "Uid":"0" }
 
-		self.DAT = { "Dat":"s" }		# Date
-		self.SQN = { "Sqn":"0" }		# Sequence number
-		self.PAT = { "Pat":"s","Ntf":"0" }	# Pushover application token
+                # Add ons
+
+                self.DAT = { "Dat":"s" }                # Date
+                self.SQN = { "Sqn":"0" }                # Sequence number
+                self.PAT = { "Pat":"s","Ntf":"0" }      # Pushover application token
 
 		# Now build the main dictionary with one entry for each json string we will process
 
-		self.recd = {	"HTU":self.HTU, "BMP":self.BMP, "VIB":self.VIB, "MAG":self.MAG,
-				"ACL":self.ACL, "LOC":self.LOC, "TIM":self.TIM, "STS":self.STS,
-				"EVT":self.EVT, "DAT":self.DAT, "SQN":self.SQN, "PAT":self.PAT }
+                self.recd = {   "HTU":self.HTU, "BMP":self.BMP, "VIB":self.VIB, "MAG":self.MAG,
+                                "ACL":self.ACL, "LOC":self.LOC, "TIM":self.TIM, "STS":self.STS,
+                                "EVT":self.EVT, "DAT":self.DAT, "SQN":self.SQN, "PAT":self.PAT,
+                                "DTG":self.DTG, "CMD":self.CMD, "HLP":self.HLP, "TXT":self.TXT,
+                                "MEV":self.MEV, "BER":self.BER, "HPU":self.HPU, "UID":self.UID }
 
 		self.newpat = False
 		self.newsqn = False
@@ -241,6 +250,12 @@ class Event(object):
 
 	def get_pat(self):
 		return self.recd["PAT"]
+
+	def get_hpu(self):
+		return self.recd["HPU"]
+
+	def get_uid(self):
+		return self.recd["UID"]
 
 def Daemon():
 	"""Detach a process from the controlling terminal and run it in the background as a daemon """
@@ -392,6 +407,13 @@ def main():
 						print "Barometer.....: Tmb:%s Prs:%s Alb:%s" % (bmp["Tmb"],bmp["Prs"],bmp["Alb"])
 						print "Humidity......: Tmh:%s Hum:%s Alt:%s" % (htu["Tmh"],htu["Hum"],loc["Alt"])
 						print "Time..........: Sec:%s\n" % tim["Sec"]
+
+				elif nstr[0].find("HPU") != -1:
+					hpu = evt.get_hpu();
+					if display:
+						print
+						print "HT Power set..: Ato:%s Hpu:%s Thr:%s Abr:%s" % (hpu["Ato"],hpu["Hpu"],hpu["Thr"],hpu["Abr"])
+
 
 				elif nstr[0].find("PAT") != -1:
 					pat = evt.get_pat()

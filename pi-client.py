@@ -801,7 +801,12 @@ def main():
 				if monflg:
 					if evt.new_hpu():
 						hpu = evt.get_hpu()
-						print "\nHPU:Ato:%s" % hpu["Ato"]
+						s = "HPU:Ato:%s" % hpu["Ato"]
+						print "\n%s" % (s)
+						log.write(s + "\n")
+						if udpflg:
+							s = evt.extract("HPU")
+							sio.send_event_pkt(s,ipaddr,ipport)
 
 				if vibflg:
 					if evt.new_mev():

@@ -146,6 +146,11 @@
 #define MAX2_PIN 36
 #define MAX3_PIN 37
 
+// Count STRIGA and STRIGB interrupts
+
+#define STRIGA_PIN 38
+#define STRIGB_PIN 39
+
 // Set up the pins to remap SPI by hand
 const int SS_PIN   = 42; 
 const int SCK_PIN  = 44;
@@ -279,6 +284,7 @@ typedef enum {
 
 	WRTH,	// Write thresholds to MAX5387
 	ABTH,	// Select MAX5387 write pots
+	STRG,	// STRIGA and STRIGB counters
 
 	JSON,	// Set out put JSON 1, CSV 0
 
@@ -336,6 +342,7 @@ void wrpu(int arg);
 void rcpu(int arg);
 void wrth(int arg);
 void abth(int arg);
+void strg(int arg);
 void json(int arg);
 
 // Command table
@@ -374,6 +381,7 @@ CmdStruct cmd_table[CMDS] = {
 	{ RCPU,	rcpu, "RCPU", "Recievie logic MAX1923 PU 0=just write, 1=setON, 2=setOFF", 1 },
 	{ WRTH, wrth, "WRTH", "Write to the MAX5387 Threshold pots currently selected", 1 },
 	{ ABTH, abth, "ABTH", "Select MAX5387 pots 1=A_ONLY, 2=B_ONLY, 3=A_AND_B", 1 },
+	{ STRG, strg, "STRG", "Display strigA and strigB counters 1=Reset", 1 },
 	{ JSON, json, "JSON", "Select output format JSON=1 or CSV=0 (default)", 1 }
 };
 
@@ -1357,6 +1365,25 @@ void GpsSetup() {
 	Serial1.println(FMWVERS);
 }
 
+// Count interrupts from STRIGA and STRIGB
+
+long striga = 0;
+void StrigA_ISR() {
+	striga++;
+}
+
+long strigb = 0;
+void StrigB_ISR() {
+	strigb++;
+}
+
+void Strig_setup() {
+	pinMode(STRIGA_PIN, INPUT);
+	pinMode(STRIGB_PIN, INPUT);
+	attachInterrupt(digitalPinToInterrupt(STRIGA_PIN),StrigA_ISR,RISING);
+	attachInterrupt(digitalPinToInterrupt(STRIGB_PIN),StrigB_ISR,RISING);
+}
+
 // Arduino setup function, initialize hardware and software
 // This is the first function to be called when the sketch is started
 
@@ -1428,7 +1455,9 @@ void setup() {
 
 	SetHtValue(1);	// Set the High Tension
 	TimersStart();	// Start timers
-	PushUid(1);	// Push UID 128 bit code
+	PushUid(1);	// Push UID 128 bit codei
+
+	Strig_setup();	// Counter trigger interrupts
 }
 
 // These two routines are needed because the Serial.print method prints without using interrupts.
@@ -2742,6 +2771,7 @@ byte bitBang(byte _send)  {
 		return _receive;
 	return 0xFF;
 }
+
 uint8_t puval = 0;	// 0x6E Seems about right at room temp
 void wrpu(int arg) {
 	uint8_t send, recv;
@@ -2872,7 +2902,7 @@ void SetHtValue(int flg) {
 
 	// N.B. The bigger the value, the lower the HT voltage
 
-	// More than 10 extra events adjust
+	// More than 10 extra events in a second, adjust
 
 	if (inc_ht_flg > 10) {	
 		if (decadj > 0) decadj--;
@@ -2880,7 +2910,7 @@ void SetHtValue(int flg) {
 		inc_ht_flg = 0;
 	}
 	
-	// No events detected, adjust
+	// No events detected for 5 seconds, adjust
 
 	if (dec_ht_flg > 5) {
 		if (incadj > 0) incadj--;
@@ -2975,4 +3005,12 @@ void unid(int arg) {
 	GetUid();
 	PushUid(1);
 	sprintf(cmd_mesg,"UNID:%s display_rate:%d",uidtxt,uid_display_rate);
+}
+
+void strg(int arg) {
+	sprintf(cmd_mesg,"STRG: A:%d B:%d",striga,strigb);
+	if (arg) {
+		striga = 0;
+		strigb = 0;
+	}
 }

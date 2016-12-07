@@ -96,6 +96,7 @@ class Event(object):
 		self.BER = { "Ber":"0"  ,"Adr":"0"  ,"Reg":"0","Bus":"0" }
 		self.HPU = { "Ato":"0"  ,"Hpu":"0"  ,"Thr":"0","Abr":"0" }
 		self.UID = { "Uid":"0" }
+		self.VER = { "Ver":"0" }
 
 		# Add ons
 
@@ -109,7 +110,8 @@ class Event(object):
 				"ACL":self.ACL, "LOC":self.LOC, "TIM":self.TIM, "STS":self.STS,
 				"EVT":self.EVT, "DAT":self.DAT, "SQN":self.SQN, "PAT":self.PAT, 
 				"DTG":self.DTG, "CMD":self.CMD, "HLP":self.HLP, "TXT":self.TXT,
-				"MEV":self.MEV, "BER":self.BER, "HPU":self.HPU, "UID":self.UID }
+				"MEV":self.MEV, "BER":self.BER, "HPU":self.HPU, "UID":self.UID,
+				"VER":self.VER }
 
 		self.newvib = 0	# Vibration
 		self.newmev = 0 # Magnetic event
@@ -320,6 +322,9 @@ class Event(object):
 	def get_uid(self):
 		return self.recd["UID"]
 
+	def get_ver(self):
+		return self.recd["VER"]
+
 	def new_cmd(self):
 		if self.newcmd:
 			self.newcmd = 0
@@ -507,6 +512,8 @@ def main():
 
 	time.sleep(1)
 	ser.write("JSON 1\n")	
+	time.sleep(1)
+	ser.write("VERS\n")
 	
 	try:
 		while(True):
@@ -583,12 +590,18 @@ def main():
 						ber = evt.get_ber()
 						hpu = evt.get_hpu()
 						uid = evt.get_uid()
+						ver = evt.get_ver()
 
 						s = "ARDUINO STATUS"
 						print s
 						if ptsflg:
 							log.write(s + '\n')
 
+						s = "FirmwareVer...: Ver:%s" % (ver["Ver"])
+						print s
+						if ptsflg:
+							log.write(s + "\n")
+						
 						s = "UniqueId......: Uid:%s" % (uid["Uid"])
 						print s
 						if ptsflg:

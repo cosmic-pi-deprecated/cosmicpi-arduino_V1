@@ -14,7 +14,7 @@
 
 // Julian Lewis lewis.julian@gmail.com
 
-#define VERS "2016/December"
+#define FWVERS "2016/December/7"
 #define CSVERS "V1"	// Output CSV version
 
 // The output from this program is processed by a Python monitor on the other end of the
@@ -25,6 +25,10 @@
 // global is set non zero, otherwise the output format is CSV
 
 // Here is the list of all records where 'f' denotes float and 'i' denotes integer ...
+
+// {'VER':{'Ver':%s}}
+// Version string
+//
 // {'HTU':{'Tmh':f,'Hum':f}}
 // HTU21DF record containing Tmh:temperature in C Hum:humidity percent
 //
@@ -236,6 +240,7 @@ uint16_t magnat_event_threshold = 300;  // Magnetic threshold +-4gauss full scal
 
 typedef enum {
 	NOOP,	// No-operation
+	VERS,	// Version string
 	HELP,	// Help
 	HTUX,	// Reset HTU chip
 	HTUD,	// HUT display rate
@@ -299,6 +304,7 @@ char	 cmd_mesg[CMD_MAX_MSG]; // Last command message
 // Command functions forward references 
 
 void noop(int arg);
+void vers(int arg);
 void help(int arg);
 void htud(int arg);
 void bmpd(int arg);
@@ -336,6 +342,7 @@ void json(int arg);
 
 CmdStruct cmd_table[CMDS] = {
 	{ NOOP, noop, "NOOP", "Do nothing", 0 },
+	{ VERS, vers, "VERS", "Version number", 0 },
 	{ HELP, help, "HELP", "Display commands", 0 },
 	{ HTUD, htud, "HTUD", "HTU Temperature-Humidity display rate", 1 },
 	{ BMPD, bmpd, "BMPD", "BMP Temperature-Altitude display rate", 1 },
@@ -1727,6 +1734,15 @@ void ReadOneChar() {
 // Implement the command callback functions
 
 void noop(int arg) { };	// That was easy
+
+void vers(int arg) {
+	sprintf(cmd_mesg,"VER:%s",FWVERS);
+	if (output_format) 
+		sprintf(txt,"{'VER':{'Ver':'%s'}}\n",FWVERS);
+	else
+		sprintf(txt,"%s,VER,%s\n",CSVERS,FWVERS);
+	PushTxt(txt);
+}
 
 void help(int arg) {	// Display the help
 	int i;

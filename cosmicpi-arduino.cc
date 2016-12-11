@@ -76,8 +76,9 @@
 // {'BER':{'Ber':%d,'Adr':%s,'Reg':%s,'Bus':%d}}
 // Bus error warning, Ber=error code, Adr=the hex address, Reg=the hex register, Bus=the bus number 0/1
 //
-// {'HPU':{'Ato':%s,'Hpu':%s,'Thr':%s,'Abr':%s}}
+// {'HPU':{'Ato':%s,'Hpu':%s,'Th0':%s,'Th1':%s,'Thr':%s,'Abr':%s}}
 // HT power supply Ato:Thauto algorithm value Hpu:Manual value Thr:Threshold Abr:AB potentiometer bits
+// If Abr is zero the thresholds are set automatically, Th0 and Th1 are the auto values for channel 0 and 1
 
 // N.B. These records pass the data to a python monitor over the serial line. Python has awsome string handling and looks them up in
 // associative arrays to build records of any arbitary format you want. So this is only the start of the story of record processing.
@@ -1445,11 +1446,11 @@ void setup() {
 
 	// Power OFF/ON the breakouts
 
-	digitalWrite(PPS_PIN,HIGH);
+	digitalWrite(PPS_PIN,LOW);
 	digitalWrite(EVT_PIN,HIGH);
 	rbrk(0);
 	rbrk(1);
-	digitalWrite(PPS_PIN,LOW);
+	digitalWrite(PPS_PIN,HIGH);
 	digitalWrite(EVT_PIN,LOW);
 
 	// Initialize breakouts

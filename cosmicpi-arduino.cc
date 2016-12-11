@@ -14,7 +14,7 @@
 
 // Julian Lewis lewis.julian@gmail.com
 
-#define FWVERS "2016/December/7"
+#define FWVERS "11/December/2016 17:00"
 #define CSVERS "V1"	// Output CSV version
 
 // The output from this program is processed by a Python monitor on the other end of the
@@ -1061,20 +1061,33 @@ void AdcSetup() {
 
 // Pull all data (16 values) from the ADC into a buffer
 
+uint16_t avc0 = 0;
+uint16_t avc1 = 0;
+
 uint8_t AdcPullData(struct Event *b) {
 	
-	int i;
+	int i, a0=0, a1=0;
 
 	for (i=0; i<adc_samples_per_evt; i++) {		// For all in ADC pipeline
 		if (channel_mask & 0x01) {
 			while((ADC->ADC_ISR & 0x01)==0);	// Wait for channel 0 (2.5us)
 			b->Ch0[i] = (uint16_t) ADC->ADC_CDR[0];	// Read ch 0
+			a0 += b->Ch0[i];			// Average for threshold setting
 		}
 		if (channel_mask & 0x02) {
 			while((ADC->ADC_ISR & 0x02)==0);	// Wait for channel 1 (2.5us)
 			b->Ch1[i] = (uint16_t) ADC->ADC_CDR[1];	// Read ch 1
+			a1 += b->Ch1[i];			// Average for threshold setting
 		}
 	}
+
+	a0 = a0/adc_samples_per_evt;
+	if (avc0) avc0 = (avc0+a0)/2;				// Running average
+	else      avc0 = a0;
+
+	a1 = a1/adc_samples_per_evt;
+	if (avc1) avc1 = (avc1+a1)/2;				// Running average
+	else	  avc1 = a1;
 }
 
 // Increment date time by one second when not using the GPS
@@ -2817,14 +2830,44 @@ void rcpu(int arg) {
 #define B_ONLY 0x12
 #define A_AND_B 0x13
 
-uint8_t abreg = A_AND_B;
+uint8_t abreg = 0;	// Auto
 uint8_t thval = 0x30;	// Nice initial value
+uint8_t athv0 = 0;	// Automatic threshold hardware value channel 0
+uint8_t athv1 = 0;
+
+void SetThrsValue() {
+	float tvalf;		// Tempory voltage value
+	int   tvali;		// Temp threshold hardware value
+
+	if (abreg) return;	// Not in auto
+
+	tvalf = VoltsPoint(avc0);		// Average ADC background value
+	tvali = ((tvalf*256.0)/3.3) + thval;	// ADC background + thval
+	if (tvali > 0xFF) tvali = 0xFF;		// Clamp at 8 bits
+	athv0 = tvali;
+	BusWrite(MAX_ADDR,A_ONLY,athv0,0);	// Set threshold on channel 0 bus 0
+
+	tvalf = VoltsPoint(avc1);
+	tvali = ((tvalf*256.0)/3.3) + thval;
+	if (tvali > 0xFF) tvali = 0xFF;
+	athv1 = tvali;
+	BusWrite(MAX_ADDR,B_ONLY,athv1,0);	// Set channel 1 threshold
+
+	PushHpu();
+}
 
 void wrth(int arg) {
 	int err = 0;
 
 	thval = (uint8_t) arg;
-	
+
+	if (abreg == 0) {
+		sprintf(cmd_mesg,"MAX Threshold Auto increment set:0x%02X",thval);
+		SetThrsValue();
+		PushHpu();
+		return;
+	}
+
 	BusWrite(MAX_ADDR,abreg,thval,0);
 	if (bus_err == 0) {
 		PushHpu();
@@ -2844,12 +2887,23 @@ void wrth(int arg) {
 	sprintf(cmd_mesg,"MAX5387 Device did not answer, err:%d",bus_err);
 }
 
+// Control how threshold value is used
+
 void abth(int arg) {
-	uint8_t val = 3;
-	if (arg == 1) val = 1;
-	if (arg == 2) val = 2;
+	uint8_t val = 0;
+	
+	if (arg == 0) val = 0; 
+	if (arg == 1) val = A_ONLY;
+	if (arg == 2) val = B_ONLY;
+	if (arg == 3) val = A_AND_B;
 	abreg = val;
-	sprintf(cmd_mesg,"MAX Threshold write channels set: %d",val);
+
+	if (abreg)
+		sprintf(cmd_mesg,"MAX Threshold hardware select set: 0x%02X",abreg);
+	else {
+		SetThrsValue();
+		sprintf(cmd_mesg,"MAX Threshold set:AUTO");
+	}
 	PushHpu();
 }
 
@@ -2885,6 +2939,7 @@ void SetHtValue(int flg) {
 		nhtval = 0;
 		bitBang(nhtval);
 		BusWrite(MAX_ADDR,abreg,thval,0);
+		SetThrsValue();
 		PushHpu();
 		return;
 	}
@@ -2931,15 +2986,16 @@ void SetHtValue(int flg) {
 		ohtval = nhtval;
 		bitBang(nhtval);		  // Set HT value
 		BusWrite(MAX_ADDR,abreg,thval,0); // Set threshold
+		SetThrsValue();
 		PushHpu();			  // Send message
 	}
 }
 
 void PushHpu() {
 	if (output_format)
-		sprintf(txt,"{'HPU':{'Ato':'0x%02X','Hpu':'0x%02X','Thr':'0x%02X','Abr':'0x%02X'}}\n",nhtval,puval,thval,abreg);
+		sprintf(txt,"{'HPU':{'Ato':'0x%02X','Hpu':'0x%02X','Th0':'0x%02X','Th1':'0x%02X','Thr':'0x%02X','Abr':'0x%02X'}}\n",nhtval,puval,athv0,athv1,thval,abreg);
 	else
-		sprintf(txt,"%s,HPU,0x%02X,0x%02X,0x%02X,%d\n",CSVERS,nhtval,puval,thval,abreg);
+		sprintf(txt,"%s,HPU,0x%02X,0x%02X,0x%02X,0x%02X,0x%02X,%d\n",CSVERS,nhtval,puval,athv0,athv1,thval,abreg);
 	PushTxt(txt);
 }
 

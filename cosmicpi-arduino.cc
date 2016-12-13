@@ -14,7 +14,7 @@
 
 // Julian Lewis lewis.julian@gmail.com
 
-#define FWVERS "11/December/2016 17:00"
+#define FWVERS "13/December/2016 12:00"
 #define CSVERS "V1"	// Output CSV version
 
 // The output from this program is processed by a Python monitor on the other end of the
@@ -168,6 +168,10 @@ const int MOSI_PIN = 43;
 #define ACL_ON_MB 2		// Used to say LMS303D found on MB
 #define ACL_CTRL_REG1_A 0x20	// Used to test for LSM303DLHC presence
 
+// Leds  flag
+
+int leds_on = 1;
+
 // Hydrometer chip is always on bus 1 at the same address even for the adafruit breakout
 #define HTU_BUS_1_ADDR 0x40
 
@@ -246,6 +250,7 @@ uint16_t magnat_event_threshold = 300;  // Magnetic threshold +-4gauss full scal
 
 typedef enum {
 	NOOP,	// No-operation
+	LEDS,	// Leds On/Off
 	VERS,	// Version string
 	HELP,	// Help
 	HTUX,	// Reset HTU chip
@@ -311,6 +316,7 @@ char	 cmd_mesg[CMD_MAX_MSG]; // Last command message
 // Command functions forward references 
 
 void noop(int arg);
+void leds(int arg);
 void vers(int arg);
 void help(int arg);
 void htud(int arg);
@@ -350,6 +356,7 @@ void json(int arg);
 
 CmdStruct cmd_table[CMDS] = {
 	{ NOOP, noop, "NOOP", "Do nothing", 0 },
+	{ LEDS, leds, "LEDS", "Leds on=1, off=0", 1 },
 	{ VERS, vers, "VERS", "Version number", 0 },
 	{ HELP, help, "HELP", "Display commands", 0 },
 	{ HTUD, htud, "HTUD", "HTU Temperature-Humidity display rate", 1 },
@@ -596,12 +603,14 @@ void TC0_Handler() {
 	
 	IncDateTime();				// Next second
 
-	if (pps_led) {		
-		digitalWrite(PPS_PIN,HIGH);
-		pps_led = false;
-	} else {
-		digitalWrite(PPS_PIN,LOW);
-		pps_led = true;
+	if (leds_on) {
+		if (pps_led) {		
+			digitalWrite(PPS_PIN,HIGH);
+			pps_led = false;
+		} else {
+			digitalWrite(PPS_PIN,LOW);
+			pps_led = true;
+		}
 	}
 }
 
@@ -689,7 +698,9 @@ void TC6_Handler() {
 			wbuf[widx].Tks = new_ra;
 			AdcPullData(&wbuf[widx]);
 			widx++;
-			digitalWrite(EVT_PIN,HIGH);	// Event LEP on, off in loop()
+			if (leds_on)
+				digitalWrite(EVT_PIN,HIGH);	// Event LEP on, off in loop()
+
 		} // else inc_ht_flg++;
 	} else
 		inc_ht_flg++;
@@ -1962,6 +1973,23 @@ void PushCoCo(int flg) {
 		PushTxt(txt);
 	}
 }
+
+// Leds On/Off
+
+void leds(int arg) {
+
+	if (arg) {
+		leds_on = 1;
+		sprintf(cmd_mesg,"LEDS: set to flash");
+	} else {
+		leds_on = 0;
+		sprintf(cmd_mesg,"LEDS: Are off");
+	}
+
+	digitalWrite(EVT_PIN,LOW);
+	digitalWrite(PPS_PIN,LOW);
+}	
+		
 // Look up a command in the command table for the given command string
 // and call it with its single integer parameter
 
@@ -2939,7 +2967,6 @@ void SetHtValue(int flg) {
 	if (flg) {
 		nhtval = 0;
 		bitBang(nhtval);
-		BusWrite(MAX_ADDR,abreg,thval,0);
 		SetThrsValue();
 		PushHpu();
 		return;

@@ -124,8 +124,8 @@ class Compare(object):
 			for i in range(0,4):
 				for j in range(0,4):
 					df = abs(self.t1[i] - self.t2[j])
-					if (df > 0.0) and (df < 0.001):
-						print "Coin:%f (%f-%f)" % (df,self.t1[i],self.t2[j]) 
+					#if (df > 0.0) and (df < 0.001):
+						#print "Coin:%f (%f-%f)" % (df,self.t1[i],self.t2[j]) 
 
 					if (df > 0.0) and (df < 0.0001):
 						print "Muon:%f (%f-%f) Evt[%d-%d]" % (df,self.t1[i],self.t2[j],i+1,j+1)

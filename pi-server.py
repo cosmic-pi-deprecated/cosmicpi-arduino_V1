@@ -109,26 +109,22 @@ class Compare(object):
 	def __init__(self):
 
 		self.nms = ["Et1","Et2","Et3","Et4","Et5"]
-		self.t1 = [0,1,2,3,4]
-		self.t2 = [0,1,2,3,4]
 
-	def cmp(self,reg):
+	def cmp(self,reg,evn):
+		if evn > 5:
+			return
+
 		k = reg.get_len()
 		if k > 1:
+			i = evn -1;
 			r1 = reg.get_reg_by_index(0)
 			r2 = reg.get_reg_by_index(1)
-			for i in range(0,4):
-				self.t1[i] = r1[self.nms[i]]
-				self.t2[i] = r2[self.nms[i]]
+			t1 = r1[self.nms[i]]
+			t2 = r2[self.nms[i]]
 				
-			for i in range(0,4):
-				for j in range(0,4):
-					df = abs(self.t1[i] - self.t2[j])
-					#if (df > 0.0) and (df < 0.001):
-						#print "Coin:%f (%f-%f)" % (df,self.t1[i],self.t2[j]) 
-
-					if (df > 0.0) and (df < 0.0001):
-						print "Muon:%f (%f-%f) Evt[%d-%d]" % (df,self.t1[i],self.t2[j],i+1,j+1)
+			df = abs(t1 - t2)
+			if (df > 0.0) and (df < 0.1):
+				print "Muon:%f (%f-%f) %s" % (df,t1,t2,self.nms[i])
  
 # Each cosmic pi client can register with the server
 # We check package sequence numbers, hardware status
@@ -406,14 +402,10 @@ def main():
 					tim = evt.get_tim()
 					dat = evt.get_dat()
 
-					cmp.cmp(reg)
+					cmp.cmp(reg,evd["Evt"])
 					r = reg.get_create_reg("Ipa",str(recv[1]))
 					if evd["Evt"] == 1:
 						r["Et1"] = evd["Etm"]
-						r["Et2"] = 2.0
-						r["Et3"] = 3.0
-						r["Et4"] = 4.0
-						r["Et5"] = 5.0
 
 					if evd["Evt"] == 2:
 						r["Et2"] = evd["Etm"]
@@ -538,7 +530,7 @@ def main():
 				if logflg:
 					if csv:
 						 if nstr[0].find("EVT") != -1:
-							z1 = "Evt:%s,Frq:%s,Tks:%s,Etm:%s\n" % (evd["Evt"],evd["Frq"],evd["Tks"],evd["Etm"])
+							z1 = "Evt:%s,Frq:%s,Tks:%s,Etm:%s," % (evd["Evt"],evd["Frq"],evd["Tks"],evd["Etm"])
 
 							z2 = "Adc:%s\n" % (str(evd["Adc"]))
 							z2 = z2.replace(' ','')
@@ -550,12 +542,11 @@ def main():
 							z3 = z3.replace('(','')
 							z3 = "Cli:%s\n" % z3
 
-							line = "%s%s%s" % (z1,z2,z3)
+							line = "%s%s" % (z1,z3)
 					else:
-						line = "%s - %s" % (str(recv[0]),str(recv[1]))
+						line = "%s - %s\n" % (str(recv[0]),str(recv[1]))
 
 					log.write(line)
-					log.write("\n\n")
 
 			if (back == False) and kbrd.test_input():
 				kbrd.echo_on()

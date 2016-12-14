@@ -14,7 +14,7 @@
 
 // Julian Lewis lewis.julian@gmail.com
 
-#define FWVERS "13/December/2016 12:00"
+#define FWVERS "13/December/2016 16:00"
 #define CSVERS "V1"	// Output CSV version
 
 // The output from this program is processed by a Python monitor on the other end of the
@@ -103,7 +103,7 @@
 // Configuration constants
 
 // The size of the one second event buffer
-#define PPS_EVENTS 5	// The maximum number of events stored per second
+#define PPS_EVENTS 8	// The maximum number of events stored per second
 #define ADC_BUF_LEN 32	// Maximum number of ADC values per event
 
 // This is the event queue size
@@ -211,7 +211,11 @@ extern char *BmpDebug();
 
 // HT temperature automatic setting
 
-void SetHtValue(int flg);
+void SetHtValue(int flg);	// HT setting
+void SetThrsValue();		// Threshold per channel based on ADC	
+
+int ht_inc_tweak = 5;	// If we get more than this events per second, reduce the HT	
+int ht_dec_tweak = 3;	// If we see no events for this number of seconds, increase the HT
 
 // Unique Arduino 128 bit ID code
 
@@ -701,9 +705,11 @@ void TC6_Handler() {
 			if (leds_on)
 				digitalWrite(EVT_PIN,HIGH);	// Event LEP on, off in loop()
 
-		} // else inc_ht_flg++;
-	} else
-		inc_ht_flg++;
+		}
+	}
+
+	if (widx > ht_inc_tweak)
+		inc_ht_flg++;	// Increment the HT control value to reduce the HT on the SiPMs
 
 	rega1 = TC2->TC_CHANNEL[0].TC_RA;	// Read the RA on channel 1 (PPS period)
 	stsr1 = TC_GetStatus(TC2, 0); 		// Read status clear load bits
@@ -1483,6 +1489,9 @@ void setup() {
 	PushUid(1);	// Push UID 128 bit codei
 
 	Strig_setup();	// Counter trigger interrupts
+	
+	AdcPullData(&wbuf[widx]);
+	SetThrsValue();
 }
 
 // These two routines are needed because the Serial.print method prints without using interrupts.
@@ -1693,6 +1702,7 @@ uint8_t res;
 		}
 		PushTxt(txt);
 		terr = 0;
+		PushHpu();
 	}
 }
 
@@ -2864,21 +2874,23 @@ uint8_t thval = 0x30;	// Nice initial value
 uint8_t athv0 = 0;	// Automatic threshold hardware value channel 0
 uint8_t athv1 = 0;
 
+#define MAX_THRESH 0xE0	// Dont let the threshold get bigger than this
+
 void SetThrsValue() {
 	float tvalf;		// Tempory voltage value
 	int   tvali;		// Temp threshold hardware value
 
 	if (abreg) return;	// Not in auto
 
-	tvalf = VoltsPoint(avc0);		// Average ADC background value
-	tvali = ((tvalf*256.0)/3.3) + thval;	// ADC background + thval
-	if (tvali > 0xFF) tvali = 0xFF;		// Clamp at 8 bits
+	tvalf = VoltsPoint(avc0);			// Average ADC background value
+	tvali = ((tvalf*256.0)/3.3) + thval;		// ADC background + thval
+	if (tvali > MAX_THRESH) tvali = MAX_THRESH;	// Clamp at max value
 	athv0 = tvali;
 	BusWrite(MAX_ADDR,A_ONLY,athv0,0);	// Set threshold on channel 0 bus 0
 
 	tvalf = VoltsPoint(avc1);
 	tvali = ((tvalf*256.0)/3.3) + thval;
-	if (tvali > 0xFF) tvali = 0xFF;
+	if (tvali > MAX_THRESH) tvali = MAX_THRESH;	// Clamp at max value
 	athv1 = tvali;
 	BusWrite(MAX_ADDR,B_ONLY,athv1,0);	// Set channel 1 threshold
 
@@ -2957,6 +2969,8 @@ uint8_t ohtval = 0;	// Old HT value
 uint8_t incadj = 0;	// Increment adjustment
 uint8_t decadj = 0;	// Decrement adjustment
 
+#define MIN_HT_CV 0x40	// Dont let the voltage control value go below this
+
 void SetHtValue(int flg) {
 	int itmp = 0;
 	float htmp = 0.0;
@@ -2985,17 +2999,17 @@ void SetHtValue(int flg) {
 
 	// N.B. The bigger the value, the lower the HT voltage
 
-	// More than 10 extra events in a second, adjust
+	// Extra events in a second, adjust
 
-	if (inc_ht_flg > 10) {	
+	if (inc_ht_flg) {	
 		if (decadj > 0) decadj--;
 		else incadj++;
 		inc_ht_flg = 0;
 	}
 	
-	// No events detected for 5 seconds, adjust
+	// No events detected for X seconds, adjust
 
-	if (dec_ht_flg > 5) {
+	if (dec_ht_flg > ht_dec_tweak) {
 		if (incadj > 0) incadj--;
 		else decadj++;
 		dec_ht_flg = 0;
@@ -3006,9 +3020,9 @@ void SetHtValue(int flg) {
 	htmp = HtuReadTemperature();		// Read the temperature
 	itmp = (int) round(htmp) + 10;	
 	if (itmp <  0) itmp = 0;
-	if (itmp > 51) itmp = 51;		// Clamp it 0..51 (-10..40)
-	nhtval = ht_vals[itmp] + incadj -decadj;// Look it up
-	if (nhtval < 0x40) nhtval = 0x40;	// Going less than 40 could damage the SiPMs
+	if (itmp > 51) itmp = 51;			// Clamp it 0..51 (-10..40)
+	nhtval = ht_vals[itmp] + incadj -decadj;	// Look it up
+	if (nhtval < MIN_HT_CV) nhtval = MIN_HT_CV;	// Going less than 40 could damage the SiPMs
 
 	if (ohtval != nhtval) {			// If its changed write the new value
 		ohtval = nhtval;

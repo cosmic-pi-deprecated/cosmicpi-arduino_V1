@@ -14,7 +14,7 @@
 
 // Julian Lewis lewis.julian@gmail.com
 
-#define FWVERS "13/December/2016 16:00"
+#define FWVERS "15/December/2016 14:00"
 #define CSVERS "V1"	// Output CSV version
 
 // The output from this program is processed by a Python monitor on the other end of the
@@ -393,7 +393,7 @@ CmdStruct cmd_table[CMDS] = {
 	{ RCPU,	rcpu, "RCPU", "Recievie logic MAX1923 PU 0=just write, 1=setON, 2=setOFF", 1 },
 	{ WRTH, wrth, "WRTH", "Write to the MAX5387 Threshold pots currently selected", 1 },
 	{ ABTH, abth, "ABTH", "Select MAX5387 pots 1=A_ONLY, 2=B_ONLY, 3=A_AND_B", 1 },
-	{ STRG, strg, "STRG", "Display strigA and strigB counters 1=Reset", 1 },
+	{ STRG, strg, "STRG", "Display strigA and strigB counters 1=Enable", 1 },
 	{ JSON, json, "JSON", "Select output format JSON=1 or CSV=0 (default)", 1 }
 };
 
@@ -1487,8 +1487,6 @@ void setup() {
 	SetHtValue(1);	// Set the High Tension
 	TimersStart();	// Start timers
 	PushUid(1);	// Push UID 128 bit codei
-
-	Strig_setup();	// Counter trigger interrupts
 	
 	AdcPullData(&wbuf[widx]);
 	SetThrsValue();
@@ -3106,9 +3104,19 @@ void unid(int arg) {
 }
 
 void strg(int arg) {
-	sprintf(cmd_mesg,"STRG: A:%d B:%d",striga,strigb);
+
+static int strg_on = 0;
+
 	if (arg) {
-		striga = 0;
-		strigb = 0;
+		if (!strg_on) {
+			strg_on = 1;
+			striga = 0;
+			strigb = 0;
+			Strig_setup();
+			sprintf(cmd_mesg,"STRG: Monitoring enabled");
+			return;
+		}
 	}
+	if (strg_on)	sprintf(cmd_mesg,"STRG: A:%d B:%d",striga,strigb);
+	else 		sprintf(cmd_mesg,"STRG: Monitoring disabled");
 }

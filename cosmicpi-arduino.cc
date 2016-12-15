@@ -295,6 +295,7 @@ typedef enum {
 	WRTH,	// Write thresholds to MAX5387
 	ABTH,	// Select MAX5387 write pots
 	STRG,	// STRIGA and STRIGB counters
+	DEAD,	// Dead time after event
 
 	JSON,	// Set out put JSON 1, CSV 0
 
@@ -354,6 +355,7 @@ void rcpu(int arg);
 void wrth(int arg);
 void abth(int arg);
 void strg(int arg);
+void dead(int arg);
 void json(int arg);
 
 // Command table
@@ -394,6 +396,7 @@ CmdStruct cmd_table[CMDS] = {
 	{ WRTH, wrth, "WRTH", "Write to the MAX5387 Threshold pots currently selected", 1 },
 	{ ABTH, abth, "ABTH", "Select MAX5387 pots 1=A_ONLY, 2=B_ONLY, 3=A_AND_B", 1 },
 	{ STRG, strg, "STRG", "Display strigA and strigB counters 1=Enable", 1 },
+	{ DEAD, dead, "DEAD", "The dead time after an event" , 1 },
 	{ JSON, json, "JSON", "Select output format JSON=1 or CSV=0 (default)", 1 }
 };
 
@@ -569,9 +572,15 @@ static uint32_t stsr2 = 0;
 
 boolean pll_flag = false;	
 
-int old_ra = 0;
-int new_ra = 0;
-#define DEAD_TIME 42000	// 1ms
+// Dead time is the time to wait after seeing an event
+// before detecting a new event. There is ringing on the
+// event input on pin 5 that needs suppressing
+
+uint32_t old_ra = 0;		// Old register value from previous event
+uint32_t new_ra = 0;		// New counter value that must be bigger by dead time
+uint32_t dead_time = 42000;	// 1ms
+uint32_t dead_cntr = 0;		// Suppressed interrupts due to dead time
+uint32_t dead_dely = 0;		// Amout of time lost in dead time
 
 // Handle the PPS interrupt in counter block 0 ISR
 
@@ -604,6 +613,7 @@ void TC0_Handler() {
 
 	old_ra = 0;				// Dead time counters
 	new_ra = 0;
+	dead_dely = 0;				// Reset dead delay
 	
 	IncDateTime();				// Next second
 
@@ -697,14 +707,17 @@ void TC6_Handler() {
 		// and then pull the ADC pipe line
 
 		new_ra = TC2->TC_CHANNEL[0].TC_RA;
-		if (new_ra - old_ra > DEAD_TIME) {
+		if ((!old_ra) || (new_ra - old_ra > dead_time)) {
 			old_ra = new_ra;
-			wbuf[widx].Tks = new_ra;
+			wbuf[widx].Tks = new_ra + dead_dely;
 			AdcPullData(&wbuf[widx]);
 			widx++;
 			if (leds_on)
 				digitalWrite(EVT_PIN,HIGH);	// Event LEP on, off in loop()
 
+		} else {
+			dead_cntr++;				// Count them
+			dead_dely += new_ra;			// What we missed
 		}
 	}
 
@@ -1490,6 +1503,7 @@ void setup() {
 	
 	AdcPullData(&wbuf[widx]);
 	SetThrsValue();
+	PushHtu();
 }
 
 // These two routines are needed because the Serial.print method prints without using interrupts.
@@ -1700,7 +1714,6 @@ uint8_t res;
 		}
 		PushTxt(txt);
 		terr = 0;
-		PushHpu();
 	}
 }
 
@@ -3119,4 +3132,14 @@ static int strg_on = 0;
 	}
 	if (strg_on)	sprintf(cmd_mesg,"STRG: A:%d B:%d",striga,strigb);
 	else 		sprintf(cmd_mesg,"STRG: Monitoring disabled");
+}
+
+void dead(int arg) {
+
+	if (arg) {
+		dead_time = arg;
+		dead_cntr = 0;
+	}
+
+	sprintf(cmd_mesg,"DEAD: Time:%d Count:%d",dead_time,dead_cntr);
 }

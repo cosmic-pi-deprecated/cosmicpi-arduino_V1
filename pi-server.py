@@ -123,7 +123,7 @@ class Compare(object):
 			t2 = r2[self.nms[i]]
 				
 			df = abs(t1 - t2)
-			if (df > 0.0) and (df < 0.001):
+			if (df > 0.0) and (df < 0.00001):
 				print "Muon:%f (%f-%f) %s" % (df,t1,t2,self.nms[i])
  
 # Each cosmic pi client can register with the server

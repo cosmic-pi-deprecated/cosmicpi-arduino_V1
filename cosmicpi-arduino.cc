@@ -14,7 +14,7 @@
 
 // Julian Lewis lewis.julian@gmail.com
 
-#define FWVERS "16/December/2016 02:20"
+#define FWVERS "16/December/2016 16:30"
 #define CSVERS "V1"	// Output CSV version
 
 // The output from this program is processed by a Python monitor on the other end of the
@@ -103,7 +103,7 @@
 // Configuration constants
 
 // The size of the one second event buffer
-#define PPS_EVENTS 8	// The maximum number of events stored per second
+#define PPS_EVENTS 3	// The maximum number of events stored per second
 #define ADC_BUF_LEN 32	// Maximum number of ADC values per event
 
 // This is the event queue size
@@ -400,7 +400,7 @@ CmdStruct cmd_table[CMDS] = {
 	{ JSON, json, "JSON", "Select output format JSON=1 or CSV=0 (default)", 1 }
 };
 
-#define CMDLEN 32
+#define CMDLEN 64
 static char cmd[CMDLEN];		// Command input buffer
 static int irdp=0, irdy=0, istp=0;	// Read, ready, stop
 static char txtb[TBLEN];		// Text ring buffer
@@ -578,7 +578,7 @@ boolean pll_flag = false;
 
 uint32_t old_ra = 0;		// Old register value from previous event
 uint32_t new_ra = 0;		// New counter value that must be bigger by dead time
-uint32_t dead_time = 42000;	// 1ms
+uint32_t dead_time = 420000;	// 10ms
 uint32_t dead_cntr = 0;		// Suppressed interrupts due to dead time
 uint32_t dead_dely = 0;		// Amout of time lost in dead time
 
@@ -2704,8 +2704,6 @@ float HtuReadHumidity() {
 	HtuHumid();
 	return HtuConvHumid();
 }
-
-#define NO_HTU 800
 
 void dhtu(int arg) {
 	int i, j;

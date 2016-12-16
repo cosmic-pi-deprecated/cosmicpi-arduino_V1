@@ -14,7 +14,7 @@
 
 // Julian Lewis lewis.julian@gmail.com
 
-#define FWVERS "15/December/2016 14:00"
+#define FWVERS "16/December/2016 02:20"
 #define CSVERS "V1"	// Output CSV version
 
 // The output from this program is processed by a Python monitor on the other end of the
@@ -1503,7 +1503,7 @@ void setup() {
 	
 	AdcPullData(&wbuf[widx]);
 	SetThrsValue();
-	PushHtu();
+	PushHtu(1);
 }
 
 // These two routines are needed because the Serial.print method prints without using interrupts.

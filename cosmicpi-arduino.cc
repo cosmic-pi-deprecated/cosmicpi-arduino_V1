@@ -1112,13 +1112,8 @@ uint8_t AdcPullData(struct Event *b) {
 		}
 	}
 
-	a0 = a0/adc_samples_per_evt;
-	if (avc0) avc0 = (avc0+a0)/2;				// Running average
-	else      avc0 = a0;
-
-	a1 = a1/adc_samples_per_evt;
-	if (avc1) avc1 = (avc1+a1)/2;				// Running average
-	else	  avc1 = a1;
+	avc0 = a0/adc_samples_per_evt;
+	avc1 = a1/adc_samples_per_evt;
 }
 
 // Increment date time by one second when not using the GPS

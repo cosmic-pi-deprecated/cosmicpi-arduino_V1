@@ -2883,6 +2883,14 @@ uint8_t athv1 = 0;
 
 #define MAX_THRESH 0xE0	// Dont let the threshold get bigger than this
 
+float ThrToVolts(uint8_t thr) {
+	return ((thr * 3.3) / (float) 0xFF);
+}
+
+uint8_t ThrFromVolts(float vlt) {
+	return ((vlt * (float) 0xFF) / 3.3);
+} 
+
 void SetThrsValue() {
 	float tvalf;		// Tempory voltage value
 	int   tvali;		// Temp threshold hardware value
@@ -2890,13 +2898,13 @@ void SetThrsValue() {
 	if (abreg) return;	// Not in auto
 
 	tvalf = VoltsPoint(avc0);			// Average ADC background value
-	tvali = ((tvalf*256.0)/3.3) + thval;		// ADC background + thval
+	tvali = ThrFromVolts(tvalf) + thval;		// ADC background + thval
 	if (tvali > MAX_THRESH) tvali = MAX_THRESH;	// Clamp at max value
 	athv0 = tvali;
 	BusWrite(MAX_ADDR,A_ONLY,athv0,0);	// Set threshold on channel 0 bus 0
 
 	tvalf = VoltsPoint(avc1);
-	tvali = ((tvalf*256.0)/3.3) + thval;
+	tvali = ThrFromVolts(tvalf) + thval;		// ADC background + thval
 	if (tvali > MAX_THRESH) tvali = MAX_THRESH;	// Clamp at max value
 	athv1 = tvali;
 	BusWrite(MAX_ADDR,B_ONLY,athv1,0);	// Set channel 1 threshold
@@ -2910,7 +2918,7 @@ void wrth(int arg) {
 	thval = (uint8_t) arg;
 
 	if (abreg == 0) {
-		sprintf(cmd_mesg,"MAX Threshold Auto increment set:0x%02X",thval);
+		sprintf(cmd_mesg,"MAX Threshold Auto increment set:0x%02X->%f Volts",thval,ThrToVolts(thval));
 		SetThrsValue();
 		PushHpu();
 		return;
@@ -2920,15 +2928,15 @@ void wrth(int arg) {
 	if (bus_err == 0) {
 		PushHpu();
 		if (abreg == A_AND_B) {
-			sprintf(cmd_mesg,"MAX Threshold	A_and_B set: 0x%02X",thval);
+			sprintf(cmd_mesg,"MAX Threshold	A_and_B set: 0x%02X->%f Volts",thval,ThrToVolts(thval));
 			return;
 		}
 		if (abreg == A_ONLY) {
-			sprintf(cmd_mesg,"MAX Threshold A_Only set: 0x%02X",thval);
+			sprintf(cmd_mesg,"MAX Threshold A_Only set: 0x%02X->%f Volts",thval,ThrToVolts(thval));
 			return;
 		}
 		if (abreg == B_ONLY) {
-			sprintf(cmd_mesg,"MAX Threshold B_Only set: 0x%02X",thval);
+			sprintf(cmd_mesg,"MAX Threshold B_Only set: 0x%02X->%f Volts",thval,ThrToVolts(thval));
 			return;
 		}
 	}
@@ -3142,5 +3150,5 @@ void dead(int arg) {
 
 void adcd(int arg) {
 	AdcPullData(&wbuf[widx]);
-	sprintf(cmd_mesg,"ADCD: Average: Ch0:0x%03X Ch1:0x%03X",avc0,avc1);
+	sprintf(cmd_mesg,"ADCD: Average: Ch0:0x%03X->%f Volts Ch1:0x%03X->%f Volts",avc0,VoltsPoint(avc0),avc1,VoltsPoint(avc1));
 }

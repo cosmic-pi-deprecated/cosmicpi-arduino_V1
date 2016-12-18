@@ -14,7 +14,7 @@
 
 // Julian Lewis lewis.julian@gmail.com
 
-#define FWVERS "16/December/2016 16:30"
+#define FWVERS "18/December/2016 22:30"
 #define CSVERS "V1"	// Output CSV version
 
 // The output from this program is processed by a Python monitor on the other end of the
@@ -296,6 +296,7 @@ typedef enum {
 	ABTH,	// Select MAX5387 write pots
 	STRG,	// STRIGA and STRIGB counters
 	DEAD,	// Dead time after event
+	ADCD,	// Dump ADC average values
 
 	JSON,	// Set out put JSON 1, CSV 0
 
@@ -356,6 +357,7 @@ void wrth(int arg);
 void abth(int arg);
 void strg(int arg);
 void dead(int arg);
+void adcd(int arg);
 void json(int arg);
 
 // Command table
@@ -397,6 +399,7 @@ CmdStruct cmd_table[CMDS] = {
 	{ ABTH, abth, "ABTH", "Select MAX5387 pots 1=A_ONLY, 2=B_ONLY, 3=A_AND_B", 1 },
 	{ STRG, strg, "STRG", "Display strigA and strigB counters 1=Enable", 1 },
 	{ DEAD, dead, "DEAD", "The dead time after an event" , 1 },
+	{ ADCD, adcd, "ADCD", "ADC display average values for Ch0 and Ch1", 1 },
 	{ JSON, json, "JSON", "Select output format JSON=1 or CSV=0 (default)", 1 }
 };
 
@@ -3135,4 +3138,9 @@ void dead(int arg) {
 	}
 
 	sprintf(cmd_mesg,"DEAD: Time:%d Count:%d",dead_time,dead_cntr);
+}
+
+void adcd(int arg) {
+	AdcPullData(&wbuf[widx]);
+	sprintf(cmd_mesg,"ADCD: Average: Ch0:0x%03X Ch1:0x%03X",avc0,avc1);
 }

@@ -1620,7 +1620,7 @@ void PushVib() { // Push an event when shake detected => Earth Quake
 			PushTim(1);		// Push these first, and then vib
 			PushAcl(1);		// This is the real latched value
 			if (output_format) sprintf(txt,"{'VIB':{'Vax':%d,'Vcn':%d}}\n",accl_flag,accl_icount);
-			else sprintf(txt,"%s,%d,%d\n",CSVERS,accl_flag,accl_icount);
+			else sprintf(txt,"%s,VIB,%d,%d\n",CSVERS,accl_flag,accl_icount);
 			PushTxt(txt);
 		}
 	}
@@ -3075,7 +3075,7 @@ void thrs(int arg) {
 
 	PushHpu();
 
-	sprintf(cmd_mesg,"Thr:0x%X->%fv,Th0:0x%X->%fv,Av0:0x%X->%fv,Tv1:0x%X->%fv,Av1:0x%X->%fv",
+	sprintf(cmd_mesg,"Thr:0x%X->%fv,Th0:0x%X->%fv,Av0:0x%X->%fv,Th1:0x%X->%fv,Av1:0x%X->%fv",
 		thval,thmv,
 		athv0,th0v,adc_min[0],ad0v,
 		athv1,th1v,adc_min[1],ad1v);

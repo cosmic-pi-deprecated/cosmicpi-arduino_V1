@@ -14,7 +14,7 @@
 
 // Julian Lewis lewis.julian@gmail.com
 
-#define FWVERS "18/December/2016 22:30"
+#define FWVERS "20/December/2016 12:30"
 #define CSVERS "V1"	// Output CSV version
 
 // The output from this program is processed by a Python monitor on the other end of the
@@ -188,6 +188,7 @@ int bmp_bus = 0;		// Barrometric pressure
 int bmp_id = 0;			// 1=BMP085 2=LPS25H
 int bmp_ad = 0;			// Address on bus
 uint8_t bmp_ok = 0;
+void GetBmpId();
 
 // GPS and time
 boolean	gps_ok = false;		// Chip OK flag
@@ -278,7 +279,7 @@ typedef enum {
 	RBRK,	// Reset breakouts
 	CHNS,	// Channels mask 0=none 1,2 or 3=both
 
-	ABTS,	// Analogue board test
+	THRS,	// Calculate threshold
 	GPID,	// Get GPS firmware ID
 	GPPS,	// Test for PPS interrupts arriving
 	DGPS,	// Debug GPS NMEA stringsi
@@ -342,7 +343,7 @@ void gpri(int arg);
 void nadc(int arg);
 void rbrk(int arg);
 void chns(int arg);
-void abts(int arg);
+void thrs(int arg);
 void gpid(int arg);
 void gpps(int arg);
 void dgps(int arg);
@@ -384,7 +385,7 @@ CmdStruct cmd_table[CMDS] = {
 	{ NADC, nadc, "NADC", "Number of ADC sampes tor read per event", 1 },
 	{ RBRK, rbrk, "RBRK", "Reset power on=1/off=0 for breakouts", 1 },
 	{ CHNS, chns, "CHNS", "Channel mask 0=none, 1,2 or 3=both", 1 },
-	{ ABTS, abts, "ABTS", "Analogue Board test, 110=ADC Offsets, 120/121=SIPMs, 130=Vbias Threshold", 1 },
+	{ THRS, thrs, "THRS", "Calculate channel threshold 0=ch0, else ch1", 1 },
 	{ GPID, gpid, "GPID", "Get GPS chip firmware ID", 1 },
 	{ GPPS, gpps, "GPPS", "Test GPS is making PPS interrupts", 1 },
 	{ DGPS, dgps, "DGPS", "Debug printing of GPS NMEA strings 0=off 1=on", 1 },
@@ -1089,7 +1090,7 @@ void MagPoll() {
 
 void AdcSetup() {
 	REG_ADC_MR = 0x10380080;	// Free run as fast as you can
-	REG_ADC_CHER = 3;		// Channels 0 and 1
+	REG_ADC_CHER = 0x63;		// Channels 0 and 1 (5,6)
 	REG_ADC_CR = 2;			// Start
 }
 
@@ -2111,49 +2112,16 @@ void loop() {
 	ReadOneChar();	// Get next input command char
 }
 
-// Production tests suit commands and self test features
-// and the HT auto setting for the SiPMs
 // =====================================================
-
-// Error Codes are 3 digits "Tnn" as follows
-// <Test suit number T>,<Error number nn>
-// See the PTS Doc
+// Thresholds tests and HT
 
 #define NO_HTU 100
-#define AMP2A_RANGE 101
-#define AMP2B_RANGE 102
-#define AMP2A_NO_SIGNAL_BLUE 103
-#define AMP2B_NO_SIGNAL_BLUE 104
-#define AMP2A_NO_SIGNAL_RED 105
-#define AMP2B_NO_SIGNAL_RED 106
 #define NO_THRESHOLD 107
 #define ASSERTION_FAIL 108
 
-// Test numbers are 3 digits "TSP" as follows  
-// <Test suit number T>,<Test in suit S>,<Test sub part P>
-// See the PTS Doc
+#define PTS_CHBUF_LEN 4096
 
-#define TEST_ADC_OFFSETS 110
-#define TEST_SIPMS_BLUE 120
-#define TEST_SIPMS_RED 121
-#define TEST_THRESHOLD 130
-#define TEST_HTU 140
-
-#define ADC_BLUE_MIN 0
-#define ADC_BLUE_MAX 0xFFFF
-#define ADC_RED_MIN 0
-#define ADC_RED_MAX 0xFFFF
-#define ADC_MIN_OFFSET 2800
-#define ADC_MAX_OFFSET 3350
-
-#define CHUNK 32
-#define CHUNKS 32
-#define PTS_CHBUF_LEN (CHUNKS*CHUNK)
 uint16_t ch0[PTS_CHBUF_LEN], ch1[PTS_CHBUF_LEN];
-
-#define LOG_ENTRY 8
-#define PTS_LOG (CHUNK*LOG_ENTRY)
-char pts_log[PTS_LOG];
 
 void ClearAdcBuf() {
 	int i;
@@ -2179,159 +2147,45 @@ uint8_t ReadAdcBuf(int pnts) {
 	}
 }
 
-// Moving Average
+// Moving Average, max and min
 
-int AveragePoints(uint16_t *fp, int pnts) {
-	int i, average;
-	uint16_t pnt;
+uint16_t adc_max[2];
+uint16_t adc_min[2];
+uint16_t adc_avr[2];
 
-	average = 0;
+void AveragePoints(uint8_t chn, int pnts) {
+
+	int i, avr;
+	uint16_t pnt, *fp;
+
+	if (chn)	fp = ch1;
+	else		fp = ch0;	
+	avr  = 0;
+
+	adc_max[chn] = 0; 
+	adc_min[chn] = 0xFFF; 
+
 	for (i=0; i<pnts; i++) {
 		pnt = fp[i];
-		average += pnt;
+		avr += pnt;
+		if (adc_max[chn] < pnt) adc_max[chn] = pnt;
+		if (adc_min[chn] > pnt) adc_min[chn] = pnt;
 	}
-	average = average/pnts;
-	return average;
+	avr = avr/pnts;
+	adc_avr[chn] = (uint16_t) avr;
 }
 
-// Log points
+// AdcToVolts
 
-void LogPoints(uint16_t *fp, int pnts) {
-	int i;
-	uint16_t pnt;
-	char *cp;
-
-	sprintf(pts_log,"[");	
-	cp = &pts_log[strlen(pts_log)];
-	for (i=0; i<pnts; i++) {
-		pnt = fp[i];
-		sprintf(cp," %d",pnt);
-		cp = &pts_log[strlen(pts_log)];
-	}
-	sprintf(cp," ]");
-}
-
-// VoltsPoint
-
-float VoltsPoint(uint16_t pnt) {
+float AdcToVolts(uint16_t pnt) {
 	float volts;
 
 	volts = pnt * 3.3 / 4095.0;
 	return volts;
 }
 
-// Process the ADC values
-
-int CheckPoints(uint16_t *fp, int pnts, int min, int max) {
-	int i;
-	uint16_t pnt;
-	
-	for (i=0; i<pnts; i++) {
-		pnt = fp[i];
-		if ((pnt<=min) || (pnt>=max)) return i+1;
-	}
-	return 0;
-}
-
-// Helper for abts commands
-
-void abts_helper(int arg, int min, int max, int er0, int er1) {
-	int av0 = 0;
-	int av1 = 0;
-	float vl0, vl1;
-
-	av0 = AveragePoints(ch0,CHUNK);
-	vl0 = VoltsPoint(av0);
-	if (CheckPoints(ch0,CHUNK,min,max)) cmd_result = er0;
-
-	LogPoints(ch0,CHUNK);
-	sprintf(txt,"\nCH0:%s Err:%d\n",pts_log,cmd_result);
-	PushTxt(txt);
-
-	av1 = AveragePoints(ch1,CHUNK);
-	vl0 = VoltsPoint(av1);
-	if (CheckPoints(ch1,CHUNK,min,max)) cmd_result = er1;
-
-	LogPoints(ch1,CHUNK);
-	sprintf(txt,"\nCH1:%s Err:%d\n",pts_log,cmd_result);
-	PushTxt(txt);
-
-	sprintf(cmd_mesg,"ADC: Tst:%d Err:%d Avr CH0:%d %3.2f Vlt Avr CH1:%d %3.2fVlt Smp:%d",
-		arg,cmd_result,av0,vl0,av1,vl1,CHUNK);
-}
-
-float get_peak_freq(int threshold);
-void clear_peaks();
-
-// Test the Analogue board
-
-void abts(int arg) {
-
-	int av0, av1, threshold;
-	float vl0, vl1, freq;
-	double temph = 0.0, humid = 0.0;
-
-	if (arg == TEST_HTU) {
-		if (!htu_ok) {
-			cmd_result = NO_HTU;
-			sprintf(cmd_mesg,"HTU: Err:%d No breakout available",cmd_result);
-			return;
-		}
-
-		temph = HtuReadTemperature();
-		humid = HtuReadHumidity();
-		sprintf(cmd_mesg,"HTU: Err:%d :Temp:%5.3f Hum:%4.1f",cmd_result,temph,humid);
-		return;
-	}
-		
-	if (arg == TEST_ADC_OFFSETS) {
-		ClearAdcBuf();
-		ReadAdcBuf(CHUNK);
-		abts_helper(arg,ADC_MIN_OFFSET,ADC_MAX_OFFSET,AMP2A_RANGE,AMP2B_RANGE);
-		return;
-	}
-
-	if (arg == TEST_SIPMS_BLUE) {
-		digitalWrite(BLUE_LED_PIN,HIGH);
-		ClearAdcBuf();
- 		ReadAdcBuf(CHUNK);
-		digitalWrite(BLUE_LED_PIN,LOW);
-		abts_helper(arg,ADC_BLUE_MIN,ADC_BLUE_MAX,AMP2A_NO_SIGNAL_BLUE,AMP2B_NO_SIGNAL_BLUE);
-		return;
-	}
-
-	if (arg == TEST_SIPMS_RED) {
-		digitalWrite(RED_LED_PIN,HIGH);
- 		ClearAdcBuf();
-		ReadAdcBuf(CHUNK);
-		digitalWrite(RED_LED_PIN,LOW);
-		abts_helper(arg,ADC_RED_MIN,ADC_RED_MAX,AMP2A_NO_SIGNAL_RED,AMP2B_NO_SIGNAL_RED);
-		return;
-	}
-
-	if (arg == TEST_THRESHOLD) {
-		
-		// The threshold is above the background, so the test range 100..2000 seems reasonable
-
-		for (threshold=100; threshold<=2000; threshold+=100) {
-			clear_peaks();
-			freq = get_peak_freq(threshold);
-			sprintf(txt,"\nADC: Tst%d Threshold:%d Freq:%3.2f\n",arg,threshold,freq);
-			PushTxt(txt);
-			if (freq <= 10.0) {
-				sprintf(cmd_mesg,"ADC: Tst:%d PASS Threshold:%d Freq:%32.f",arg,threshold,freq);
-				return;
-			}
-		}
-		cmd_result = NO_THRESHOLD;
-		sprintf(cmd_mesg,"ADC: Tst:%d FAILED, no threshold could be found");
-		return;
-	}
-
-	sprintf(cmd_mesg,"Illegal test number:%d",arg);
-	
-	cmd_result = ASSERTION_FAIL;
-	return;
+uint16_t AdcFromVolts(float vlts) {
+	return (vlts / 3.3) *4095.0;
 }
 
 // Peaks corresponding to events
@@ -2340,9 +2194,11 @@ struct Peak {
 	int Start;
 	int Width;
 	int Loops;
+	int Max;
+	int Min;
 };
 	
-#define PEAKS 1000
+#define PEAKS 100
 static struct Peak peaks[PEAKS];	// Event ticks buffer
 int peak_index = 0;			// Points to free peak in buffer
 
@@ -2357,99 +2213,121 @@ void clear_peaks() {
 		pp->Start = 0;
 		pp->Width = 0;
 		pp->Loops = 0;
+		pp->Max   = 0;
+		pp->Min   = 0;
 	}
 }
 
-// Find the threshold for event rate lower than 10Hz
-// Frequency is returned for given threshold
+#define PWID 3
+#define PHIG 310	// 250mV on ADC
+#define PLOW 124	// 100mV on ADC
 
-float get_peak_freq(int threshold) {	// Threshold to test
+int filter_peaks() {
+	int i, pcnt=0;
+	struct Peak *pp;	// Points to current peak
+	uint16_t phig;
+
+	for (i=0; i<peak_index; i++) {
+		pp = &peaks[i];
+		phig = pp->Max - pp->Min;
+		if ((phig > PHIG) && (pp->Width <= PWID))
+			pcnt++;
+	}
+	return pcnt;
+}
+
+int get_peaks(uint8_t chn, uint16_t athr) {	// Threshold to test
 
 	int i;
-	int av0,av1;		// Background value is the running average
-
 	int start = 0;		// Start of event index
 	int width = 0;		// Width of the event
 	int loops = 0;		// Loops correspond to time
 
 	struct Peak *pp;	// Points to current peak
+	uint16_t *abuf;		// ADC buffer
 
-	unsigned long ewid = 0;	// Sum of times between events
-	int ectm = 0;		// Event current time
-	int estr = 0;		// First event start time in a pair
-
-
-	float freq;		// Peak occurence frequency
-
-	ClearAdcBuf();
-	ReadAdcBuf(PTS_CHBUF_LEN); // Read 4096 point chunk
-		
-	// Calculate the background levels
-
-	av0 = AveragePoints(ch0,PTS_CHBUF_LEN);
-	av1 = AveragePoints(ch1,PTS_CHBUF_LEN);
+	if (chn) abuf = ch1;
+	else     abuf = ch0;
 
 	// Try to find the next 1000=PEAKS peaks
 
-	while (true) {	// Collect PEAKS peaks
+	for (loops=0; loops<100; loops++) {
 		
 		ClearAdcBuf();
 		ReadAdcBuf(PTS_CHBUF_LEN); // Read 4096 point chunk
 		
-		// Look for simultaneous points above the background and save them
-
 		for (i=0; i<PTS_CHBUF_LEN; i++) {
-			if ((ch0[i] > av0 + threshold) 
-			&&  (ch1[i] > av1 + threshold)) {
+			if (abuf[i] > athr) { 
 				if (!start) {
 					start = i+1;
 					if (peak_index < (PEAKS -1)) {
 						pp = &peaks[peak_index++];
 						pp->Start = start;
 						pp->Loops = loops;
+						pp->Max   = abuf[i];
+						pp->Min   = abuf[i];
 					} else
 						break;
 				}
 				width++;
+				if (pp->Max < abuf[i]) pp->Max = abuf[i];
+				if (pp->Min > abuf[i]) pp->Min = abuf[i]; 
 			 } else {
 				if (start) {
 					pp->Width = width;
-
-					sprintf(txt,"Peak:%d S:%d W:%d L:%d\n",
-						peak_index,pp->Start,pp->Width,pp->Loops);
-					PushTxt(txt);
- 
 					start = 0;
 					width = 0;
 				}
 			}
-
-			PutChar();
 		}
+	}
+	return peak_index;
+}
+
+// Look for a good threshold value for given channel
+
+#define PMAX 3
+#define PSTR 100
+
+void thrs(int arg) {		// arg is the channel 0,1
+
+	uint16_t athr, aval;	// Threshold ADC value under test
+	uint8_t  hthr, chn;	// Hardware threshold value, channel
+	float    vlta, vltt;
+	uint16_t adca;		// ADC average
+
+	int peaks;
+
+	if (arg) chn = 1;
+	else     chn = 0;
+
+	clear_peaks();
+	ClearAdcBuf();
+	ReadAdcBuf(PTS_CHBUF_LEN);
+	AveragePoints(chn,PTS_CHBUF_LEN);
+	
+	athr = 2*adc_max[chn];
+
+	for (; athr>0; athr--) {	
+		aval = athr + adca;
+
+		clear_peaks();
+		peaks = get_peaks(chn,aval);
+		if (peaks > PMAX) break;
 		
-		if (++loops > 1000) break;
+		peaks = filter_peaks();
+		if ((peaks >= 1) && (peaks <= PMAX)) {
+			vlta = AdcToVolts(aval);
+			hthr = ThrFromVolts(vlta);
+			vltt = ThrToVolts(hthr);	
+			sprintf(cmd_mesg,"Thrs:%d->Chn:%d Adc:%d->%fV->Thr:%d->%fV Pks:%d",athr,chn,aval,vlta,hthr,vltt,peaks);
+			return;
+		}
+		Serial.print("\n");
 	}
-
-	// Calculate the average time between peaks
-	
-	estr = 0;
-	for (i=peak_index; i>=0; i--) {
-		pp = &peaks[i];
-		ectm = (pp->Loops * PTS_CHBUF_LEN) + pp->Start -1;	// Corresponds to time
-		if (estr == 0) estr = ectm;
-		ewid += abs(estr - ectm);
-		estr = ectm;
-	}
-	
-	if (ewid < 1) 
-		freq = 1000.0;
-	else
-		freq = ((float) peak_index * 1385000.0) / (float) ewid;
-
-	sprintf(txt,"Peaks:%d Sum:%d Freq:%3.2f\n",peak_index,ewid,freq);
-	PushTxt(txt);
-
-	return freq;
+	cmd_result = NO_THRESHOLD;
+	sprintf(cmd_mesg,"Thrs:Not found, try again");
+	return;
 }
 
 // =============================================
@@ -2877,7 +2755,7 @@ void rcpu(int arg) {
 #define A_AND_B 0x13
 
 uint8_t abreg = 0;	// Auto
-uint8_t thval = 0x30;	// Nice initial value
+uint8_t thval = 0x18;	// 230mV nice initial value
 uint8_t athv0 = 0;	// Automatic threshold hardware value channel 0
 uint8_t athv1 = 0;
 
@@ -2897,48 +2775,74 @@ void SetThrsValue() {
 
 	if (abreg) return;	// Not in auto
 
-	tvalf = VoltsPoint(avc0);			// Average ADC background value
+	ClearAdcBuf();
+	ReadAdcBuf(PTS_CHBUF_LEN);
+
+	AveragePoints(0,PTS_CHBUF_LEN);
+	tvalf = AdcToVolts(adc_min[0]);			// Average ADC background value
 	tvali = ThrFromVolts(tvalf) + thval;		// ADC background + thval
 	if (tvali > MAX_THRESH) tvali = MAX_THRESH;	// Clamp at max value
 	athv0 = tvali;
-	BusWrite(MAX_ADDR,A_ONLY,athv0,0);	// Set threshold on channel 0 bus 0
+	BusWrite(MAX_ADDR,A_ONLY,athv0,0);		// Set threshold on channel 0 bus 0
 
-	tvalf = VoltsPoint(avc1);
+	AveragePoints(1,PTS_CHBUF_LEN);
+	tvalf = AdcToVolts(adc_min[1]);
 	tvali = ThrFromVolts(tvalf) + thval;		// ADC background + thval
 	if (tvali > MAX_THRESH) tvali = MAX_THRESH;	// Clamp at max value
 	athv1 = tvali;
-	BusWrite(MAX_ADDR,B_ONLY,athv1,0);	// Set channel 1 threshold
+	BusWrite(MAX_ADDR,B_ONLY,athv1,0);		// Set channel 1 threshold
 
 	PushHpu();
 }
 
+uint32_t ThrAdcPullData() {
+
+	uint16_t tha, thb;
+
+	REG_ADC_CHER = 0x63;			// Enable 0,1,5,6
+	while((ADC->ADC_ISR & 0x20)==0);	// Wait for channel 5 (2.5us)
+	tha = (uint16_t) ADC->ADC_CDR[5];	// Read ch 5
+	while((ADC->ADC_ISR & 0x40)==0);	// Wait for channel 6 (2.5us)
+	thb = (uint16_t) ADC->ADC_CDR[6];	// Read ch 6
+	REG_ADC_CHER = 0x03;			// Back to 0,1
+
+	return (thb << 16) | tha;
+}
+
 void wrth(int arg) {
 	int err = 0;
+	uint32_t thab;
+	uint8_t tha, thb;
 
 	thval = (uint8_t) arg;
 
 	if (abreg == 0) {
-		sprintf(cmd_mesg,"MAX Threshold Auto increment set:0x%02X->%f Volts",thval,ThrToVolts(thval));
+		sprintf(cmd_mesg,"MAX Threshold Auto increment set:0x%02X->%fV",thval,ThrToVolts(thval));
 		SetThrsValue();
 		PushHpu();
 		return;
 	}
 
 	BusWrite(MAX_ADDR,abreg,thval,0);
+	delay(100);	
 	if (bus_err == 0) {
+		
+		thab = ThrAdcPullData(); 
+		tha = thab & 0xFF;
+		thb = thab >> 16;
+		sprintf(txt,"Thr:0x%02X->%f Ch0:0x%03X->%fV Ch1:0x%03X->%fV",thval,ThrToVolts(thval),tha,AdcToVolts(tha),thb,AdcToVolts(thb));
+		
+		if (abreg == A_AND_B) 
+			sprintf(cmd_mesg,"AB:%s",txt);
+
+		else if (abreg == A_ONLY) 
+			sprintf(cmd_mesg,"A:%s",txt);
+		
+		else if (abreg == B_ONLY) 
+			sprintf(cmd_mesg,"B:%s",txt);
+
 		PushHpu();
-		if (abreg == A_AND_B) {
-			sprintf(cmd_mesg,"MAX Threshold	A_and_B set: 0x%02X->%f Volts",thval,ThrToVolts(thval));
-			return;
-		}
-		if (abreg == A_ONLY) {
-			sprintf(cmd_mesg,"MAX Threshold A_Only set: 0x%02X->%f Volts",thval,ThrToVolts(thval));
-			return;
-		}
-		if (abreg == B_ONLY) {
-			sprintf(cmd_mesg,"MAX Threshold B_Only set: 0x%02X->%f Volts",thval,ThrToVolts(thval));
-			return;
-		}
+		return;
 	}
 	sprintf(cmd_mesg,"MAX5387 Device did not answer, err:%d",bus_err);
 }
@@ -3150,5 +3054,5 @@ void dead(int arg) {
 
 void adcd(int arg) {
 	AdcPullData(&wbuf[widx]);
-	sprintf(cmd_mesg,"ADCD: Average: Ch0:0x%03X->%f Volts Ch1:0x%03X->%f Volts",avc0,VoltsPoint(avc0),avc1,VoltsPoint(avc1));
+	sprintf(cmd_mesg,"ADCD: Average: Ch0:0x%03X->%f Volts Ch1:0x%03X->%f Volts",avc0,AdcToVolts(avc0),avc1,AdcToVolts(avc1));
 }

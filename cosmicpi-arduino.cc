@@ -14,7 +14,7 @@
 
 // Julian Lewis lewis.julian@gmail.com
 
-#define FWVERS "20/December/2016 12:30"
+#define FWVERS "20/December/2016 14:30"
 #define CSVERS "V1"	// Output CSV version
 
 // The output from this program is processed by a Python monitor on the other end of the
@@ -385,7 +385,7 @@ CmdStruct cmd_table[CMDS] = {
 	{ NADC, nadc, "NADC", "Number of ADC sampes tor read per event", 1 },
 	{ RBRK, rbrk, "RBRK", "Reset power on=1/off=0 for breakouts", 1 },
 	{ CHNS, chns, "CHNS", "Channel mask 0=none, 1,2 or 3=both", 1 },
-	{ THRS, thrs, "THRS", "Calculate channel threshold 0=ch0, else ch1", 1 },
+	{ THRS, thrs, "THRS", "Calculate channel thresholds", 1 },
 	{ GPID, gpid, "GPID", "Get GPS chip firmware ID", 1 },
 	{ GPPS, gpps, "GPPS", "Test GPS is making PPS interrupts", 1 },
 	{ DGPS, dgps, "DGPS", "Debug printing of GPS NMEA strings 0=off 1=on", 1 },
@@ -2284,52 +2284,6 @@ int get_peaks(uint8_t chn, uint16_t athr) {	// Threshold to test
 	return peak_index;
 }
 
-// Look for a good threshold value for given channel
-
-#define PMAX 3
-#define PSTR 100
-
-void thrs(int arg) {		// arg is the channel 0,1
-
-	uint16_t athr, aval;	// Threshold ADC value under test
-	uint8_t  hthr, chn;	// Hardware threshold value, channel
-	float    vlta, vltt;
-	uint16_t adca;		// ADC average
-
-	int peaks;
-
-	if (arg) chn = 1;
-	else     chn = 0;
-
-	clear_peaks();
-	ClearAdcBuf();
-	ReadAdcBuf(PTS_CHBUF_LEN);
-	AveragePoints(chn,PTS_CHBUF_LEN);
-	
-	athr = 2*adc_max[chn];
-
-	for (; athr>0; athr--) {	
-		aval = athr + adca;
-
-		clear_peaks();
-		peaks = get_peaks(chn,aval);
-		if (peaks > PMAX) break;
-		
-		peaks = filter_peaks();
-		if ((peaks >= 1) && (peaks <= PMAX)) {
-			vlta = AdcToVolts(aval);
-			hthr = ThrFromVolts(vlta);
-			vltt = ThrToVolts(hthr);	
-			sprintf(cmd_mesg,"Thrs:%d->Chn:%d Adc:%d->%fV->Thr:%d->%fV Pks:%d",athr,chn,aval,vlta,hthr,vltt,peaks);
-			return;
-		}
-		Serial.print("\n");
-	}
-	cmd_result = NO_THRESHOLD;
-	sprintf(cmd_mesg,"Thrs:Not found, try again");
-	return;
-}
-
 // =============================================
 // Test for GPS reciever
 // Basically if the GPS ID is OK it means the chip can be configured
@@ -2953,11 +2907,14 @@ void SetHtValue(int flg) {
 }
 
 void PushHpu() {
-	if (output_format)
+
+	if (output_format) {
 		sprintf(txt,"{'HPU':{'Ato':'0x%02X','Hpu':'0x%02X','Th0':'0x%02X','Th1':'0x%02X','Thr':'0x%02X','Abr':'0x%02X'}}\n",nhtval,puval,athv0,athv1,thval,abreg);
-	else
+		PushTxt(txt);
+	} else {
 		sprintf(txt,"%s,HPU,0x%02X,0x%02X,0x%02X,0x%02X,0x%02X,%d\n",CSVERS,nhtval,puval,athv0,athv1,thval,abreg);
-	PushTxt(txt);
+		PushTxt(txt);
+	}
 }
 
 // ==========================================================================
@@ -3055,4 +3012,71 @@ void dead(int arg) {
 void adcd(int arg) {
 	AdcPullData(&wbuf[widx]);
 	sprintf(cmd_mesg,"ADCD: Average: Ch0:0x%03X->%f Volts Ch1:0x%03X->%f Volts",avc0,AdcToVolts(avc0),avc1,AdcToVolts(avc1));
+}
+
+void thrs(int arg) {
+
+#if 0
+#define PMAX 3
+#define PSTR 100
+
+	uint16_t athr, aval;	// Threshold ADC value under test
+	uint8_t  hthr, chn;	// Hardware threshold value, channel
+	float    vlta, vltt;
+	uint16_t adca;		// ADC average
+
+	int peaks;
+
+	if (arg) chn = 1;
+	else     chn = 0;
+
+	clear_peaks();
+	ClearAdcBuf();
+	ReadAdcBuf(PTS_CHBUF_LEN);
+	AveragePoints(chn,PTS_CHBUF_LEN);
+	
+	athr = 2*adc_max[chn];
+
+	for (; athr>0; athr--) {	
+		aval = athr + adca;
+
+		clear_peaks();
+		peaks = get_peaks(chn,aval);
+		if (peaks > PMAX) break;
+		
+		peaks = filter_peaks();
+		if ((peaks >= 1) && (peaks <= PMAX)) {
+			vlta = AdcToVolts(aval);
+			hthr = ThrFromVolts(vlta);
+			vltt = ThrToVolts(hthr);	
+			sprintf(cmd_mesg,"Thrs:%d->Chn:%d Adc:%d->%fV->Thr:%d->%fV Pks:%d",athr,chn,aval,vlta,hthr,vltt,peaks);
+			return;
+		}
+		Serial.print("\n");
+	}
+	cmd_result = NO_THRESHOLD;
+	sprintf(cmd_mesg,"Thrs:Not found, try again");
+	return;
+#endif
+
+	float th0v,th1v,ad0v,ad1v,thmv;
+
+	ClearAdcBuf();
+	ReadAdcBuf(PTS_CHBUF_LEN);
+	AveragePoints(0,PTS_CHBUF_LEN);
+	AveragePoints(1,PTS_CHBUF_LEN);
+	SetThrsValue();
+
+	th0v = ThrToVolts(athv0);
+	th1v = ThrToVolts(athv1);
+	thmv = ThrToVolts(thval);
+	ad0v = AdcToVolts(adc_min[0]);
+	ad1v = AdcToVolts(adc_min[1]);
+
+	PushHpu();
+
+	sprintf(cmd_mesg,"Thr:0x%X->%fv,Th0:0x%X->%fv,Av0:0x%X->%fv,Tv1:0x%X->%fv,Av1:0x%X->%fv",
+		thval,thmv,
+		athv0,th0v,adc_min[0],ad0v,
+		athv1,th1v,adc_min[1],ad1v);
 }

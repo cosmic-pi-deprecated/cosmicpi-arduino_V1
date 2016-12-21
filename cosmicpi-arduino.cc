@@ -2874,7 +2874,7 @@ void SetHtValue(int flg) {
 
 	// Extra events in a second, adjust
 
-	if (inc_ht_flg) {	
+	if (inc_ht_flg > ht_dec_tweak) {	
 		if (decadj > 0) decadj--;
 		else incadj++;
 		inc_ht_flg = 0;

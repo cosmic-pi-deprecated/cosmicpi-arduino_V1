@@ -14,7 +14,7 @@
 
 // Julian Lewis lewis.julian@gmail.com
 
-#define FWVERS "21/December/2016 01:00"
+#define FWVERS "21/December/2016 17:30"
 #define CSVERS "V1"	// Output CSV version
 
 // The output from this program is processed by a Python monitor on the other end of the
@@ -103,7 +103,7 @@
 // Configuration constants
 
 // The size of the one second event buffer
-#define PPS_EVENTS 3	// The maximum number of events stored per second
+#define PPS_EVENTS 4	// The maximum number of events stored per second
 #define ADC_BUF_LEN 32	// Maximum number of ADC values per event
 
 // This is the event queue size
@@ -215,8 +215,8 @@ extern char *BmpDebug();
 void SetHtValue(int flg);	// HT setting
 void SetThrsValue();		// Threshold per channel based on ADC	
 
-int ht_inc_tweak = 5;	// If we get more than this events per second, reduce the HT	
-int ht_dec_tweak = 3;	// If we see no events for this number of seconds, increase the HT
+int ht_inc_tweak = (PPS_EVENTS - 2);	// If we get more than this events per second, reduce the HT (Must be < PPS_EVENTS !)	
+int ht_dec_tweak = 3;			// If we see no events for this number of seconds, increase the HT
 
 // Unique Arduino 128 bit ID code
 

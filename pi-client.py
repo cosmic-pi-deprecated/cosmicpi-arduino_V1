@@ -21,7 +21,7 @@ Typing the '>' character turns on command input
 It is important to keep the Python dictionary objects synchronised with the Arduino firmware
 otherwise this monitor will not understand the data being sent to it
 
-julian.lewis lewis.julian@gmail.com 11/December/2016 17:00
+julian.lewis lewis.julian@gmail.com 21/December/2016 01:00
 
 """
 
@@ -514,6 +514,8 @@ def main():
 	ser.write("JSON 1\n")	
 	time.sleep(1)
 	ser.write("VERS\n")
+	time.sleep(1)
+	ser.write("THRS\n")
 	
 	try:
 		while(True):

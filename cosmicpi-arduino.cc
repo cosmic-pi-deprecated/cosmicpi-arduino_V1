@@ -14,7 +14,7 @@
 
 // Julian Lewis lewis.julian@gmail.com
 
-#define FWVERS "20/December/2016 14:30"
+#define FWVERS "21/December/2016 01:00"
 #define CSVERS "V1"	// Output CSV version
 
 // The output from this program is processed by a Python monitor on the other end of the
@@ -1801,7 +1801,7 @@ void ReadOneChar() {
 			cmd[irdp] = c;
 			irdp = irdp + 1;
 			cmd[irdp] = 0;
-		}
+		} else irdy = 1;
 	} else	irdy = 1;
 }
 

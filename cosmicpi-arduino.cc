@@ -14,7 +14,7 @@
 
 // Julian Lewis lewis.julian@gmail.com
 
-#define FWVERS "21/December/2016 17:30"
+#define FWVERS "28/December/2016 23:00"
 #define CSVERS "V1"	// Output CSV version
 
 // The output from this program is processed by a Python monitor on the other end of the
@@ -216,7 +216,7 @@ void SetHtValue(int flg);	// HT setting
 void SetThrsValue();		// Threshold per channel based on ADC	
 
 int ht_inc_tweak = (PPS_EVENTS - 2);	// If we get more than this events per second, reduce the HT (Must be < PPS_EVENTS !)	
-int ht_dec_tweak = 3;			// If we see no events for this number of seconds, increase the HT
+int ht_dec_tweak = 5;			// If we see no events for this number of seconds, increase the HT
 
 // Unique Arduino 128 bit ID code
 
@@ -2709,7 +2709,7 @@ void rcpu(int arg) {
 #define A_AND_B 0x13
 
 uint8_t abreg = 0;	// Auto
-uint8_t thval = 0x18;	// 230mV nice initial value
+uint8_t thval = 0x18;	// Initial value
 uint8_t athv0 = 0;	// Automatic threshold hardware value channel 0
 uint8_t athv1 = 0;
 
@@ -2878,6 +2878,7 @@ void SetHtValue(int flg) {
 		if (decadj > 0) decadj--;
 		else incadj++;
 		inc_ht_flg = 0;
+		dec_ht_flg = 0;
 	}
 	
 	// No events detected for X seconds, adjust
@@ -2885,6 +2886,7 @@ void SetHtValue(int flg) {
 	if (dec_ht_flg > ht_dec_tweak) {
 		if (incadj > 0) incadj--;
 		else decadj++;
+		inc_ht_flg = 0;
 		dec_ht_flg = 0;
 	}
 

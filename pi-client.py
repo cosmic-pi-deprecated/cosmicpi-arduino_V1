@@ -753,10 +753,11 @@ def main():
 						print "Log:%s\n" % logflg
 
 				else:
-					cms = "Arduino < %s\n" % cmd 
-					print cms
-					log.write(cms)
-					ser.write(cmd.upper())
+					cms = "%s \n" % cmd.upper() 
+					print "Arduino < %s" % (cms)
+					# log.write(cms)
+					ser.write("\n")
+					ser.write(cms)
 					
 				if back == False:
 					kbrd.echo_off()

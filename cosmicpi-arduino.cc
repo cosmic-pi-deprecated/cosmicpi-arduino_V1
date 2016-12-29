@@ -14,7 +14,7 @@
 
 // Julian Lewis lewis.julian@gmail.com
 
-#define FWVERS "28/December/2016 23:00"
+#define FWVERS "29/December/2016 02:30"
 #define CSVERS "V1"	// Output CSV version
 
 // The output from this program is processed by a Python monitor on the other end of the
@@ -298,7 +298,9 @@ typedef enum {
 	STRG,	// STRIGA and STRIGB counters
 	DEAD,	// Dead time after event
 	ADCD,	// Dump ADC average values
+	PEAK,	// Find peaks
 
+	OUTP,	// Control output
 	JSON,	// Set out put JSON 1, CSV 0
 
 	CMDS };	// Command count
@@ -359,6 +361,8 @@ void abth(int arg);
 void strg(int arg);
 void dead(int arg);
 void adcd(int arg);
+void peak(int arg);
+void outp(int arg);
 void json(int arg);
 
 // Command table
@@ -401,6 +405,8 @@ CmdStruct cmd_table[CMDS] = {
 	{ STRG, strg, "STRG", "Display strigA and strigB counters 1=Enable", 1 },
 	{ DEAD, dead, "DEAD", "The dead time after an event" , 1 },
 	{ ADCD, adcd, "ADCD", "ADC display average values for Ch0 and Ch1", 1 },
+	{ PEAK, peak, "PEAK", "Try to find muon peaks", 1 },
+	{ OUTP, outp, "OUTP", "Output on=1, off=0", 1},
 	{ JSON, json, "JSON", "Select output format JSON=1 or CSV=0 (default)", 1 }
 };
 
@@ -1516,12 +1522,9 @@ void setup() {
 
 // Copy text to the buffer for future printing
 
-int silent = 0;
 void PushTxt(char *txt) {
 	
 	int i, l = strlen(txt);
-
-	if (silent) return;
 
 	// If this happens there is a programming bug
  
@@ -1552,9 +1555,8 @@ void PushTxt(char *txt) {
 
 void PutChar() {
 	
-	char c[2];			// One character zero terminated string
-
-	if (tsze) {			// If the buffer is not empty
+	char c[2];				// One character zero terminated string
+	if ((tsze) && (!Serial.available())) {	// If the buffer is not empty and not reading
 
 		c[0] = txtb[txtr]; 		// Get the next character from the read pointer
 		c[1] = '\0';			// Build a zero terminated string
@@ -1785,16 +1787,15 @@ void PushEvq(int flg, int *qsize, int *missed) {
 	}
 }
 
-// Read one input character, we have exactly the same problem with
-// the serial line read as with writing, so we need the same work around
+// Read in command line
 
-void ReadOneChar() {
+void ReadChars() {
 	char c;
 
 	// Suck in all the characters available on the input stream
 	// put as many as will fit in the cmd buffer, and say ready
 
-	if ((irdy == 0) && (Serial.available())) {	// If buffer free
+	while ((irdy == 0) && (Serial.available())) {	// If buffer free
 		c = (char) Serial.read();		// Read one char
 		if (c == '\n') istp = 1;		// Stop on '\n'
 		if ((!istp) && (irdp < (CMDLEN -1))) {
@@ -1802,7 +1803,8 @@ void ReadOneChar() {
 			irdp = irdp + 1;
 			cmd[irdp] = 0;
 		} else irdy = 1;
-	} else	irdy = 1;
+	}
+	irdy = 1;
 }
 
 // Implement the command callback functions
@@ -1830,6 +1832,17 @@ void help(int arg) {	// Display the help
 
 		sprintf(txt,"{'HLP':{'Idn':%d,'Nme':'%s','Hlp':'%s'}}\n",cms->Id,cms->Name,cms->Help);
 		PushTxt(txt);
+	}
+}
+
+int output_on = 1;
+void outp(int arg) {
+	if (arg) {
+		output_on = 1;
+		sprintf(cmd_mesg,"OUTPUT: ON");
+	} else {
+		output_on = 0;
+		sprintf(cmd_mesg,"OUTPUT: OFF");
 	}
 }
 
@@ -2042,7 +2055,7 @@ void ParseCmd() {
 	return;
 }
 
-// This waits for a ready buffer from ReadOneChar. Once ready the buffer is
+// This waits for a ready buffer from ReadChars. Once ready the buffer is
 // locked until its been seen here
 
 void DoCmd() {
@@ -2061,21 +2074,26 @@ void loop() {
 
 	if (displ) {				// Displ is set in the PPS ISR, we will reset it here
 		DoCmd();			// Execute any incomming commands
-		PushEvq(0,&qsize,&missed);	// Push any events
-		PushHtu(0);			// Push HTU temperature and humidity
-		PushBmp(0);			// Push BMP temperature and barrometric altitude
-		PushLoc(0);			// Push location latitude and longitude
-		PushTim(0);			// Push timing data
-		PushDtg(0);			// Push the date
-		PushUid(0);			// Push unique ID
 		
-		MagReadData();			// Read magnetic data
-		MagConvData();			// Convert to Gauss
-		MagPoll();			// Check for magnetic event
-		PushMag(0);			// Push mag data
-		PushAcl(0);			// Push accelarometer datai
+		if (output_on) {
+			PushEvq(0,&qsize,&missed);	// Push any events
+			PushHtu(0);			// Push HTU temperature and humidity
+			PushBmp(0);			// Push BMP temperature and barrometric altitude
+			PushLoc(0);			// Push location latitude and longitude
+			PushDtg(0);			// Push the date
+			PushUid(0);			// Push unique ID
+		
+			MagReadData();			// Read magnetic data
+			MagConvData();			// Convert to Gauss
+			MagPoll();			// Check for magnetic event
+			PushMag(0);			// Push mag data
+			PushAcl(0);			// Push accelarometer datai
 
+		}
+
+		PushTim(0);			// Push timing data
 		PushSts(0,qsize,missed);	// Push status
+
 		GetDateTime();			// Read the next date/time from the GPS chip
 
 		displ = 0;			// Clear flag for next PPS
@@ -2108,8 +2126,8 @@ void loop() {
 		digitalWrite(EVT_PIN,LOW);
 	}
 
+	ReadChars();	// Get next input command string
 	PutChar();	// Print one character per loop !!!
-	ReadOneChar();	// Get next input command char
 }
 
 // =====================================================
@@ -3016,9 +3034,8 @@ void adcd(int arg) {
 	sprintf(cmd_mesg,"ADCD: Average: Ch0:0x%03X->%f Volts Ch1:0x%03X->%f Volts",avc0,AdcToVolts(avc0),avc1,AdcToVolts(avc1));
 }
 
-void thrs(int arg) {
+void peak(int arg) {
 
-#if 0
 #define PMAX 3
 #define PSTR 100
 
@@ -3059,7 +3076,9 @@ void thrs(int arg) {
 	cmd_result = NO_THRESHOLD;
 	sprintf(cmd_mesg,"Thrs:Not found, try again");
 	return;
-#endif
+}
+
+void thrs(int arg) {
 
 	float th0v,th1v,ad0v,ad1v,thmv;
 

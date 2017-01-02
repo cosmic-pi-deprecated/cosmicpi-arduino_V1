@@ -14,7 +14,7 @@
 
 // Julian Lewis lewis.julian@gmail.com
 
-#define FWVERS "29/December/2016 02:30"
+#define FWVERS "02/January/2017 02:00"
 #define CSVERS "V1"	// Output CSV version
 
 // The output from this program is processed by a Python monitor on the other end of the
@@ -2236,25 +2236,21 @@ void clear_peaks() {
 	}
 }
 
-#define PWID 3
-#define PHIG 310	// 250mV on ADC
-#define PLOW 124	// 100mV on ADC
+#define PWID 100	// Width max
+#define PHIG 50		// Peak height min
 
-int filter_peaks() {
-	int i, pcnt=0;
-	struct Peak *pp;	// Points to current peak
+int test_peak(struct Peak *pp) {
+
 	uint16_t phig;
 
-	for (i=0; i<peak_index; i++) {
-		pp = &peaks[i];
-		phig = pp->Max - pp->Min;
-		if ((phig > PHIG) && (pp->Width <= PWID))
-			pcnt++;
-	}
-	return pcnt;
+	phig = pp->Max - pp->Min;
+	if ((phig >= PHIG) && (pp->Width <= PWID))
+		return 1;
+
+	return 0;
 }
 
-int get_peaks(uint8_t chn, uint16_t athr) {	// Threshold to test
+int get_peaks(uint8_t chn, uint8_t thval) {
 
 	int i;
 	int start = 0;		// Start of event index
@@ -2263,9 +2259,12 @@ int get_peaks(uint8_t chn, uint16_t athr) {	// Threshold to test
 
 	struct Peak *pp;	// Points to current peak
 	uint16_t *abuf;		// ADC buffer
+	uint16_t athr;		// ADC Threshold
 
 	if (chn) abuf = ch1;
 	else     abuf = ch0;
+
+	athr = adc_avr[chn] + AdcFromVolts(ThrToVolts(thval));
 
 	// Try to find the next 1000=PEAKS peaks
 
@@ -2293,6 +2292,7 @@ int get_peaks(uint8_t chn, uint16_t athr) {	// Threshold to test
 			 } else {
 				if (start) {
 					pp->Width = width;
+					if (!test_peak(pp)) peak_index--; 
 					start = 0;
 					width = 0;
 				}
@@ -2300,6 +2300,31 @@ int get_peaks(uint8_t chn, uint16_t athr) {	// Threshold to test
 		}
 	}
 	return peak_index;
+}
+
+void PushPeaks(uint8_t chn) {
+	struct Peak *pp;	// Points to current peak
+	int i;
+
+	float    vavr, vhig, twid;	// Average ADC, Peak hight, Peak width
+	uint16_t pavr, phig, pwid;
+
+	for (i=0; i<peak_index; i++) {
+		pp = &peaks[i];
+
+		pavr = adc_avr[chn];
+		vavr = AdcToVolts(pavr);
+
+		phig = pp->Max - pp->Min;
+		vhig = AdcToVolts(phig);
+
+		pwid = pp->Width;
+		twid = pwid * 2.5;
+	
+		sprintf(txt,	"{'TXT':{'Txt':'Peak:%d,%d,%d Adc:%d->%fV Hig:%d->%fV Wid:%d->%fUs       '}}\n"
+				,i+1,pp->Loops,pp->Start      ,pavr,vavr  ,phig,vhig  ,pwid,twid);
+		PushTxt(txt);
+	}
 }
 
 // =============================================
@@ -3036,15 +3061,8 @@ void adcd(int arg) {
 
 void peak(int arg) {
 
-#define PMAX 3
-#define PSTR 100
-
-	uint16_t athr, aval;	// Threshold ADC value under test
-	uint8_t  hthr, chn;	// Hardware threshold value, channel
-	float    vlta, vltt;
-	uint16_t adca;		// ADC average
-
 	int peaks;
+	uint8_t chn;
 
 	if (arg) chn = 1;
 	else     chn = 0;
@@ -3053,28 +3071,11 @@ void peak(int arg) {
 	ClearAdcBuf();
 	ReadAdcBuf(PTS_CHBUF_LEN);
 	AveragePoints(chn,PTS_CHBUF_LEN);
+
+	peaks = get_peaks(chn,thval);
+	PushPeaks(chn);
 	
-	athr = 2*adc_max[chn];
-
-	for (; athr>0; athr--) {	
-		aval = athr + adca;
-
-		clear_peaks();
-		peaks = get_peaks(chn,aval);
-		if (peaks > PMAX) break;
-		
-		peaks = filter_peaks();
-		if ((peaks >= 1) && (peaks <= PMAX)) {
-			vlta = AdcToVolts(aval);
-			hthr = ThrFromVolts(vlta);
-			vltt = ThrToVolts(hthr);	
-			sprintf(cmd_mesg,"Thrs:%d->Chn:%d Adc:%d->%fV->Thr:%d->%fV Pks:%d",athr,chn,aval,vlta,hthr,vltt,peaks);
-			return;
-		}
-		Serial.print("\n");
-	}
-	cmd_result = NO_THRESHOLD;
-	sprintf(cmd_mesg,"Thrs:Not found, try again");
+	sprintf(cmd_mesg,"Peak:Found:%d",peaks);
 	return;
 }
 

@@ -14,7 +14,7 @@
 
 // Julian Lewis lewis.julian@gmail.com
 
-#define FWVERS "02/January/2017 02:00"
+#define FWVERS "03/January/2017 17:00"
 #define CSVERS "V1"	// Output CSV version
 
 // The output from this program is processed by a Python monitor on the other end of the
@@ -2236,8 +2236,8 @@ void clear_peaks() {
 	}
 }
 
-#define PWID 100	// Width max
-#define PHIG 50		// Peak height min
+#define PWID 1000	// Width max
+#define PHIG 1		// Peak height mbove threshold in
 
 int test_peak(struct Peak *pp) {
 
@@ -2282,7 +2282,7 @@ int get_peaks(uint8_t chn, uint8_t thval) {
 						pp->Start = start;
 						pp->Loops = loops;
 						pp->Max   = abuf[i];
-						pp->Min   = abuf[i];
+						pp->Min   = adc_avr[chn];
 					} else
 						break;
 				}
@@ -3061,7 +3061,7 @@ void adcd(int arg) {
 
 void peak(int arg) {
 
-	int peaks;
+	int i, peaks;
 	uint8_t chn;
 
 	if (arg) chn = 1;
@@ -3072,8 +3072,13 @@ void peak(int arg) {
 	ReadAdcBuf(PTS_CHBUF_LEN);
 	AveragePoints(chn,PTS_CHBUF_LEN);
 
-	peaks = get_peaks(chn,thval);
-	PushPeaks(chn);
+	for (i=0; i<10; i++) {
+		peaks = get_peaks(chn,thval);
+		if (peaks) {
+			PushPeaks(chn);
+			break;
+		}
+	}
 	
 	sprintf(cmd_mesg,"Peak:Found:%d",peaks);
 	return;

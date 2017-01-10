@@ -1657,7 +1657,7 @@ void PushAcl(int flg) { // Push the accelerometer and compass stuff
 	if ((flg) || ((acl_id) && ((ppcnt % accelr_display_rate) == 0))) {
 		AclReadData();
 		if (output_format) sprintf(txt,"{'ACL':{'Acx':%f,'Acy':%f,'Acz':%f}}\n",acl_fx, acl_fy, acl_fz);
-		else sprintf(txt,"%s,%f,%f,%f\n",CSVERS,acl_fx, acl_fy, acl_fz);
+		else sprintf(txt,"%s,ACL,%f,%f,%f\n",CSVERS,acl_fx, acl_fy, acl_fz);
 		PushTxt(txt);
 	}
 }
